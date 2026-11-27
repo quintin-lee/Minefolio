@@ -37,6 +37,7 @@ import { marketApi } from '@/api/market'
 import type { PriceHistoryItem } from '@/types'
 import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
+import { localToday } from '@/utils/format'
 import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
 
 const props = withDefaults(defineProps<{
@@ -52,21 +53,28 @@ const chartRef = ref<HTMLElement | null>(null)
 const displaySettings = useDisplaySettingsStore()
 let chart: ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
+let loadSeq = 0
+let isUnmounted = false
 const loading = ref(false)
 const daysLimit = ref(90)
 const historyData = ref<PriceHistoryItem[]>([])
 
 async function loadHistory() {
   if (!props.assetId) return
+  const seq = ++loadSeq
   loading.value = true
   try {
     const res = await marketApi.getHistory(props.assetId, daysLimit.value)
+    if (isUnmounted || seq !== loadSeq) return
     historyData.value = res || []
     renderChart()
   } catch (err) {
+    if (isUnmounted || seq !== loadSeq) return
     console.error('[PriceHistoryChart] load failed:', err)
   } finally {
-    loading.value = false
+    if (!isUnmounted && seq === loadSeq) {
+      loading.value = false
+    }
   }
 }
 
@@ -156,7 +164,7 @@ function renderChart() {
 
 function handleExport(cmd: string) {
   if (!chart) return
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const safeName = (props.assetName || 'asset').replace(/[\\/:*?"<>|]/g, '_')
   if (cmd === 'png') {
     exportChartPng(chart, `${safeName}-price-history-${today}`)
@@ -189,6 +197,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  isUnmounted = true
   window.removeEventListener('resize', handleResize)
   resizeObserver?.disconnect()
   resizeObserver = null

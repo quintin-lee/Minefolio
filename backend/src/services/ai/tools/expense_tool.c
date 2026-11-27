@@ -1,9 +1,12 @@
 #include "services/ai/tools/expense_tool.h"
 #include "services/ai/tools/schema.h"
 #include "services/ai/policy/confirmation.h"
+#include "application/account/usecases.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
 #include "common/balance.h"
 #include "common/db.h"
+#include "common/ledger_utils.h"
 #include "core/ledger/ledger_engine.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -285,17 +288,46 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
         return strdup(err_buf);
     }
 
+    int64_t arg_lid = args ? db_get_int(args, "ledger_id") : 0;
+    int64_t meta_lid = (ctx && ctx->metadata) ? db_get_int(ctx->metadata, "ledger_id") : 0;
+    bool    meta_explicit =
+        (ctx && ctx->metadata) ? csilk_json_get_bool(ctx->metadata, "ledger_id_explicit") : false;
+    int64_t explicit_lid = arg_lid > 0 ? arg_lid : (meta_explicit ? meta_lid : 0);
+    int64_t ledger_id = arg_lid > 0 ? arg_lid : meta_lid;
+
+    if (asset_id > 0) {
+        int64_t acct_lid = 0, acct_id = 0;
+        if (asset_get_ledger_and_account(ctx->pool, asset_id, &acct_lid, &acct_id) != 0) {
+            return strdup("{\"error\":\"asset not found\",\"code\":1003}");
+        }
+        if (explicit_lid > 0 && acct_lid > 0 && explicit_lid != acct_lid) {
+            return strdup("{\"error\":\"Forbidden: 账本与资产所属账本不一致\",\"code\":1004}");
+        }
+        if (acct_lid > 0) {
+            ledger_id = acct_lid;
+        }
+        int64_t chk_lid = ledger_id;
+        if (chk_lid <= 0) {
+            chk_lid = ledger_get_default(ctx->pool, ctx->user_id);
+        }
+        if (acct_id > 0 || chk_lid > 0) {
+            int perm_chk = account_usecase_check_permission(
+                ctx->pool, chk_lid, ctx->user_id, acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+            if (perm_chk != 0) {
+                return strdup("{\"error\":\"Forbidden: 关联账户无记账权限\",\"code\":1004}");
+            }
+        }
+    } else if (ledger_id > 0) {
+        int perm_chk = account_usecase_check_permission(
+            ctx->pool, ledger_id, ctx->user_id, 0, MF_ACCOUNT_ACTION_WRITE_TX);
+        if (perm_chk != 0) {
+            return strdup("{\"error\":\"Forbidden: 账本无记账权限\",\"code\":1004}");
+        }
+    }
+
     db_tx_scope_t scope;
     if (db_tx_scope_begin(ctx->pool, "ai_confirm_expense", &scope) != 0) {
         return strdup("{\"error\":\"failed to begin transaction\"}");
-    }
-
-    int64_t ledger_id = 0;
-    if (args) {
-        ledger_id = db_get_int(args, "ledger_id");
-    }
-    if (ledger_id <= 0 && ctx && ctx->metadata) {
-        ledger_id = db_get_int(ctx->metadata, "ledger_id");
     }
 
     int64_t de_id = mf_ai_repo_daily_expense_insert(ctx->pool,
@@ -317,8 +349,14 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
         int     is_income = (strcmp(type, "income") == 0);
         money_t amt_m;
         money_from_double(amount, CURRENCY_CNY, &amt_m);
-        int rc = ledger_apply_expense(
-            ctx->pool, ctx->user_id, asset_id, amt_m, is_income, de_id, "AI 记账确认");
+        int rc = ledger_apply_expense_dated(ctx->pool,
+                                            ctx->user_id,
+                                            asset_id,
+                                            amt_m,
+                                            is_income,
+                                            de_id,
+                                            "AI 记账确认",
+                                            (date && date[0]) ? date : NULL);
         if (rc != 0) {
             db_tx_scope_rollback(ctx->pool, &scope);
             return strdup("{\"error\":\"failed to update linked asset balance\"}");

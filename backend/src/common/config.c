@@ -27,6 +27,13 @@
 int
 config_get_str(const char* path, const char* key, char* out, size_t out_size)
 {
+    if (!out || out_size == 0) {
+        return -1;
+    }
+    if (!path || !key) {
+        out[0] = '\0';
+        return -1;
+    }
     FILE* f = fopen(path, "r");
     if (!f) {
         out[0] = '\0';
@@ -49,6 +56,9 @@ config_get_str(const char* path, const char* key, char* out, size_t out_size)
             search++;
         }
         /* 预期开头引号 */
+        if (*search == '\0') {
+            break;
+        }
         if (*search != '"') {
             search++;
             continue;

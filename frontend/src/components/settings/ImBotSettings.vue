@@ -312,6 +312,7 @@ const verifyCodeInput = ref('')
 const qrDataUrl = ref('')
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let lastQrSource = ''
+let isUnmounted = false
 
 const formattedRemainingTime = computed(() => {
   const m = Math.floor(remainingSeconds.value / 60)
@@ -394,9 +395,17 @@ function stopInstancePolling() {
 }
 
 function syncInstancePolling() {
+  if (isUnmounted) {
+    stopInstancePolling()
+    return
+  }
   if (instance.value && isLoginStage(instance.value.status)) {
     if (!pollTimer) {
       pollTimer = setInterval(() => {
+        if (isUnmounted) {
+          stopInstancePolling()
+          return
+        }
         void pollCurrentInstance()
       }, 2000)
     }
@@ -418,10 +427,12 @@ watch(
     lastQrSource = val
     try {
       const dataUrl = await renderQrContentToImage(val)
+      if (isUnmounted) return
       if (lastQrSource === val) {
         qrDataUrl.value = dataUrl
       }
     } catch (err) {
+      if (isUnmounted) return
       console.error('Failed to render iLink QR code:', err)
       if (lastQrSource === val) {
         qrDataUrl.value = ''
@@ -432,9 +443,10 @@ watch(
 )
 
 async function pollCurrentInstance() {
-  if (!instance.value) return
+  if (isUnmounted || !instance.value) return
   try {
     const updated = await imApi.getInstance(instance.value.id)
+    if (isUnmounted) return
     const prevStatus = instance.value.status
     instance.value = updated
     syncInstancePolling()
@@ -449,6 +461,7 @@ async function pollCurrentInstance() {
 async function fetchInstances() {
   try {
     const list = await imApi.listInstances()
+    if (isUnmounted) return
     instance.value = Array.isArray(list) && list.length > 0 ? (list[0] ?? null) : null
     syncInstancePolling()
   } catch (err) {
@@ -459,11 +472,15 @@ async function fetchInstances() {
 async function fetchBindings() {
   loading.value = true
   try {
-    bindings.value = await imApi.getBindings()
+    const data = await imApi.getBindings()
+    if (isUnmounted) return
+    bindings.value = data
   } catch (err) {
     console.error('Failed to load IM bindings:', err)
   } finally {
-    loading.value = false
+    if (!isUnmounted) {
+      loading.value = false
+    }
   }
 }
 
@@ -476,15 +493,19 @@ async function handleCreateInstance() {
   gatewayNotConfigured.value = false
   try {
     const created = await imApi.createInstance({ platform: 'wechat', adapter: 'ilink' })
+    if (isUnmounted) return
     instance.value = created
     syncInstancePolling()
   } catch (err: any) {
+    if (isUnmounted) return
     const msg = err?.response?.data?.message || ''
     if (String(msg).includes('not configured') || String(msg).includes('未配置')) {
       gatewayNotConfigured.value = true
     }
   } finally {
-    instanceBusy.value = false
+    if (!isUnmounted) {
+      instanceBusy.value = false
+    }
   }
 }
 
@@ -560,11 +581,19 @@ async function handleGenerateToken() {
   generating.value = true
   try {
     const res = await imApi.generateBindToken()
+    if (isUnmounted) return
     bindToken.value = res.bind_token
     remainingSeconds.value = res.ttl_sec || 300
 
     if (timerId) clearInterval(timerId)
     timerId = setInterval(() => {
+      if (isUnmounted) {
+        if (timerId) {
+          clearInterval(timerId)
+          timerId = null
+        }
+        return
+      }
       if (remainingSeconds.value > 0) {
         remainingSeconds.value--
       } else {
@@ -574,9 +603,12 @@ async function handleGenerateToken() {
       }
     }, 1000)
   } catch (err) {
+    if (isUnmounted) return
     ElMessage.error(t('settings.generateTokenFailed') || '生成绑定码失败')
   } finally {
-    generating.value = false
+    if (!isUnmounted) {
+      generating.value = false
+    }
   }
 }
 
@@ -618,7 +650,11 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (timerId) clearInterval(timerId)
+  isUnmounted = true
+  if (timerId) {
+    clearInterval(timerId)
+    timerId = null
+  }
   stopInstancePolling()
 })
 </script>

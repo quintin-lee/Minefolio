@@ -348,13 +348,21 @@ ledger_rebuild_account(csilk_db_pool_t*        pool,
             // delta
             money_t first_after = db_get_money(first_row, "balance_after", cur);
             money_t first_delta = db_get_money(first_row, "delta", cur);
-            money_sub(first_after, first_delta, &cum_bal);
+            if (money_sub(first_after, first_delta, &cum_bal) != DECIMAL_OK) {
+                csilk_json_free(log_rows);
+                db_tx_scope_rollback(pool, &scope);
+                return -1;
+            }
         }
 
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* r = csilk_json_array_get(log_rows, i);
             money_t       d = db_get_money(r, "delta", cur);
-            money_add(cum_bal, d, &cum_bal);
+            if (money_add(cum_bal, d, &cum_bal) != DECIMAL_OK) {
+                csilk_json_free(log_rows);
+                db_tx_scope_rollback(pool, &scope);
+                return -1;
+            }
         }
         csilk_json_free(log_rows);
     } else {
@@ -373,8 +381,15 @@ ledger_rebuild_account(csilk_db_pool_t*        pool,
         pool,
         "UPDATE assets SET current_value=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
         upd_params);
-    if (upd_res) {
-        csilk_json_free(upd_res);
+    if (!upd_res) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
+    csilk_json_free(upd_res);
+
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
     }
 
     if (out_state) {
@@ -382,7 +397,6 @@ ledger_rebuild_account(csilk_db_pool_t*        pool,
         out_state->balance = cum_bal;
         out_state->tx_count = tx_count;
     }
-    db_tx_scope_commit(pool, &scope);
     return 0;
 }
 

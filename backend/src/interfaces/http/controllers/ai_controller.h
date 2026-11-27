@@ -1,6 +1,8 @@
 #pragma once
 
 #include "csilk/csilk.h"
+#include <stdbool.h>
+#include <stdint.h>
 
 void api_ai_models_handler(csilk_ctx_t* c);
 void api_ai_chat_handler(csilk_ctx_t* c);
@@ -15,6 +17,8 @@ void api_ai_settings_update_handler(csilk_ctx_t* c);
 void api_ai_test_connection_handler(csilk_ctx_t* c);
 void api_ai_fetch_models_handler(csilk_ctx_t* c);
 void api_ai_action_confirm_handler(csilk_ctx_t* c);
+bool
+ai_confirm_has_explicit_ledger(const char* lid_header, const char* lid_query, int64_t body_lid);
 void api_ai_action_confirm_batch_handler(csilk_ctx_t* c);
 void
 ai_message_mark_action_executed(csilk_db_pool_t* pool, int64_t user_id, const char* draft_token);

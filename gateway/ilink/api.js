@@ -38,6 +38,27 @@ function createGatewayApi({
     }
     const res = await fetchImpl(`${base}${path}`, init);
     const json = await res.json().catch(() => null);
+    const isOk =
+      typeof res.ok === 'boolean'
+        ? res.ok
+        : Number(res.status) >= 200 && Number(res.status) < 300;
+    if (!isOk) {
+      const bodyMsg =
+        json && typeof json === 'object' ? json.error || json.message || '' : '';
+      const errCode =
+        json && typeof json === 'object' && typeof json.code === 'number' && json.code !== 0
+          ? json.code
+          : res.status || 500;
+      throw new GatewayHttpError(
+        bodyMsg
+          ? `Gateway HTTP ${res.status || 500}: ${bodyMsg}`
+          : `Gateway HTTP ${res.status || 500}`,
+        {
+          code: errCode,
+          http: res.status || 500,
+        }
+      );
+    }
     if (!json || typeof json !== 'object') {
       throw new GatewayHttpError(`Invalid JSON response (${res.status})`, {
         code: res.status || 500,

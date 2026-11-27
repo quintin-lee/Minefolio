@@ -237,8 +237,17 @@ ai_usecase_sessions_delete(void* pool, int64_t user_id, int64_t id, ai_usecase_r
      * PG 新库/重放 V018 后已有 ON DELETE CASCADE，此 DELETE 幂等无害。
      * 必须先删子表再删会话，两步同事务保证不留半清理状态。 */
     db_tx_scope_t scope = {0};
-    db_tx_scope_begin(p, "ai_session_delete", &scope);
-    mf_ai_trace_repo_delete_by_session(p, user_id, id);
+    if (db_tx_scope_begin(p, "ai_session_delete", &scope) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "开启数据库事务失败");
+        return -1;
+    }
+    if (mf_ai_trace_repo_delete_by_session(p, user_id, id) != 0) {
+        db_tx_scope_rollback(p, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "删除会话追踪失败");
+        return -1;
+    }
     int ok = mf_ai_session_delete(p, user_id, id);
     if (!ok) {
         db_tx_scope_rollback(p, &scope);
@@ -246,7 +255,12 @@ ai_usecase_sessions_delete(void* pool, int64_t user_id, int64_t id, ai_usecase_r
         snprintf(out_res->message, sizeof(out_res->message), "会话不存在");
         return -1;
     }
-    db_tx_scope_commit(p, &scope);
+    if (db_tx_scope_commit(p, &scope) != 0) {
+        db_tx_scope_rollback(p, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
 
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");

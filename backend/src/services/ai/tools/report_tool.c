@@ -125,23 +125,6 @@ exec_calculate_date_range(const ai_tool_t*         tool,
     return s;
 }
 
-static char*
-exec_web_search(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csilk_json_t* args)
-{
-    (void)tool;
-    (void)ctx;
-    const char* query = args ? csilk_json_get_string(args, "query") : "";
-
-    csilk_json_t* res = csilk_json_object();
-    csilk_json_add_string(res, "query", query ? query : "");
-    csilk_json_add_string(res, "result", "已联网检索最新金融市场与宏观资讯。");
-
-    size_t len = 0;
-    char*  s = csilk_json_serialize(res, &len);
-    csilk_json_free(res);
-    return s;
-}
-
 char*
 ai_tool_parse_file_to_string(
     csilk_db_pool_t* pool, const char* data, size_t data_len, const char* filename, size_t max_len)
@@ -199,25 +182,6 @@ ai_tool_report_register_all(void)
             .is_mutation = false,
             .validate = NULL,
             .execute = exec_calculate_date_range,
-        };
-        ai_tool_register(&t);
-    }
-
-    /* 3. web_search */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s, "query", "string", "检索关键词");
-        ai_schema_add_required(s, "query");
-
-        ai_tool_t t = {
-            .name = "web_search",
-            .description = "检索外部金融市场资讯、基金净值与公开财经数据",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_web_search,
         };
         ai_tool_register(&t);
     }

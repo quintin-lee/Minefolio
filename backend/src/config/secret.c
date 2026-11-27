@@ -236,9 +236,14 @@ config_secret_get(const char* key, char* out, size_t out_size)
     const char* pure_name = (strncasecmp(key, "MINEFOLIO_", 10) == 0) ? (key + 10) : key;
     char        lower_name[64];
     size_t      klen = strlen(pure_name);
-    if (klen < sizeof(lower_name)) {
+    if (klen > 0 && klen < sizeof(lower_name)) {
         for (size_t i = 0; i < klen; i++) {
-            lower_name[i] = (char)tolower((unsigned char)pure_name[i]);
+            unsigned char ch = (unsigned char)pure_name[i];
+            if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+                  (ch >= '0' && ch <= '9') || ch == '_' || ch == '-')) {
+                return NULL;
+            }
+            lower_name[i] = (char)tolower(ch);
         }
         lower_name[klen] = '\0';
 

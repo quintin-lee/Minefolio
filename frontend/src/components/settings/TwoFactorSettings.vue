@@ -125,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
@@ -143,9 +143,19 @@ const twoFactorVerifyCode = ref('')
 const qrCanvasRef = ref<HTMLCanvasElement | null>(null)
 const backupCodesVisible = ref(false)
 const backupCodes = ref<string[]>([])
+let qrRenderTimer: ReturnType<typeof setTimeout> | null = null
+let isUnmounted = false
 
 onMounted(() => {
   loadTwoFactorStatus()
+})
+
+onUnmounted(() => {
+  isUnmounted = true
+  if (qrRenderTimer) {
+    clearTimeout(qrRenderTimer)
+    qrRenderTimer = null
+  }
 })
 
 async function loadTwoFactorStatus() {
@@ -162,14 +172,22 @@ async function openTwoFactorSetup() {
   twoFactorLoading.value = true
   try {
     const raw = await authApi.setup2Fa()
+    if (isUnmounted) return
     const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: { secret: string; otpauth_url: string } }).data : raw) as { secret: string; otpauth_url: string }
     twoFactorSecret.value = res.secret
     twoFactorOtpauthUrl.value = res.otpauth_url
     twoFactorVerifyCode.value = ''
     twoFactorSetupVisible.value = true
-    setTimeout(async () => {
-      if (qrCanvasRef.value) {
+    if (qrRenderTimer) {
+      clearTimeout(qrRenderTimer)
+      qrRenderTimer = null
+    }
+    qrRenderTimer = setTimeout(async () => {
+      qrRenderTimer = null
+      if (isUnmounted || !qrCanvasRef.value) return
+      try {
         const QRCode = await import('qrcode')
+        if (isUnmounted || !qrCanvasRef.value) return
         QRCode.toCanvas(qrCanvasRef.value, res.otpauth_url, {
           width: 180,
           margin: 2,
@@ -178,12 +196,17 @@ async function openTwoFactorSetup() {
             light: '#ffffff'
           }
         })
+      } catch (err) {
+        console.error('Failed to render 2FA QR code:', err)
       }
     }, 100)
   } catch (e: any) {
+    if (isUnmounted) return
     ElMessage.error(e?.response?.data?.message || t('settings.secretFetchFailed'))
   } finally {
-    twoFactorLoading.value = false
+    if (!isUnmounted) {
+      twoFactorLoading.value = false
+    }
   }
 }
 

@@ -1,4 +1,5 @@
 #include "application/mcp/usecases.h"
+#include "domain/auth/repository.h"
 #include "domain/mcp/entity.h"
 #include "domain/mcp/rules.h"
 #include "domain/mcp/repository.h"
@@ -57,6 +58,30 @@ validate_cmd_common(const char*              name,
     if (!mf_mcp_rule_validate_timeout_ms(timeout_ms)) {
         res->code = 1002;
         snprintf(res->message, sizeof(res->message), "timeout_ms 需在 1000-120000 范围内");
+        return -1;
+    }
+    return 0;
+}
+
+/* 校验 secret_ref 权限与白名单：非空时仅实例管理员可配置（1004），且必须符合 MCP_SECRET_[A-Za-z0-9_]+（1002） */
+static int
+validate_secret_ref_cmd(void*                    pool,
+                        int64_t                  user_id,
+                        const char*              secret_ref,
+                        mf_mcp_usecase_result_t* res)
+{
+    if (!secret_ref || !secret_ref[0]) {
+        return 0;
+    }
+    if (!mf_auth_repo_is_instance_admin(pool, user_id)) {
+        res->code = 1004;
+        snprintf(res->message, sizeof(res->message), "仅实例管理员允许配置 secret_ref");
+        return -1;
+    }
+    if (!mf_mcp_secret_ref_valid(secret_ref)) {
+        res->code = 1002;
+        snprintf(
+            res->message, sizeof(res->message), "secret_ref 非法：仅允许 MCP_SECRET_[A-Za-z0-9_]+");
         return -1;
     }
     return 0;
@@ -159,7 +184,12 @@ mf_mcp_usecase_create(void*                      pool,
         out_res = &local;
     }
 
-    int rc = validate_cmd_common(
+    int rc = validate_secret_ref_cmd(pool, cmd->user_id, cmd->secret_ref, out_res);
+    if (rc != 0) {
+        return rc;
+    }
+
+    rc = validate_cmd_common(
         cmd->name, cmd->transport, cmd->url, cmd->command, cmd->timeout_ms, out_res);
     if (rc != 0) {
         return rc;
@@ -207,7 +237,12 @@ mf_mcp_usecase_update(void* pool, const mf_mcp_update_cmd_t* cmd, mf_mcp_usecase
         out_res = &local;
     }
 
-    int rc = validate_cmd_common(
+    int rc = validate_secret_ref_cmd(pool, cmd->user_id, cmd->secret_ref, out_res);
+    if (rc != 0) {
+        return rc;
+    }
+
+    rc = validate_cmd_common(
         cmd->name, cmd->transport, cmd->url, cmd->command, cmd->timeout_ms, out_res);
     if (rc != 0) {
         return rc;

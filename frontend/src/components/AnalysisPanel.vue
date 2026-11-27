@@ -110,7 +110,7 @@
               <div
                 v-else-if="item.type === 'markdown'"
                 class="markdown-part panel-markdown"
-                v-html="renderMarkdown(item.content)"
+                v-html="renderedMarkdownMap.get(item.id) || ''"
               ></div>
             </div>
           </el-tab-pane>
@@ -177,9 +177,21 @@ function handleTabRemove(tabId: string | number) {
   emit('remove-tab', String(tabId))
 }
 
-function renderMarkdown(text?: string): string {
-  return renderSafeMarkdown(text)
-}
+let markdownRenderCache = new Map<string, { raw: string; html: string }>()
+const renderedMarkdownMap = computed(() => {
+  const nextCache = new Map<string, { raw: string; html: string }>()
+  const result = new Map<string, string>()
+  for (const item of props.items) {
+    if (item.type !== 'markdown') continue
+    const raw = item.content || ''
+    const cached = markdownRenderCache.get(item.id)
+    const html = cached && cached.raw === raw ? cached.html : renderSafeMarkdown(raw)
+    nextCache.set(item.id, { raw, html })
+    result.set(item.id, html)
+  }
+  markdownRenderCache = nextCache
+  return result
+})
 </script>
 
 <style scoped>

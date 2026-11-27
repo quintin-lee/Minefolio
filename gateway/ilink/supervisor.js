@@ -15,6 +15,18 @@ const NEEDED_STATUSES = new Set([
 const BACKOFF_DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
 const CRASH_WINDOW_MS = 5 * 60 * 1000;
 const CRASH_THRESHOLD = 5;
+const DEFAULT_SHUTDOWN_GRACE_MS = 3500;
+
+function parseBoolFlag(v) {
+  if (v === null || v === undefined || v === false || v === 0) return false;
+  if (typeof v === 'number') return Number.isFinite(v) && v !== 0;
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    if (s === '' || s === '0' || s === 'false' || s === 'f') return false;
+    return true;
+  }
+  return Boolean(v);
+}
 
 function defaultSpawn(runnerPath, args) {
   return spawn(process.execPath, [runnerPath, ...args], {
@@ -38,6 +50,7 @@ function createSupervisor({
   spawnImpl = defaultSpawn,
   killImpl = defaultKill,
   maxInstances = Number(process.env.ILINK_MAX_INSTANCES || 20),
+  shutdownGraceMs = DEFAULT_SHUTDOWN_GRACE_MS,
   log = console,
   nowFn = () => Date.now(),
 } = {}) {
@@ -66,10 +79,16 @@ function createSupervisor({
     const args = ['--instance', String(id)];
     if (forceLogin) args.push('--force-login');
     const proc = spawnImpl(runnerPath, args);
-    const entry = { proc, epoch, stopping: false };
+    let resolveExit;
+    const exitPromise = new Promise((resolve) => {
+      resolveExit = resolve;
+    });
+    const entry = { proc, epoch, stopping: false, exited: false, exitPromise };
     children.set(id, entry);
 
     proc.on?.('exit', (code) => {
+      entry.exited = true;
+      resolveExit();
       if (children.get(id) === entry) {
         children.delete(id);
       }
@@ -121,7 +140,7 @@ function createSupervisor({
     for (const inst of list) {
       const id = Number(inst.id);
       const epoch = Number(inst.login_epoch || 0);
-      const enabled = Boolean(inst.enabled);
+      const enabled = parseBoolFlag(inst.enabled);
       const shouldRun = enabled && NEEDED_STATUSES.has(inst.status);
 
       if (!shouldRun) {
@@ -177,9 +196,17 @@ function createSupervisor({
       stopChild(id, 'SIGTERM');
     }
     if (active.length > 0) {
-      await new Promise((r) => setTimeout(r, 100));
+      let timer;
+      const waitExits = Promise.all(active.map((entry) => entry.exitPromise));
+      const waitTimeout = new Promise((resolve) => {
+        timer = setTimeout(resolve, shutdownGraceMs);
+      });
+      await Promise.race([waitExits, waitTimeout]);
+      clearTimeout(timer);
       for (const entry of active) {
-        killImpl(entry.proc, 'SIGKILL');
+        if (!entry.exited) {
+          killImpl(entry.proc, 'SIGKILL');
+        }
       }
     }
   }
@@ -195,5 +222,7 @@ function createSupervisor({
 module.exports = {
   NEEDED_STATUSES,
   BACKOFF_DELAYS_MS,
+  DEFAULT_SHUTDOWN_GRACE_MS,
+  parseBoolFlag,
   createSupervisor,
 };

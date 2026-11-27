@@ -7,6 +7,11 @@ const { createStateStore } = require('./state');
 const { runLogin } = require('./login');
 const { runMonitor } = require('./monitor');
 const { createPusher } = require('./pusher');
+const { parseBoolFlag } = require('./supervisor');
+
+function isInstanceEnabled(inst) {
+  return Boolean(inst && parseBoolFlag(inst.enabled));
+}
 
 function parseArgs(argv) {
   let instanceId = null;
@@ -194,7 +199,7 @@ async function main() {
     process.exit(1);
   }
 
-  if (!instance || !instance.enabled || instance.status === 'disabled') {
+  if (!isInstanceEnabled(instance) || instance.status === 'disabled') {
     process.exit(0);
   }
 
@@ -217,8 +222,7 @@ async function main() {
         last_inbound_at: latestInboundAt || undefined,
       });
       if (
-        !hb ||
-        !hb.enabled ||
+        !isInstanceEnabled(hb) ||
         hb.status === 'disabled' ||
         hb.status === 'session_expired' ||
         Number(hb.login_epoch || 0) !== initialEpoch
@@ -306,6 +310,8 @@ if (require.main === module) {
 
 module.exports = {
   parseArgs,
+  parseBoolFlag,
+  isInstanceEnabled,
   pickSessionError,
   runManagedSession,
 };

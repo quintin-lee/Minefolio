@@ -10,12 +10,14 @@ const RATES_CACHE_KEY = 'minefolio_cached_rates'
 const INDICES_CACHE_KEY = 'minefolio_cached_indices'
 const CLOCKS_CACHE_KEY = 'minefolio_cached_clocks'
 
+const DEFAULT_RATES: Record<string, number> = { CNY: 1.0, USD: 7.2345, EUR: 7.852, HKD: 0.9248, JPY: 0.04781, GBP: 9.382 }
+
 function getInitialRates(): Record<string, number> {
   try {
     const cached = localStorage.getItem(RATES_CACHE_KEY)
-    return cached ? JSON.parse(cached) : { CNY: 1.0, USD: 7.2345, EUR: 7.852, HKD: 0.9248, JPY: 0.04781, GBP: 9.382 }
+    return cached ? JSON.parse(cached) : { ...DEFAULT_RATES }
   } catch {
-    return { CNY: 1.0, USD: 7.2345, EUR: 7.852, HKD: 0.9248, JPY: 0.04781, GBP: 9.382 }
+    return { ...DEFAULT_RATES }
   }
 }
 
@@ -38,8 +40,10 @@ export const useMarketStore = defineStore('market', () => {
   const isLoadingHoldings = ref(false)
 
   // Request sequence guards against asynchronous out-of-order responses
+  let ratesReqSeq = 0
   let historyReqSeq = 0
   let holdingsReqSeq = 0
+  let syncReqSeq = 0
 
   function setBaseCurrency(currency: string) {
     baseCurrency.value = currency
@@ -59,33 +63,42 @@ export const useMarketStore = defineStore('market', () => {
     fetchHistory(selectedCurrency.value, days)
   }
 
+  function applyRatesData(data: Record<string, number>) {
+    const nextRates: Record<string, number> = { ...data, CNY: 1.0 }
+    const nextDirections: Record<string, 'up' | 'down' | 'same'> = {}
+    for (const [cur, val] of Object.entries(nextRates)) {
+      const oldVal = prevRates.value[cur]
+      if (typeof oldVal === 'number' && oldVal > 0) {
+        if (val > oldVal) nextDirections[cur] = 'up'
+        else if (val < oldVal) nextDirections[cur] = 'down'
+        else nextDirections[cur] = 'same'
+      } else {
+        nextDirections[cur] = 'same'
+      }
+    }
+    fxDirections.value = nextDirections
+    prevRates.value = { ...nextRates }
+    rates.value = nextRates
+    localStorage.setItem(RATES_CACHE_KEY, JSON.stringify(rates.value))
+    lastSyncAt.value = new Date().toLocaleTimeString()
+  }
+
   async function fetchRates() {
+    const currentSeq = ++ratesReqSeq
     isLoadingRates.value = true
     try {
       const data = await marketApi.getExchangeRates()
-      if (data && typeof data === 'object') {
-        const nextRates: Record<string, number> = { ...data, CNY: 1.0 }
-        const nextDirections: Record<string, 'up' | 'down' | 'same'> = {}
-        for (const [cur, val] of Object.entries(nextRates)) {
-          const oldVal = prevRates.value[cur]
-          if (typeof oldVal === 'number' && oldVal > 0) {
-            if (val > oldVal) nextDirections[cur] = 'up'
-            else if (val < oldVal) nextDirections[cur] = 'down'
-            else nextDirections[cur] = 'same'
-          } else {
-            nextDirections[cur] = 'same'
-          }
-        }
-        fxDirections.value = nextDirections
-        prevRates.value = { ...nextRates }
-        rates.value = nextRates
-        localStorage.setItem(RATES_CACHE_KEY, JSON.stringify(rates.value))
-        lastSyncAt.value = new Date().toLocaleTimeString()
+      if (currentSeq === ratesReqSeq && data && typeof data === 'object') {
+        applyRatesData(data)
       }
     } catch (err) {
-      console.warn('Failed to fetch exchange rates, using cached rates:', err)
+      if (currentSeq === ratesReqSeq) {
+        console.warn('Failed to fetch exchange rates, using cached rates:', err)
+      }
     } finally {
-      isLoadingRates.value = false
+      if (currentSeq === ratesReqSeq) {
+        isLoadingRates.value = false
+      }
     }
   }
 
@@ -130,44 +143,35 @@ export const useMarketStore = defineStore('market', () => {
   }
 
   async function syncExchangeRates() {
+    const currentSeq = ++ratesReqSeq
     try {
       const data = await marketApi.syncExchangeRates()
+      if (currentSeq !== ratesReqSeq) return false
       if (data && typeof data === 'object') {
-        const nextRates: Record<string, number> = { ...data, CNY: 1.0 }
-        const nextDirections: Record<string, 'up' | 'down' | 'same'> = {}
-        for (const [cur, val] of Object.entries(nextRates)) {
-          const oldVal = prevRates.value[cur]
-          if (typeof oldVal === 'number' && oldVal > 0) {
-            if (val > oldVal) nextDirections[cur] = 'up'
-            else if (val < oldVal) nextDirections[cur] = 'down'
-            else nextDirections[cur] = 'same'
-          } else {
-            nextDirections[cur] = 'same'
-          }
-        }
-        fxDirections.value = nextDirections
-        prevRates.value = { ...nextRates }
-        rates.value = nextRates
-        localStorage.setItem(RATES_CACHE_KEY, JSON.stringify(rates.value))
-        lastSyncAt.value = new Date().toLocaleTimeString()
+        applyRatesData(data)
         await Promise.allSettled([fetchHoldingsSummary(), fetchHistory()])
-        return true
+        return currentSeq === ratesReqSeq
       }
     } catch (err) {
-      console.warn('Failed to sync exchange rates:', err)
+      if (currentSeq === ratesReqSeq) {
+        console.warn('Failed to sync exchange rates:', err)
+      }
     }
     return false
   }
 
   async function syncAllQuotes() {
+    const syncSeq = ++syncReqSeq
     isSyncing.value = true
     try {
       const [fxRes, quoteRes] = await Promise.allSettled([
         marketApi.syncExchangeRates(),
         marketApi.syncAll(),
       ])
+      if (syncSeq !== syncReqSeq) return false
 
       await Promise.allSettled([fetchRates(), fetchHoldingsSummary(), fetchHistory()])
+      if (syncSeq !== syncReqSeq) return false
       lastSyncAt.value = new Date().toLocaleTimeString()
 
       const fxOk = fxRes.status === 'fulfilled'
@@ -178,10 +182,14 @@ export const useMarketStore = defineStore('market', () => {
       }
       return true
     } catch (err) {
-      console.error('Market sync failed:', err)
+      if (syncSeq === syncReqSeq) {
+        console.error('Market sync failed:', err)
+      }
       return false
     } finally {
-      isSyncing.value = false
+      if (syncSeq === syncReqSeq) {
+        isSyncing.value = false
+      }
     }
   }
 
@@ -323,13 +331,24 @@ export const useMarketStore = defineStore('market', () => {
   }
 
   function reset() {
+    ratesReqSeq++
     holdingsReqSeq++
     historyReqSeq++
     indicesReqSeq++
+    syncReqSeq++
+    isLoadingRates.value = false
+    isLoadingHistory.value = false
+    isLoadingHoldings.value = false
+    isLoadingIndices.value = false
+    isSyncing.value = false
+    baseCurrency.value = 'CNY'
+    rates.value = { ...DEFAULT_RATES }
     holdingsSummary.value = null
     historyPoints.value = []
     prevRates.value = {}
     fxDirections.value = {}
+    prevPrices.value = {}
+    priceDirections.value = {}
     indices.value = []
     marketClocks.value = []
     lastSyncAt.value = null
@@ -337,6 +356,7 @@ export const useMarketStore = defineStore('market', () => {
     selectedDrawerIndex.value = null
     isDrawerOpen.value = false
     if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(BASE_CURRENCY_STORAGE_KEY)
       localStorage.removeItem(RATES_CACHE_KEY)
       localStorage.removeItem(INDICES_CACHE_KEY)
       localStorage.removeItem(CLOCKS_CACHE_KEY)

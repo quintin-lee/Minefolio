@@ -325,8 +325,11 @@ mf_http_curl_apply_security(CURL*       curl,
     if (!curl) {
         return NULL;
     }
+    (void)allow_redirects;
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, allow_redirects ? 1L : 0L);
+    /* Never enable automatic libcurl redirects: callers needing 3xx support
+     * must follow Location hops manually and re-run mf_http_validate_and_resolve_url. */
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
 #if defined(CURLOPT_PROTOCOLS_STR)
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
@@ -334,9 +337,6 @@ mf_http_curl_apply_security(CURL*       curl,
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
 #endif
-    if (allow_redirects) {
-        curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3L);
-    }
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 

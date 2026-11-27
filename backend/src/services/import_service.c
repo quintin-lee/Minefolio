@@ -1,7 +1,6 @@
 #include "services/import_service.h"
 #include "application/account/usecases.h"
 #include "application/task/async_task_manager.h"
-#include "interfaces/http/controllers/import_export_controller.h"
 #include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/response.h"
 #include "common/ctx.h"
@@ -18,7 +17,25 @@
 #include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "csilk/util/csv.h"
 #include <ctype.h>
+#include <math.h>
 #include <time.h>
+
+static int
+parse_positive_amount(const char* s, double* out_amount)
+{
+    if (!s || !s[0]) {
+        return -1;
+    }
+    char*  endptr = NULL;
+    double val = strtod(s, &endptr);
+    if (endptr == s || *endptr != '\0' || !isfinite(val) || val <= 0.0) {
+        return -1;
+    }
+    if (out_amount) {
+        *out_amount = val;
+    }
+    return 0;
+}
 
 static const char*
 ci_strstr(const char* haystack, const char* needle)
@@ -62,7 +79,7 @@ apply_smart_rules(csilk_json_t* rules_arr,
         if (!r) {
             continue;
         }
-        int is_active = csilk_json_get(r, "is_active") ? csilk_json_get_bool(r, "is_active") : 1;
+        int is_active = csilk_json_get(r, "is_active") ? db_get_bool(r, "is_active") : 1;
         if (!is_active) {
             continue;
         }
@@ -509,7 +526,17 @@ import_transactions_csv_execute(csilk_db_pool_t* pool,
             continue;
         }
 
-        double      amount = strtod(amount_s, NULL);
+        double amount = 0.0;
+        if (parse_positive_amount(amount_s, &amount) != 0) {
+            errors++;
+            append_import_error(errors_detail,
+                                sizeof(errors_detail),
+                                "第%d行: 无效金额 '%s'\n",
+                                line_num,
+                                amount_s);
+            line_start = next_line;
+            continue;
+        }
         double      price = price_s[0] ? strtod(price_s, NULL) : 0;
         double      qty = qty_s[0] ? strtod(qty_s, NULL) : 0;
         const char* currency = currency_s[0] ? currency_s : "CNY";
@@ -766,6 +793,18 @@ import_daily_expenses_csv_execute(csilk_db_pool_t* pool,
             continue;
         }
 
+        double amount = 0.0;
+        if (parse_positive_amount(amount_s, &amount) != 0) {
+            errors++;
+            append_import_error(errors_detail,
+                                sizeof(errors_detail),
+                                "第%d行: 无效金额 '%s'\n",
+                                line_num,
+                                amount_s);
+            line_start = next_line;
+            continue;
+        }
+
         const char* currency = currency_s[0] ? currency_s : "CNY";
         const char* exp_type = strcmp(exp_type_s, "income") == 0 ? "income" : "expense";
 
@@ -816,7 +855,6 @@ import_daily_expenses_csv_execute(csilk_db_pool_t* pool,
             continue;
         }
 
-        double     amount = strtod(amount_s, NULL);
         int        is_income = (strcmp(exp_type, "income") == 0);
         currency_t cur = currency_from_str(currency);
         money_t    amt_m;

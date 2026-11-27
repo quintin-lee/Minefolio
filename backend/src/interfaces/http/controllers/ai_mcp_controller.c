@@ -2,6 +2,7 @@
 #include "application/mcp/usecases.h"
 #include "application/mcp/commands.h"
 #include "application/task/async_task_manager.h"
+#include "domain/mcp/rules.h"
 #include "services/ai/tools/mcp/mcp_bridge.h"
 #include "application/auth/usecases.h"
 #include "common/response.h"
@@ -25,6 +26,24 @@ require_instance_admin(csilk_ctx_t* c, int64_t user_id)
     }
     respond_forbidden(c, "仅实例管理员允许管理本地脚本与 Stdio MCP 扩展");
     return 0;
+}
+
+/* 安全门禁：非空 secret_ref 仅实例管理员可配置（1004），且必须符合 MCP_SECRET_[A-Za-z0-9_]+ 白名单（1002） */
+static int
+validate_secret_ref_access(csilk_ctx_t* c, int64_t user_id, const char* secret_ref)
+{
+    if (!secret_ref || !secret_ref[0]) {
+        return 1;
+    }
+    if (!auth_usecase_is_instance_admin(db_get_pool(), user_id)) {
+        respond_error(c, 1004, "仅实例管理员允许配置 secret_ref");
+        return 0;
+    }
+    if (!mf_mcp_secret_ref_valid(secret_ref)) {
+        respond_bad_request(c, "secret_ref 非法：仅允许 MCP_SECRET_[A-Za-z0-9_]+");
+        return 0;
+    }
+    return 1;
 }
 
 /* Helper: 从请求体 JSON 读取可选字符串字段（缺失返回 NULL） */
@@ -61,6 +80,12 @@ api_ai_mcp_servers_create(csilk_ctx_t* c)
         }
     }
 
+    const char* secret_ref = body_get_str(body, "secret_ref");
+    if (!validate_secret_ref_access(c, user_id, secret_ref)) {
+        csilk_json_free(body);
+        return;
+    }
+
     /* 读取 timeout_ms，缺省 30000 */
     int timeout_ms = (int)db_get_num(body, "timeout_ms");
     if (timeout_ms <= 0) {
@@ -76,7 +101,7 @@ api_ai_mcp_servers_create(csilk_ctx_t* c)
         .args_json = body_get_str(body, "args"),
         .env_json = body_get_str(body, "env"),
         .headers_json = body_get_str(body, "headers"),
-        .secret_ref = body_get_str(body, "secret_ref"),
+        .secret_ref = secret_ref,
         .timeout_ms = timeout_ms,
     };
 
@@ -125,6 +150,12 @@ api_ai_mcp_servers_update(csilk_ctx_t* c)
         }
     }
 
+    const char* secret_ref = body_get_str(body, "secret_ref");
+    if (!validate_secret_ref_access(c, user_id, secret_ref)) {
+        csilk_json_free(body);
+        return;
+    }
+
     int timeout_ms = (int)db_get_num(body, "timeout_ms");
     if (timeout_ms <= 0) {
         timeout_ms = 30000;
@@ -140,7 +171,7 @@ api_ai_mcp_servers_update(csilk_ctx_t* c)
         .args_json = body_get_str(body, "args"),
         .env_json = body_get_str(body, "env"),
         .headers_json = body_get_str(body, "headers"),
-        .secret_ref = body_get_str(body, "secret_ref"),
+        .secret_ref = secret_ref,
         .timeout_ms = timeout_ms,
         .enabled = db_get_bool(body, "enabled") ? true : false,
     };

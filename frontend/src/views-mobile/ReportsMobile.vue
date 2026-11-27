@@ -51,10 +51,15 @@ async function load() {
   const m = Number(month.value.slice(5, 7))
 
   // 本地优先：先用本地 SQLite 聚合渲染，避免首屏空白
-  const local = aggregateMonthlyReport(y, m)
-  const hasLocalData = local.total_income > 0 || local.total_expense > 0
-  monthly.value = local
-  localOnly.value = !hasLocalData ? false : true
+  let hasLocalData = false
+  try {
+    const local = aggregateMonthlyReport(y, m)
+    hasLocalData = local.total_income > 0 || local.total_expense > 0
+    monthly.value = local
+    localOnly.value = !hasLocalData ? false : true
+  } catch (e) {
+    console.warn('[ReportsMobile] aggregateMonthlyReport failed, falling back to remote:', e)
+  }
 
   try {
     const res = await dailyExpensesApi.monthly(y, m)

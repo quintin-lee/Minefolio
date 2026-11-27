@@ -96,6 +96,29 @@ function parseRemotePayload(raw: unknown): Record<string, unknown> | undefined {
   }
 }
 
+/** 递归展平分类树，确保各级子分类进入本地 SQLite 且不被差异清理误删 */
+function flattenCategoryTree(nodes: any[]): any[] {
+  const flat: any[] = []
+  const visited = new Set<number>()
+  const visit = (items: any[]) => {
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue
+      if (item.id !== undefined && item.id !== null) {
+        const id = Number(item.id)
+        if (visited.has(id)) continue
+        visited.add(id)
+      }
+      const { children, ...rest } = item
+      flat.push(rest)
+      if (Array.isArray(children) && children.length > 0) {
+        visit(children)
+      }
+    }
+  }
+  visit(nodes)
+  return flat
+}
+
 export class SyncEngine {
   private static instance: SyncEngine | null = null
 
@@ -106,6 +129,7 @@ export class SyncEngine {
   private syncing = false
   private lastSyncAt: string | null = null
   private pushErrors: PushError[] = []
+  private syncEpoch = 0
 
   private constructor() {
     // 默认注册 6 张可写表；bootstrap 的 registerTable() 可覆盖同名定义。
@@ -234,6 +258,7 @@ export class SyncEngine {
   }
 
   reset(): void {
+    this.syncEpoch += 1
     this.queue = []
     this.lastSyncAt = null
     this.syncing = false
@@ -384,9 +409,11 @@ export class SyncEngine {
   }
 
   async pushLocal(): Promise<Map<string, Set<number>>> {
+    const epoch = this.syncEpoch
     const pushedInCycle = new Map<string, Set<number>>()
     this.loadQueue()
     for (const item of this.queue) {
+      if (epoch !== this.syncEpoch) return pushedInCycle
       if (item.conflict === 1) continue
       const def = this.registeredTables.get(item.table_name)
       if (!def) continue
@@ -406,6 +433,7 @@ export class SyncEngine {
         let effectiveId = recordId
         if (operation === 'create') {
           const res: any = config ? await def.api.create(payload, config) : await def.api.create(payload)
+          if (epoch !== this.syncEpoch) return pushedInCycle
           const newId = res?.id ?? (typeof res === 'number' ? res : null)
           if (newId) effectiveId = Number(newId)
           if (newId && newId !== recordId) {
@@ -429,9 +457,11 @@ export class SyncEngine {
         } else if (operation === 'update') {
           if (config) await def.api.update(recordId, payload, config)
           else await def.api.update(recordId, payload)
+          if (epoch !== this.syncEpoch) return pushedInCycle
         } else if (operation === 'delete') {
           if (config) await def.api.delete(recordId, config)
           else await def.api.delete(recordId)
+          if (epoch !== this.syncEpoch) return pushedInCycle
         }
         this.markSynced(item.id)
         if (operation !== 'delete' && effectiveId > 0) {
@@ -443,10 +473,10 @@ export class SyncEngine {
           set.add(effectiveId)
         }
       } catch (e: any) {
+        if (epoch !== this.syncEpoch) return pushedInCycle
         const code = Number(e?.response?.data?.code || 0)
         const status = Number(e?.response?.status || 0)
         if (code === AUTH_FAIL_CODE) {
-          this.authFailHandler?.()
           throw e
         }
         if (
@@ -456,8 +486,11 @@ export class SyncEngine {
           // 业务冲突：1004 响应不含记录数据，remote_payload 留空
           this.markConflict(item.id)
         } else if (VALIDATION_CODES.has(code) || status === 400 || status === 422) {
-          // 校验/权限类永久失败：放弃队列项，记录错误供设置页提示
+          // 校验/权限类永久失败：放弃队列项，记录错误供设置页提示；create 失败一并清理本地占位行
           const message = String(e?.response?.data?.message || e?.message || '离线数据同步失败')
+          if (operation === 'create') {
+            run(`DELETE FROM ${item.table_name} WHERE id = ?`, [recordId])
+          }
           run('DELETE FROM sync_queue WHERE id = ?', [item.id])
           this.pushErrors.push({ queueId: item.id, table: item.table_name, message })
           persist()
@@ -469,9 +502,12 @@ export class SyncEngine {
     return pushedInCycle
   }
 
-  async pullRemote(pushedInCycle?: Map<string, Set<number>>): Promise<void> {
+  async pullRemote(pushedInCycle?: Map<string, Set<number>>): Promise<boolean> {
+    const epoch = this.syncEpoch
+    let hadPullFailure = false
     const tables = Object.keys(API_BY_TABLE)
     for (const table of tables) {
+      if (epoch !== this.syncEpoch) return false
       const api = this.registeredTables.get(table)?.api ?? API_BY_TABLE[table]
       if (!api?.list) continue
       try {
@@ -480,8 +516,14 @@ export class SyncEngine {
         const seenIds = new Set<number>()
         let completedAllPages = false
         while (true) {
-          const res: any = await api.list({ page, page_size: pageSize })
-          const remoteRows = (res?.list ?? (Array.isArray(res) ? res : [])) as any[]
+          const params: Record<string, any> = { page, page_size: pageSize }
+          if (table === 'accounts') {
+            params.include_archived = 1
+          }
+          const res: any = await api.list(params)
+          if (epoch !== this.syncEpoch) return false
+          const rawRows = (res?.list ?? (Array.isArray(res) ? res : [])) as any[]
+          const remoteRows = table === 'categories' ? flattenCategoryTree(rawRows) : rawRows
           for (const remote of remoteRows) {
             if (remote?.id !== undefined && remote?.id !== null) seenIds.add(Number(remote.id))
             const localRow = rowsFrom(query(`SELECT * FROM ${table} WHERE id = ?`, [remote.id]))[0]
@@ -502,9 +544,9 @@ export class SyncEngine {
             }
           }
           if (
-            remoteRows.length === 0 ||
+            rawRows.length === 0 ||
             Array.isArray(res) ||
-            remoteRows.length < pageSize ||
+            rawRows.length < pageSize ||
             (res?.total !== undefined && page * pageSize >= res.total)
           ) {
             completedAllPages = true
@@ -517,7 +559,7 @@ export class SyncEngine {
             query('SELECT DISTINCT record_id FROM sync_queue WHERE table_name = ? AND synced = 0', [table])
           ).map((r) => Number(r.record_id)))
           const pushedIds = pushedInCycle?.get(table) ?? new Set<number>()
-          const hasLedgerId = ['assets', 'accounts', 'account_permissions', 'transactions', 'daily_expenses'].includes(table)
+          const hasLedgerId = ['categories', 'assets', 'accounts', 'account_permissions', 'transactions', 'daily_expenses'].includes(table)
           const activeLedgerId = Number(localStorage.getItem('minefolio_active_ledger_id') || 0)
           let localRows: any[] = []
           if (hasLedgerId) {
@@ -541,12 +583,20 @@ export class SyncEngine {
             }
           }
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (epoch !== this.syncEpoch) return false
+        const code = Number(err?.response?.data?.code || 0)
+        if (code === AUTH_FAIL_CODE) {
+          throw err
+        }
+        hadPullFailure = true
         console.error(`[sync] Failed to pull remote data for table ${table}:`, err)
       }
     }
+    if (epoch !== this.syncEpoch) return false
     persist()
     this.emitStateChanged()
+    return !hadPullFailure
   }
 
   private upsertLocal(table: string, record: Record<string, unknown>): void {
@@ -567,19 +617,27 @@ export class SyncEngine {
 
   async syncNow(): Promise<void> {
     if (this.syncing) return
+    const epoch = this.syncEpoch
     this.syncing = true
     this.emitStateChanged()
     try {
       const pushedInCycle = await this.pushLocal()
-      await this.pullRemote(pushedInCycle)
-      this.setLastSync(new Date().toISOString())
+      if (epoch !== this.syncEpoch) return
+      const pullSucceeded = await this.pullRemote(pushedInCycle)
+      if (epoch !== this.syncEpoch) return
+      if (pullSucceeded) {
+        this.setLastSync(new Date().toISOString())
+      }
     } catch (e: any) {
-      // 网络/超时静默；鉴权失效由 pushLocal 调用 handler 后抛出
+      if (epoch !== this.syncEpoch) return
+      // 网络/超时静默；鉴权失效统一由 syncNow 触发 handler（pushLocal / pullRemote 遇 1001 均直接抛出）
       const code = Number(e?.response?.data?.code || 0)
       if (code === AUTH_FAIL_CODE) this.authFailHandler?.()
     } finally {
-      this.syncing = false
-      this.emitStateChanged()
+      if (epoch === this.syncEpoch) {
+        this.syncing = false
+        this.emitStateChanged()
+      }
     }
   }
 
@@ -590,6 +648,25 @@ export class SyncEngine {
       this.loadQueue()
       await this.syncNow()
     } else {
+      const row = rowsFrom(query(
+        'SELECT table_name, record_id, operation, remote_payload FROM sync_queue WHERE id = ?',
+        [queueId]
+      ))[0]
+      if (row) {
+        const tableName = String(row.table_name)
+        const recordId = Number(row.record_id)
+        const operation = String(row.operation) as SyncOperation
+        const remotePayload = parseRemotePayload(row.remote_payload)
+        if (this.registeredTables.has(tableName)) {
+          if (operation === 'create') {
+            run(`DELETE FROM ${tableName} WHERE id = ?`, [recordId])
+          } else if (remotePayload) {
+            this.upsertLocal(tableName, { ...remotePayload, id: remotePayload.id ?? recordId })
+          } else if (operation === 'delete') {
+            run(`UPDATE ${tableName} SET __deleted = 0 WHERE id = ?`, [recordId])
+          }
+        }
+      }
       run('DELETE FROM sync_queue WHERE id = ?', [queueId])
       persist()
       this.loadQueue()

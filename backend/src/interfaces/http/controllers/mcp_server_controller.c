@@ -49,7 +49,7 @@ mcp_send_response(csilk_ctx_t*        c,
 {
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "jsonrpc", "2.0");
-    if (id && id != csilk_json_null()) {
+    if (id && !csilk_json_is_null(id)) {
         /* id 指向请求体子树（body 所有）；add_object 会夺取节点所有权，
            故先深拷贝再入 resp，避免在 body 释放后 use-after-free。 */
         csilk_json_add_object(resp, "id", csilk_json_copy((csilk_json_t*)id));

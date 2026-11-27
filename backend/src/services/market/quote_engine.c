@@ -67,10 +67,109 @@ quote_engine_get_proxy(void)
     return tls_proxy;
 }
 
+typedef struct {
+    char location[2049];
+} quote_header_state_t;
+
+static size_t
+quote_header_location_cb(char* buffer, size_t size, size_t nitems, void* userdata)
+{
+    size_t                total = size * nitems;
+    quote_header_state_t* state = (quote_header_state_t*)userdata;
+    if (!state || total < 9) {
+        return total;
+    }
+    if (strncasecmp(buffer, "location:", 9) == 0) {
+        const char* p = buffer + 9;
+        size_t      rem = total - 9;
+        while (rem > 0 && (*p == ' ' || *p == '\t')) {
+            p++;
+            rem--;
+        }
+        while (rem > 0 && (p[rem - 1] == '\r' || p[rem - 1] == '\n' || p[rem - 1] == ' ' ||
+                           p[rem - 1] == '\t')) {
+            rem--;
+        }
+        if (rem > 0 && rem < sizeof(state->location)) {
+            memcpy(state->location, p, rem);
+            state->location[rem] = '\0';
+        } else if (rem >= sizeof(state->location)) {
+            state->location[0] = '\0';
+        }
+    }
+    return total;
+}
+
+static bool
+quote_resolve_redirect_url(const char* current_url,
+                           const char* location,
+                           char*       out_url,
+                           size_t      out_cap)
+{
+    if (!current_url || !location || !location[0] || !out_url || out_cap == 0) {
+        return false;
+    }
+    if (strncasecmp(location, "http://", 7) == 0 || strncasecmp(location, "https://", 8) == 0) {
+        int n = snprintf(out_url, out_cap, "%s", location);
+        return n > 0 && (size_t)n < out_cap;
+    }
+    if (location[0] == '/' && location[1] == '/') {
+        const char* scheme_end = strstr(current_url, "://");
+        if (!scheme_end) {
+            return false;
+        }
+        size_t scheme_len = (size_t)(scheme_end - current_url) + 1; /* include ':' */
+        int    n = snprintf(out_url, out_cap, "%.*s%s", (int)scheme_len, current_url, location);
+        return n > 0 && (size_t)n < out_cap;
+    }
+    /* Reject non-http(s) explicit schemes like file://, gopher://, etc. */
+    const char* colon = strchr(location, ':');
+    const char* slash = strchr(location, '/');
+    const char* qmark = strchr(location, '?');
+    if (colon && (!slash || colon < slash) && (!qmark || colon < qmark)) {
+        return false;
+    }
+    if (location[0] == '/') {
+        const char* p = strstr(current_url, "://");
+        if (!p) {
+            return false;
+        }
+        const char* host_end = strchr(p + 3, '/');
+        size_t      len = host_end ? (size_t)(host_end - current_url) : strlen(current_url);
+        int         n = snprintf(out_url, out_cap, "%.*s%s", (int)len, current_url, location);
+        return n > 0 && (size_t)n < out_cap;
+    }
+    if (location[0] == '?') {
+        const char* qpos = strchr(current_url, '?');
+        size_t      base_len = qpos ? (size_t)(qpos - current_url) : strlen(current_url);
+        int         n = snprintf(out_url, out_cap, "%.*s%s", (int)base_len, current_url, location);
+        return n > 0 && (size_t)n < out_cap;
+    }
+    const char* scheme_end = strstr(current_url, "://");
+    if (!scheme_end) {
+        return false;
+    }
+    const char* qpos = strchr(current_url, '?');
+    size_t      path_end = qpos ? (size_t)(qpos - current_url) : strlen(current_url);
+    const char* last_slash = NULL;
+    for (size_t i = (size_t)(scheme_end - current_url) + 3; i < path_end; i++) {
+        if (current_url[i] == '/') {
+            last_slash = &current_url[i];
+        }
+    }
+    if (!last_slash) {
+        int n = snprintf(out_url, out_cap, "%.*s/%s", (int)path_end, current_url, location);
+        return n > 0 && (size_t)n < out_cap;
+    }
+    size_t dir_len = (size_t)(last_slash - current_url) + 1;
+    int    n = snprintf(out_url, out_cap, "%.*s%s", (int)dir_len, current_url, location);
+    return n > 0 && (size_t)n < out_cap;
+}
+
 char*
 quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_t* out_len)
 {
-    if (!url || atomic_load(&g_quote_stop)) {
+    if (!url || atomic_load(&g_quote_stop) || strlen(url) > 2048) {
         return NULL;
     }
 
@@ -87,78 +186,114 @@ quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_
         pthread_mutex_unlock(&g_proxy_mutex);
     }
 
-    char resolve_entry[320] = {0};
-    if (mf_http_validate_and_resolve_url(
-            url, 2048, false, (px && px[0]), resolve_entry, sizeof(resolve_entry)) != 0) {
-        return NULL;
-    }
+    char current_url[2049];
+    snprintf(current_url, sizeof(current_url), "%s", url);
 
-    CURL* curl = curl_easy_init();
-    if (!curl) {
-        return NULL;
-    }
-
-    mf_curl_buf_t      buf = {.data = NULL, .size = 0, .cap = 0, .max_bytes = MF_CURL_MAX_4MB};
-    struct curl_slist* resolve_list = mf_http_curl_apply_security(curl, resolve_entry, px, true);
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, quote_curl_xferinfo_cb);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_sec > 0 ? (long)timeout_sec : 3L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, mf_curl_bounded_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-
-    /* SSL / TLS Verification: strict peer and host verification by default */
-    long verify_peer = 1L;
-    long verify_host = 2L;
-
-    const char* insecure_env = getenv("MINEFOLIO_ALLOW_INSECURE_SSL");
-    if (insecure_env && (strcmp(insecure_env, "1") == 0 || strcasecmp(insecure_env, "true") == 0)) {
-        verify_peer = 0L;
-        verify_host = 0L;
-        static atomic_bool s_warned_insecure_ssl = false;
-        if (!atomic_exchange(&s_warned_insecure_ssl, true)) {
-            fprintf(stderr,
-                    "[SECURITY WARNING] quote_engine: Insecure SSL verification is explicitly "
-                    "enabled via MINEFOLIO_ALLOW_INSECURE_SSL!\n");
+    const int max_hops = 3;
+    for (int hop = 0; hop <= max_hops; hop++) {
+        if (atomic_load(&g_quote_stop)) {
+            return NULL;
         }
-    }
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, verify_peer);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, verify_host);
 
-    /* Optional custom CA bundle path (e.g. for enterprise proxy or self-hosted CA) */
-    const char* custom_ca = getenv("MINEFOLIO_CA_BUNDLE");
-    if (!custom_ca || !custom_ca[0]) {
-        custom_ca = getenv("SSL_CERT_FILE");
-    }
-    if (custom_ca && custom_ca[0]) {
-        curl_easy_setopt(curl, CURLOPT_CAINFO, custom_ca);
-    }
+        char resolve_entry[320] = {0};
+        if (mf_http_validate_and_resolve_url(
+                current_url, 2048, false, (px && px[0]), resolve_entry, sizeof(resolve_entry)) !=
+            0) {
+            return NULL;
+        }
 
-    if (px && px[0]) {
-        curl_easy_setopt(curl, CURLOPT_PROXY, px);
-    }
+        CURL* curl = curl_easy_init();
+        if (!curl) {
+            return NULL;
+        }
 
-    CURLcode res = curl_easy_perform(curl);
-    long     http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-    if (resolve_list) {
-        curl_slist_free_all(resolve_list);
-    }
-    curl_easy_cleanup(curl);
+        mf_curl_buf_t buf = {.data = NULL, .size = 0, .cap = 0, .max_bytes = MF_CURL_MAX_4MB};
+        quote_header_state_t hdr_state = {0};
+        struct curl_slist*   resolve_list =
+            mf_http_curl_apply_security(curl, resolve_entry, px, false);
+        curl_easy_setopt(curl, CURLOPT_URL, current_url);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, quote_curl_xferinfo_cb);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_sec > 0 ? (long)timeout_sec : 3L);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, mf_curl_bounded_write_cb);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, quote_header_location_cb);
+        curl_easy_setopt(curl, CURLOPT_HEADERDATA, &hdr_state);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
 
-    if (res != CURLE_OK || http_code < 200 || http_code >= 400) {
-        if (buf.data) {
+        /* SSL / TLS Verification: strict peer and host verification by default */
+        long verify_peer = 1L;
+        long verify_host = 2L;
+
+        const char* insecure_env = getenv("MINEFOLIO_ALLOW_INSECURE_SSL");
+        if (insecure_env &&
+            (strcmp(insecure_env, "1") == 0 || strcasecmp(insecure_env, "true") == 0)) {
+            verify_peer = 0L;
+            verify_host = 0L;
+            static atomic_bool s_warned_insecure_ssl = false;
+            if (!atomic_exchange(&s_warned_insecure_ssl, true)) {
+                fprintf(stderr,
+                        "[SECURITY WARNING] quote_engine: Insecure SSL verification is explicitly "
+                        "enabled via MINEFOLIO_ALLOW_INSECURE_SSL!\n");
+            }
+        }
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, verify_peer);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, verify_host);
+
+        /* Optional custom CA bundle path (e.g. for enterprise proxy or self-hosted CA) */
+        const char* custom_ca = getenv("MINEFOLIO_CA_BUNDLE");
+        if (!custom_ca || !custom_ca[0]) {
+            custom_ca = getenv("SSL_CERT_FILE");
+        }
+        if (custom_ca && custom_ca[0]) {
+            curl_easy_setopt(curl, CURLOPT_CAINFO, custom_ca);
+        }
+
+        if (px && px[0]) {
+            curl_easy_setopt(curl, CURLOPT_PROXY, px);
+        }
+
+        CURLcode res = curl_easy_perform(curl);
+        long     http_code = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+        if (resolve_list) {
+            curl_slist_free_all(resolve_list);
+        }
+        curl_easy_cleanup(curl);
+
+        if (res != CURLE_OK) {
             free(buf.data);
+            return NULL;
         }
-        return NULL;
+
+        if (http_code == 301 || http_code == 302 || http_code == 303 || http_code == 307 ||
+            http_code == 308) {
+            free(buf.data);
+            if (!hdr_state.location[0] || hop == max_hops) {
+                return NULL;
+            }
+            char next_url[2049];
+            if (!quote_resolve_redirect_url(
+                    current_url, hdr_state.location, next_url, sizeof(next_url))) {
+                return NULL;
+            }
+            snprintf(current_url, sizeof(current_url), "%s", next_url);
+            continue;
+        }
+
+        if (http_code < 200 || http_code >= 400) {
+            free(buf.data);
+            return NULL;
+        }
+
+        if (out_len) {
+            *out_len = buf.size;
+        }
+        return buf.data;
     }
 
-    if (out_len) {
-        *out_len = buf.size;
-    }
-    return buf.data;
+    return NULL;
 }
 
 int
@@ -228,6 +363,10 @@ int
 quote_engine_fetch_quote(const char* symbol, const char* source_type, market_quote_t* out_quote)
 {
     if (!symbol || !symbol[0] || !out_quote) {
+        return -1;
+    }
+
+    if (atomic_load(&g_quote_stop)) {
         return -1;
     }
 
@@ -480,23 +619,81 @@ populate_mock_sparkline(double curr, double change_pct, double* out_spark, int c
     }
 }
 
+static bool
+indices_cache_is_stale_locked(time_t now)
+{
+    return (g_indices_cache.count == 0) ||
+           ((now - g_indices_cache.last_updated) > INDICES_CACHE_TTL_SEC);
+}
+
+static const global_index_item_t*
+find_cached_index_by_symbol(const global_index_item_t* items, int count, const char* symbol)
+{
+    if (!items || count <= 0 || !symbol) {
+        return NULL;
+    }
+    for (int i = 0; i < count; i++) {
+        if (strcmp(items[i].symbol, symbol) == 0 && items[i].current_price > 0) {
+            return &items[i];
+        }
+    }
+    return NULL;
+}
+
 /* 计算并回填指数缓存：在锁外做 HTTP 拉取（避免阻塞读路径），
-   写共享缓存时短暂持锁，刷新期间读路径继续服务旧数据（stale-while-revalidate）。
+   全部 15 条指数拉取完成后一次性持锁原子替换缓存，刷新期间读路径继续服务完整旧数据（stale-while-revalidate）。
    并发调用方须以 refresh_lock 串行化本函数（见 refresh_indices_cache_offlock）。 */
 static void
 refresh_indices_cache_offlock_impl(void)
 {
-    time_t now = time(NULL);
+    time_t              now = time(NULL);
+    market_clock_item_t local_clocks[8];
+    int                 local_clock_count = 0;
+    quote_engine_calc_market_clocks(now, local_clocks, 8, &local_clock_count);
 
-    /* 短暂持锁装配时钟与缓存头部 */
+    int                 n = (int)(sizeof(g_preset_indices) / sizeof(g_preset_indices[0]));
+    global_index_item_t local_items[MAX_PRESET_INDICES];
+    int                 local_count = 0;
+
+    global_index_item_t prev_items[MAX_PRESET_INDICES];
+    int                 prev_count = 0;
     pthread_mutex_lock(&g_indices_cache.lock);
-    g_indices_cache.clock_count = 0;
-    quote_engine_calc_market_clocks(now, g_indices_cache.clocks, 8, &g_indices_cache.clock_count);
-    int n = sizeof(g_preset_indices) / sizeof(g_preset_indices[0]);
-    g_indices_cache.count = 0;
+    prev_count = g_indices_cache.count;
+    if (prev_count > MAX_PRESET_INDICES) {
+        prev_count = MAX_PRESET_INDICES;
+    }
+    if (prev_count > 0) {
+        memcpy(prev_items, g_indices_cache.items, sizeof(global_index_item_t) * (size_t)prev_count);
+    }
     pthread_mutex_unlock(&g_indices_cache.lock);
 
-    for (int i = 0; i < n; i++) {
+    int active_attempted = 0;
+    int active_succeeded = 0;
+
+    for (int i = 0; i < n && local_count < MAX_PRESET_INDICES; i++) {
+        const char* mkt =
+            get_market_clock_id(g_preset_indices[i].category, g_preset_indices[i].symbol);
+        bool active = is_market_active(mkt, local_clocks, local_clock_count);
+        if (active) {
+            active_attempted++;
+        }
+
+        const global_index_item_t* prev_item =
+            find_cached_index_by_symbol(prev_items, prev_count, g_preset_indices[i].symbol);
+
+        /* 锁外做 HTTP 拉取，避免长时间持有读缓存锁阻塞读路径 */
+        market_quote_t q;
+        bool fetched = (active &&
+                        quote_engine_fetch_quote(
+                            g_preset_indices[i].symbol, g_preset_indices[i].source, &q) == 0 &&
+                        q.current_price > 0);
+        if (fetched) {
+            active_succeeded++;
+        } else if (prev_item) {
+            local_items[local_count++] = *prev_item;
+            continue;
+        }
+
         global_index_item_t item;
         memset(&item, 0, sizeof(item));
         strncpy(item.symbol, g_preset_indices[i].symbol, sizeof(item.symbol) - 1);
@@ -505,16 +702,7 @@ refresh_indices_cache_offlock_impl(void)
         strncpy(item.region_flag, g_preset_indices[i].flag, sizeof(item.region_flag) - 1);
         strncpy(item.currency, g_preset_indices[i].currency, sizeof(item.currency) - 1);
 
-        const char* mkt =
-            get_market_clock_id(g_preset_indices[i].category, g_preset_indices[i].symbol);
-        bool active = is_market_active(mkt, g_indices_cache.clocks, g_indices_cache.clock_count);
-
-        /* 锁外做 HTTP 拉取，避免长时间持有读缓存锁阻塞读路径 */
-        market_quote_t q;
-        if (active &&
-            quote_engine_fetch_quote(g_preset_indices[i].symbol, g_preset_indices[i].source, &q) ==
-                0 &&
-            q.current_price > 0) {
+        if (fetched) {
             item.current_price = q.current_price;
             item.change_percent = q.change_percent;
             snprintf(item.quote_time, sizeof(item.quote_time), "%s", q.quote_time);
@@ -538,18 +726,40 @@ refresh_indices_cache_offlock_impl(void)
         item.sparkline_count = 8;
         populate_mock_sparkline(item.current_price, item.change_percent, item.sparkline, 8);
 
-        /* 短暂持锁写单个条目 */
-        pthread_mutex_lock(&g_indices_cache.lock);
-        global_index_item_t* slot = &g_indices_cache.items[g_indices_cache.count];
-        *slot = item;
-        g_indices_cache.count++;
-        pthread_mutex_unlock(&g_indices_cache.lock);
+        local_items[local_count++] = item;
     }
 
+    time_t finished_at = time(NULL);
     pthread_mutex_lock(&g_indices_cache.lock);
-    g_indices_cache.last_updated = now;
-    g_indices_cache.generation++;
+    if (prev_count > 0 && active_attempted > 0 && active_succeeded == 0) {
+        memcpy(g_indices_cache.clocks,
+               local_clocks,
+               sizeof(market_clock_item_t) * (size_t)local_clock_count);
+        g_indices_cache.clock_count = local_clock_count;
+    } else {
+        memcpy(
+            g_indices_cache.items, local_items, sizeof(global_index_item_t) * (size_t)local_count);
+        g_indices_cache.count = local_count;
+        memcpy(g_indices_cache.clocks,
+               local_clocks,
+               sizeof(market_clock_item_t) * (size_t)local_clock_count);
+        g_indices_cache.clock_count = local_clock_count;
+        g_indices_cache.last_updated = finished_at;
+        g_indices_cache.generation++;
+    }
     pthread_mutex_unlock(&g_indices_cache.lock);
+}
+
+/* 须在持有 g_indices_cache.refresh_lock 时调用：双重检查缓存是否仍陈旧后再刷新。 */
+static void
+refresh_indices_cache_if_stale_locked(void)
+{
+    pthread_mutex_lock(&g_indices_cache.lock);
+    bool still_stale = indices_cache_is_stale_locked(time(NULL));
+    pthread_mutex_unlock(&g_indices_cache.lock);
+    if (still_stale) {
+        refresh_indices_cache_offlock_impl();
+    }
 }
 
 /* 串行化入口：以 refresh_lock 保护 refresh_indices_cache_offlock_impl，
@@ -716,12 +926,21 @@ quote_engine_get_indices(const char*          category,
        持锁仅做数据拷贝，不再阻塞于 HTTP。 */
     pthread_mutex_lock(&g_indices_cache.lock);
     time_t now = time(NULL);
-    bool   stale = (g_indices_cache.count == 0) ||
-                   ((now - g_indices_cache.last_updated) > INDICES_CACHE_TTL_SEC);
+    bool   has_cached = (g_indices_cache.count > 0);
+    bool   stale = indices_cache_is_stale_locked(now);
     pthread_mutex_unlock(&g_indices_cache.lock);
 
     if (stale) {
-        refresh_indices_cache_offlock();
+        if (has_cached) {
+            if (pthread_mutex_trylock(&g_indices_cache.refresh_lock) == 0) {
+                refresh_indices_cache_if_stale_locked();
+                pthread_mutex_unlock(&g_indices_cache.refresh_lock);
+            }
+        } else {
+            pthread_mutex_lock(&g_indices_cache.refresh_lock);
+            refresh_indices_cache_if_stale_locked();
+            pthread_mutex_unlock(&g_indices_cache.refresh_lock);
+        }
     }
 
     pthread_mutex_lock(&g_indices_cache.lock);

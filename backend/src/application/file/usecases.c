@@ -38,36 +38,3 @@ file_usecase_parse(void*                   pool,
     }
     return rc;
 }
-
-int
-file_usecase_import_transactions(
-    void* pool, int64_t user_id, const char* csv_data, size_t csv_len, mf_import_result_t* out)
-{
-    /* Delegate to existing service - import logic is complex with cross-domain deps */
-    /* This is a placeholder that will be filled by the infrastructure layer */
-    (void)pool;
-    (void)user_id;
-    (void)csv_data;
-    (void)csv_len;
-    out->imported = 0;
-    out->errors = 0;
-    out->matched_rules = 0;
-    out->errors_detail[0] = '\0';
-    return 0;
-}
-
-int
-file_usecase_import_daily_expenses(
-    void* pool, int64_t user_id, const char* csv_data, size_t csv_len, mf_import_result_t* out)
-{
-    /* Delegate to existing service - import logic is complex with cross-domain deps */
-    (void)pool;
-    (void)user_id;
-    (void)csv_data;
-    (void)csv_len;
-    out->imported = 0;
-    out->errors = 0;
-    out->matched_rules = 0;
-    out->errors_detail[0] = '\0';
-    return 0;
-}

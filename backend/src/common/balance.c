@@ -1,12 +1,49 @@
 #include "common/balance.h"
 #include "common/db.h"
-#include "core/ledger/ledger_engine.h"
-#include "services/market/exchange_rate_service.h"
 #include "csilk/csilk.h"
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static pthread_mutex_t    s_balance_hooks_lock = PTHREAD_MUTEX_INITIALIZER;
+static mf_balance_hooks_t s_balance_hooks = {0};
+
+void
+balance_register_hooks(const mf_balance_hooks_t* hooks)
+{
+    pthread_mutex_lock(&s_balance_hooks_lock);
+    if (!hooks) {
+        memset(&s_balance_hooks, 0, sizeof(s_balance_hooks));
+    } else {
+        if (hooks->get_fx_to_cny_safe) {
+            s_balance_hooks.get_fx_to_cny_safe = hooks->get_fx_to_cny_safe;
+        }
+        if (hooks->get_fx_historical_or_latest) {
+            s_balance_hooks.get_fx_historical_or_latest = hooks->get_fx_historical_or_latest;
+        }
+        if (hooks->calc_sell_position) {
+            s_balance_hooks.calc_sell_position = hooks->calc_sell_position;
+        }
+        if (hooks->calc_sell_position_fifo) {
+            s_balance_hooks.calc_sell_position_fifo = hooks->calc_sell_position_fifo;
+        }
+        if (hooks->rebuild_position_ex) {
+            s_balance_hooks.rebuild_position_ex = hooks->rebuild_position_ex;
+        }
+    }
+    pthread_mutex_unlock(&s_balance_hooks_lock);
+}
+
+static mf_balance_hooks_t
+balance_get_hooks(void)
+{
+    pthread_mutex_lock(&s_balance_hooks_lock);
+    mf_balance_hooks_t copy = s_balance_hooks;
+    pthread_mutex_unlock(&s_balance_hooks_lock);
+    return copy;
+}
 
 static bool
 resolve_currency_to_cny_strict(csilk_db_pool_t* pool,
@@ -26,12 +63,16 @@ resolve_currency_to_cny_strict(csilk_db_pool_t* pool,
         return true;
     }
 
-    double known_rate = 0.0;
+    mf_balance_hooks_t hooks = balance_get_hooks();
+    double             known_rate = 0.0;
     if (pool && tx_date && tx_date[0]) {
         /* 先校验是否确有历史记录或属于已注册合法币种，杜绝未知币种代码悄然按 1.0 折算 */
         double safe_live = 0.0;
-        bool   has_safe = (exchange_rate_get_to_cny_safe(code, &safe_live) == 0);
-        double hist = exchange_rate_get_historical_or_latest(pool, cur, tx_date);
+        bool   has_safe =
+            (hooks.get_fx_to_cny_safe != NULL && hooks.get_fx_to_cny_safe(code, &safe_live) == 0);
+        double hist = hooks.get_fx_historical_or_latest
+                          ? hooks.get_fx_historical_or_latest(pool, cur, tx_date)
+                          : 0.0;
         if ((has_safe || (hist > 0.0 && hist != 1.0)) && isfinite(hist) && hist > 0.0) {
             *out_rate = hist;
             return true;
@@ -39,8 +80,8 @@ resolve_currency_to_cny_strict(csilk_db_pool_t* pool,
         return false;
     }
 
-    if (exchange_rate_get_to_cny_safe(code, &known_rate) == 0 && isfinite(known_rate) &&
-        known_rate > 0.0) {
+    if (hooks.get_fx_to_cny_safe && hooks.get_fx_to_cny_safe(code, &known_rate) == 0 &&
+        isfinite(known_rate) && known_rate > 0.0) {
         *out_rate = known_rate;
         return true;
     }
@@ -555,34 +596,35 @@ apply_position_fc_dated(csilk_db_pool_t* pool,
             new_net = price;
         }
     } else if (strcmp(type, "sell") == 0) {
-        const char* cost_method = csilk_json_get_string(pr, "cost_method");
-        money_t     cost_red, trade_pnl;
+        const char*        cost_method = csilk_json_get_string(pr, "cost_method");
+        money_t            cost_red, trade_pnl;
+        mf_balance_hooks_t hooks = balance_get_hooks();
         if (cost_method && strcmp(cost_method, "fifo") == 0) {
-            if (ledger_calc_sell_position_fifo(pool,
-                                               user_id,
-                                               asset_id,
-                                               qty,
-                                               price,
-                                               fee,
-                                               &new_qty,
-                                               &new_cost,
-                                               &cost_red,
-                                               &trade_pnl) != 0) {
+            if (!hooks.calc_sell_position_fifo || hooks.calc_sell_position_fifo(pool,
+                                                                                user_id,
+                                                                                asset_id,
+                                                                                qty,
+                                                                                price,
+                                                                                fee,
+                                                                                &new_qty,
+                                                                                &new_cost,
+                                                                                &cost_red,
+                                                                                &trade_pnl) != 0) {
                 csilk_json_free(pos);
                 CSILK_LOG_W("apply_position: fifo sell calculation failed asset_id=%lld",
                             (long long)asset_id);
                 return -1;
             }
         } else {
-            if (ledger_calc_sell_position(old_qty,
-                                          old_cost,
-                                          qty,
-                                          price,
-                                          fee,
-                                          &new_qty,
-                                          &new_cost,
-                                          &cost_red,
-                                          &trade_pnl) != 0) {
+            if (!hooks.calc_sell_position || hooks.calc_sell_position(old_qty,
+                                                                      old_cost,
+                                                                      qty,
+                                                                      price,
+                                                                      fee,
+                                                                      &new_qty,
+                                                                      &new_cost,
+                                                                      &cost_red,
+                                                                      &trade_pnl) != 0) {
                 csilk_json_free(pos);
                 CSILK_LOG_W("apply_position: sell calculation failed asset_id=%lld",
                             (long long)asset_id);
@@ -709,14 +751,20 @@ rollback_position_fc(csilk_db_pool_t* pool,
         return -1;
     }
 
-    ledger_position_state_t state;
-    int rc = ledger_rebuild_position_ex(pool, user_id, asset_id, &state, exclude_tx_id);
+    mf_balance_hooks_t hooks = balance_get_hooks();
+    if (!hooks.rebuild_position_ex) {
+        CSILK_LOG_E("rollback_position_fc: rebuild_position_ex hook not registered");
+        return -1;
+    }
+
+    currency_t rebuilt_cur = CURRENCY_CNY;
+    int        rc = hooks.rebuild_position_ex(pool, user_id, asset_id, exclude_tx_id, &rebuilt_cur);
     if (rc != 0) {
         return rc;
     }
 
     if (out_position_delta) {
-        *out_position_delta = money_zero(state.current_value.currency);
+        *out_position_delta = money_zero(rebuilt_cur);
     }
     return 0;
 }

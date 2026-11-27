@@ -18,6 +18,59 @@
 #include <stdint.h>
 
 /**
+ * @brief 上层账本与汇率服务向 common/balance 注入的回调钩子表（依赖倒置）
+ *
+ * common/balance 处于公共底层，不得直接依赖 core/ledger 或 services/market；
+ * 运行时由上层（main.c / ledger_register_balance_hooks）在启动阶段注册具体实现。
+ */
+typedef struct {
+    /** 查询指定币种对 CNY 的实时安全汇率（0 成功，-1 未知币种） */
+    int (*get_fx_to_cny_safe)(const char* currency, double* out_rate);
+
+    /** 按交易日期查询历史或最新对 CNY 汇率 */
+    double (*get_fx_historical_or_latest)(csilk_db_pool_t* pool,
+                                          currency_t       cur,
+                                          const char*      sample_date);
+
+    /** 加权平均法计算卖出持仓变化 */
+    int (*calc_sell_position)(quantity_t  prev_qty,
+                              money_t     prev_cost,
+                              quantity_t  sell_qty,
+                              price_t     sell_price,
+                              money_t     sell_fee,
+                              quantity_t* out_qty,
+                              money_t*    out_cost,
+                              money_t*    out_cost_reduction,
+                              money_t*    out_realized_pnl);
+
+    /** FIFO 先进先出法计算卖出持仓变化 */
+    int (*calc_sell_position_fifo)(csilk_db_pool_t* pool,
+                                   int64_t          user_id,
+                                   int64_t          asset_id,
+                                   quantity_t       sell_qty,
+                                   price_t          sell_price,
+                                   money_t          sell_fee,
+                                   quantity_t*      out_qty,
+                                   money_t*         out_cost,
+                                   money_t*         out_cost_reduction,
+                                   money_t*         out_realized_pnl);
+
+    /** 基于交易事件流与检查点重放重建持仓状态（供回滚路径使用） */
+    int (*rebuild_position_ex)(csilk_db_pool_t* pool,
+                               int64_t          user_id,
+                               int64_t          asset_id,
+                               int64_t          exclude_tx_id,
+                               currency_t*      out_currency);
+} mf_balance_hooks_t;
+
+/**
+ * @brief 注册余额与持仓引擎所需的上层回调钩子
+ *
+ * 传入非 NULL 时仅覆盖非 NULL 钩子字段（支持多模块组合注册）；传入 NULL 时清空全部钩子。
+ */
+void balance_register_hooks(const mf_balance_hooks_t* hooks);
+
+/**
  * @brief 判断资产类型的资金流动方向系数
  * @param[in] asset_type 资产类别编码字符串（如 "cash", "credit_card", "loan" 等）
  * @return int 1: 正向资产账户；-1: 负债类账户

@@ -18,7 +18,7 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 
 RUN --mount=type=bind,source=hosts,target=/etc/hosts \
-    npm install --registry=${NPM_REGISTRY}
+    npm ci --registry=${NPM_REGISTRY}
 
 COPY frontend ./
 
@@ -33,7 +33,6 @@ FROM nginx:alpine AS frontend-runtime
 
 COPY nginx/minefolio.docker.conf /etc/nginx/conf.d/default.conf
 COPY --from=frontend-build /app/frontend/dist /opt/minefolio/frontend/dist
-COPY --from=frontend-build /app/frontend/dist /usr/share/nginx/html
 
 EXPOSE 80
 

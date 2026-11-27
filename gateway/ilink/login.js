@@ -6,12 +6,44 @@ function normalizeQrContent(res) {
   return res.qrcode_img_content || res.qrcode_url || res.qr_content || res.qrcode || '';
 }
 
-function buildRedirectBaseUrl(redirectHost) {
-  const host = String(redirectHost || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-  if (!host || /[\s/\\]/.test(host)) {
+function isAllowedWeixinHost(hostname) {
+  if (!hostname || hostname.startsWith('.') || hostname.includes('..')) {
+    return false;
+  }
+  return hostname === 'weixin.qq.com' || hostname.endsWith('.weixin.qq.com');
+}
+
+function normalizeAllowedBaseUrl(rawUrl) {
+  const raw = String(rawUrl || '').trim();
+  if (!raw || /[\s\\]/.test(raw)) {
     return null;
   }
-  return `https://${host}`;
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) {
+    return null;
+  }
+  if ((parsed.pathname && parsed.pathname !== '/') || parsed.search || parsed.hash) {
+    return null;
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  if (!isAllowedWeixinHost(hostname)) {
+    return null;
+  }
+  return `https://${hostname}`;
+}
+
+function buildRedirectBaseUrl(redirectHost) {
+  const raw = String(redirectHost || '').trim();
+  if (!raw || /[\s\\]/.test(raw)) {
+    return null;
+  }
+  const candidate = raw.includes('://') ? raw : `https://${raw}`;
+  return normalizeAllowedBaseUrl(candidate);
 }
 
 async function runLogin({
@@ -142,10 +174,11 @@ async function runLogin({
         });
         return { ok: false, reason: 'invalid_confirmed' };
       }
+      const validatedBaseUrl = normalizeAllowedBaseUrl(statusRes.baseurl);
       const account = {
         bot_token: statusRes.bot_token,
         ilink_bot_id: statusRes.ilink_bot_id,
-        baseurl: statusRes.baseurl || activeBaseUrl || undefined,
+        baseurl: validatedBaseUrl || activeBaseUrl || undefined,
         ilink_user_id: statusRes.ilink_user_id || '',
       };
       state.writeAccount(account);
@@ -172,4 +205,6 @@ async function runLogin({
 
 module.exports = {
   runLogin,
+  buildRedirectBaseUrl,
+  normalizeAllowedBaseUrl,
 };

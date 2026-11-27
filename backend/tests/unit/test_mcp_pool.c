@@ -54,5 +54,43 @@ main(void)
     assert(mf_mcp_env_key_is_blocked("MCP_LOG_LEVEL") == false);
     assert(mf_mcp_env_key_is_blocked("TZ") == false);
     printf("PASS: test_mcp_env_blacklist\n");
+
+    /* Shutdown while one client is in_use, then release: zero UAF / double-free under ASan. */
+    setenv("MINEFOLIO_MCP_STDIO_MAX_PROCS", "4", 1);
+    assert(mf_mcp_config_stdio_max_procs() == 4);
+
+    mf_mcp_server_t live_srv = {0};
+    live_srv.user_id         = 1;
+    live_srv.transport       = MCP_TRANSPORT_STDIO;
+    live_srv.timeout_ms      = 2000;
+    strcpy(live_srv.name, "mock_mcp");
+    strcpy(live_srv.command, "bash");
+    strcpy(live_srv.args_json,
+           "[\"-c\", \"while IFS= read -r line; do printf "
+           "'{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"result\\\":{}}\\n'; done\"]");
+
+    live_srv.id = 101;
+    err[0] = '\0';
+    mf_mcp_client_t* idle_c = mf_mcp_stdio_pool_acquire(1, 101, &live_srv, err, sizeof(err));
+    assert(idle_c != NULL);
+    mf_mcp_stdio_pool_release(idle_c); /* now !in_use in pool */
+
+    live_srv.id = 102;
+    err[0] = '\0';
+    mf_mcp_client_t* inuse_c = mf_mcp_stdio_pool_acquire(1, 102, &live_srv, err, sizeof(err));
+    assert(inuse_c != NULL);
+
+    /* Shutdown must only tear down idle entries; in_use client stays valid until released. */
+    int detached = mf_mcp_stdio_pool_shutdown();
+    assert(detached == 1);
+
+    err[0] = '\0';
+    char* resp = mf_mcp_client_call_tool(inuse_c, "ping", "{}", err, sizeof(err));
+    assert(resp != NULL);
+    free(resp);
+
+    mf_mcp_stdio_pool_release(inuse_c);
+    assert(mf_mcp_stdio_pool_shutdown() == 0);
+    printf("PASS: test_mcp_pool_shutdown_while_in_use\n");
     return 0;
 }

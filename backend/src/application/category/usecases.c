@@ -111,20 +111,33 @@ void
 category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
 {
     pthread_mutex_lock(&s_category_seed_mutex);
-    if (ledger_id > 0 && cat_seed_cache_contains(pool, ledger_id)) {
-        pthread_mutex_unlock(&s_category_seed_mutex);
+    int cached = (ledger_id > 0 && cat_seed_cache_contains(pool, ledger_id));
+    pthread_mutex_unlock(&s_category_seed_mutex);
+    if (cached) {
         return;
     }
     if (mf_category_repo_is_seeded(pool, user_id, ledger_id)) {
         if (ledger_id > 0) {
+            pthread_mutex_lock(&s_category_seed_mutex);
             cat_seed_cache_add(pool, ledger_id);
+            pthread_mutex_unlock(&s_category_seed_mutex);
         }
-        pthread_mutex_unlock(&s_category_seed_mutex);
         return;
     }
 
     db_tx_scope_t tx = {0};
     int           tx_ok = (db_tx_scope_begin((csilk_db_pool_t*)pool, "mf_cat_seed", &tx) == 0);
+    if (mf_category_repo_is_seeded(pool, user_id, ledger_id)) {
+        if (tx_ok) {
+            db_tx_scope_commit((csilk_db_pool_t*)pool, &tx);
+        }
+        if (ledger_id > 0) {
+            pthread_mutex_lock(&s_category_seed_mutex);
+            cat_seed_cache_add(pool, ledger_id);
+            pthread_mutex_unlock(&s_category_seed_mutex);
+        }
+        return;
+    }
 
     /* Seed expense categories */
     seed_parent_t expense_items[] = {
@@ -262,9 +275,10 @@ category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
         db_tx_scope_commit((csilk_db_pool_t*)pool, &tx);
     }
     if (ledger_id > 0) {
+        pthread_mutex_lock(&s_category_seed_mutex);
         cat_seed_cache_add(pool, ledger_id);
+        pthread_mutex_unlock(&s_category_seed_mutex);
     }
-    pthread_mutex_unlock(&s_category_seed_mutex);
 }
 
 int

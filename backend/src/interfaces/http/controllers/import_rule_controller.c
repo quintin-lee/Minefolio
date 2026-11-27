@@ -3,6 +3,79 @@
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
+#include <string.h>
+
+static csilk_json_t*
+import_rule_normalize_row(const csilk_json_t* row)
+{
+    if (!row || !csilk_json_is_object(row)) {
+        return NULL;
+    }
+    csilk_json_t* out = csilk_json_object();
+    if (!out) {
+        return NULL;
+    }
+    size_t n = csilk_json_object_size(row);
+    for (size_t i = 0; i < n; i++) {
+        const char*         key = csilk_json_object_key(row, i);
+        const csilk_json_t* val = csilk_json_object_val(row, i);
+        if (!key || !val) {
+            continue;
+        }
+        if (strcmp(key, "id") == 0 || strcmp(key, "user_id") == 0 || strcmp(key, "priority") == 0) {
+            csilk_json_add_int(out, key, db_get_int(row, key));
+        } else if (strcmp(key, "category_id") == 0) {
+            if (csilk_json_is_null(val)) {
+                csilk_json_add_null(out, key);
+            } else {
+                csilk_json_add_int(out, key, db_get_int(row, key));
+            }
+        } else if (strcmp(key, "is_active") == 0) {
+            csilk_json_add_bool(out, key, db_get_bool(row, key) != 0);
+        } else {
+            csilk_json_t* copy = csilk_json_copy(val);
+            if (copy && !csilk_json_add_object(out, key, copy)) {
+                csilk_json_free(copy);
+            }
+        }
+    }
+    return out;
+}
+
+static csilk_json_t*
+import_rule_normalize_list(csilk_json_t* list)
+{
+    csilk_json_t* out = csilk_json_array();
+    if (!out) {
+        if (list) {
+            csilk_json_free(list);
+        }
+        return NULL;
+    }
+    if (list && csilk_json_is_array(list)) {
+        size_t n = csilk_json_array_size(list);
+        for (size_t i = 0; i < n; i++) {
+            csilk_json_t* norm = import_rule_normalize_row(csilk_json_array_get(list, i));
+            if (norm && !csilk_json_array_append(out, norm)) {
+                csilk_json_free(norm);
+            }
+        }
+    }
+    if (list) {
+        csilk_json_free(list);
+    }
+    return out;
+}
+
+static int
+import_rule_parse_is_active(const csilk_json_t* body)
+{
+    const csilk_json_t* v = csilk_json_get(body, "is_active");
+    if (!v || csilk_json_is_null(v)) {
+        return 1;
+    }
+    return db_get_bool(body, "is_active");
+}
 
 void
 import_rule_service_list(csilk_ctx_t* c)
@@ -12,7 +85,8 @@ import_rule_service_list(csilk_ctx_t* c)
         return;
     }
 
-    csilk_json_t* rules = import_rule_usecase_list(db_get_pool(), user_id);
+    csilk_json_t* rules =
+        import_rule_normalize_list(import_rule_usecase_list(db_get_pool(), user_id));
     respond_ok(c, rules ? rules : csilk_json_array());
 }
 
@@ -41,9 +115,9 @@ import_rule_service_get(csilk_ctx_t* c)
     }
 
     csilk_json_t* rule = csilk_json_array_get(res, 0);
-    csilk_json_t* copy = csilk_json_copy(rule);
+    csilk_json_t* norm = import_rule_normalize_row(rule);
     csilk_json_free(res);
-    respond_ok(c, copy);
+    respond_ok(c, norm ? norm : csilk_json_object());
 }
 
 void
@@ -66,7 +140,7 @@ import_rule_service_create(csilk_ctx_t* c)
     const char* target_type = csilk_json_get_string(body, "target_type");
     int64_t     category_id = db_get_int(body, "category_id");
     int         priority = (int)db_get_int(body, "priority");
-    int is_active = csilk_json_get(body, "is_active") ? csilk_json_get_bool(body, "is_active") : 1;
+    int         is_active = import_rule_parse_is_active(body);
 
     if (!keyword || !keyword[0]) {
         csilk_json_free(body);
@@ -122,7 +196,7 @@ import_rule_service_update(csilk_ctx_t* c)
     const char* target_type = csilk_json_get_string(body, "target_type");
     int64_t     category_id = db_get_int(body, "category_id");
     int         priority = (int)db_get_int(body, "priority");
-    int is_active = csilk_json_get(body, "is_active") ? csilk_json_get_bool(body, "is_active") : 1;
+    int         is_active = import_rule_parse_is_active(body);
 
     if (!keyword || !keyword[0]) {
         csilk_json_free(body);
@@ -177,7 +251,8 @@ import_rule_service_reset_defaults(csilk_ctx_t* c)
         return;
     }
 
-    csilk_json_t* rules = import_rule_usecase_reset_defaults(db_get_pool(), user_id);
+    csilk_json_t* rules =
+        import_rule_normalize_list(import_rule_usecase_reset_defaults(db_get_pool(), user_id));
     respond_ok(c, rules ? rules : csilk_json_array());
 }
 

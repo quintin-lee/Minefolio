@@ -8,6 +8,7 @@ import App from './App.vue'
 import router from './router/mobile'
 import i18n from '@/composables/useI18n'
 import { initLocalDb } from '@/db/local'
+import { useAuthStore } from '@/stores/auth'
 import { useSyncStore, setSyncOnAuthFail } from '@/stores/sync'
 import { SyncEngine } from '@/sync/SyncEngine'
 import { registerNetworkListeners } from '@/utils/sync-network'
@@ -45,7 +46,10 @@ async function bootstrap() {
   const sync = useSyncStore()
   sync.init()
   sync.subscribeSyncEngine()
-  registerNetworkListeners(() => sync.syncNow())
+  registerNetworkListeners(() => {
+    if (!Boolean(useAuthStore().token)) return
+    return sync.syncNow()
+  })
 
   app.mount('#app')
   await router.isReady()

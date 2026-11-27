@@ -134,7 +134,6 @@ async function handleBeforeChange(): Promise<boolean> {
   toggling.value = true
   try {
     await toggleSkill(props.skill.id, targetVal)
-    props.skill.enabled = targetVal ? 1 : 0
     ElMessage.success(targetVal ? `技能「${props.skill.name}」已启用` : `技能「${props.skill.name}」已禁用`)
     emit('toggle', props.skill, targetVal)
     return true

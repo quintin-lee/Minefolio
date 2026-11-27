@@ -1,4 +1,5 @@
 #include "common/http_safety.h"
+#include "common/config.h"
 #include "common/ai_trace.h"
 #include "common/ai_config.h"
 #include "common/db.h"
@@ -12,18 +13,31 @@
 #include "infrastructure/repositories/daily_expense_repo_impl.h"
 #include "infrastructure/repositories/ledger_repo_impl.h"
 #include "application/category/usecases.h"
+#include "application/mcp/usecases.h"
 #include "application/report/commands.h"
 #include "application/task/async_task_manager.h"
 #include "services/report_asset_service.h"
 #include "services/ai/tools/registry.h"
 #include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/context.h"
+#include "services/ai/tools/mcp/mcp_client.h"
+#include "middlewares/csrf_middleware.h"
 #include "csilk/csilk.h"
+#include <arpa/inet.h>
 #include <assert.h>
+#include <errno.h>
 #include <math.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <pthread.h>
+#include <signal.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 static const char* TEST_DB_PATH = "/tmp/test_mf_sec_audit_reg.db";
@@ -313,6 +327,786 @@ test_db_backed_regressions(csilk_db_pool_t* pool)
     int64_t tid = mf_async_task_submit(
         pool, user_id, ledger_id, "test_job", NULL, "init", dummy_async_fn, &cleaned, cleanup_dummy_arg, NULL);
     assert(tid == -1 && cleaned == 1);
+
+    /* MCP secret_ref allowlist & admin-only RBAC on create/update */
+    assert(mf_auth_repo_is_instance_admin(pool, user_id) == 1);
+    int64_t normal_uid = 0;
+    rc = mf_auth_repo_create(pool, "sec_normal_user", "hash_sec_normal_1234", &normal_uid);
+    assert(rc == 0 && normal_uid > 0);
+    assert(mf_auth_repo_is_instance_admin(pool, normal_uid) == 0);
+
+    mf_mcp_usecase_result_t mres = {0};
+    int64_t                 norm_srv_id = 0;
+    mf_mcp_create_cmd_t     norm_cmd = {
+        .user_id = normal_uid,
+        .name = "norm_srv_sec",
+        .transport = "http",
+        .url = "https://8.8.8.8/mcp",
+        .secret_ref = "MCP_SECRET_GITHUB_TOKEN",
+        .timeout_ms = 5000,
+    };
+    assert(mf_mcp_usecase_create(pool, &norm_cmd, &norm_srv_id, &mres) != 0);
+    assert(mres.code == 1004);
+
+    norm_cmd.secret_ref = "JWT_SECRET";
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_create(pool, &norm_cmd, &norm_srv_id, &mres) != 0);
+    assert(mres.code == 1004);
+
+    norm_cmd.secret_ref = "";
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_create(pool, &norm_cmd, &norm_srv_id, &mres) == 0);
+    assert(mres.code == 0 && norm_srv_id > 0);
+
+    mf_mcp_update_cmd_t norm_upd = {
+        .user_id = normal_uid,
+        .server_id = norm_srv_id,
+        .name = "norm_srv_sec",
+        .transport = "http",
+        .url = "https://8.8.8.8/mcp",
+        .secret_ref = "MCP_SECRET_GITHUB_TOKEN",
+        .timeout_ms = 5000,
+        .enabled = true,
+    };
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_update(pool, &norm_upd, &mres) != 0);
+    assert(mres.code == 1004);
+
+    int64_t             admin_srv_id = 0;
+    mf_mcp_create_cmd_t admin_cmd = {
+        .user_id = user_id,
+        .name = "admin_srv_sec",
+        .transport = "http",
+        .url = "https://8.8.8.8/mcp",
+        .secret_ref = "JWT_SECRET",
+        .timeout_ms = 5000,
+    };
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_create(pool, &admin_cmd, &admin_srv_id, &mres) != 0);
+    assert(mres.code == 1002);
+
+    admin_cmd.secret_ref = "MCP_SECRET_../x";
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_create(pool, &admin_cmd, &admin_srv_id, &mres) != 0);
+    assert(mres.code == 1002);
+
+    admin_cmd.secret_ref = "MCP_SECRET_GITHUB_TOKEN";
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_create(pool, &admin_cmd, &admin_srv_id, &mres) == 0);
+    assert(mres.code == 0 && admin_srv_id > 0);
+
+    mf_mcp_update_cmd_t admin_upd = {
+        .user_id = user_id,
+        .server_id = admin_srv_id,
+        .name = "admin_srv_sec",
+        .transport = "http",
+        .url = "https://8.8.8.8/mcp",
+        .secret_ref = "JWT_SECRET",
+        .timeout_ms = 5000,
+        .enabled = true,
+    };
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_update(pool, &admin_upd, &mres) != 0);
+    assert(mres.code == 1002);
+}
+
+typedef struct {
+    int  listen_fd;
+    int  expected_reqs;
+    char captured[4][4096];
+} mock_mcp_http_srv_t;
+
+static void*
+mock_mcp_http_server_thread(void* arg)
+{
+    mock_mcp_http_srv_t* srv = (mock_mcp_http_srv_t*)arg;
+    const char*          body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":1}}";
+    char                 resp[512];
+    snprintf(resp,
+             sizeof(resp),
+             "HTTP/1.1 200 OK\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: %zu\r\n"
+             "Connection: close\r\n\r\n%s",
+             strlen(body),
+             body);
+
+    for (int i = 0; i < srv->expected_reqs; i++) {
+        int cfd = accept(srv->listen_fd, NULL, NULL);
+        if (cfd < 0) {
+            break;
+        }
+        size_t total = 0;
+        while (total + 1 < sizeof(srv->captured[i])) {
+            ssize_t n = recv(cfd, srv->captured[i] + total, sizeof(srv->captured[i]) - 1 - total, 0);
+            if (n <= 0) {
+                break;
+            }
+            total += (size_t)n;
+            srv->captured[i][total] = '\0';
+            if (strstr(srv->captured[i], "\r\n\r\n") != NULL &&
+                strstr(srv->captured[i], "\"method\"") != NULL) {
+                break;
+            }
+        }
+        size_t sent = 0;
+        size_t rlen = strlen(resp);
+        while (sent < rlen) {
+            ssize_t w = send(cfd, resp + sent, rlen - sent, 0);
+            if (w <= 0) {
+                break;
+            }
+            sent += (size_t)w;
+        }
+        close(cfd);
+    }
+    return NULL;
+}
+
+static void
+test_secret_path_traversal_and_mcp_crlf(void)
+{
+    printf("[5] config_secret_get traversal, mf_mcp_secret_ref_valid, MCP HTTP CRLF defense...\n");
+
+    char sec_buf[256] = {0};
+    assert(config_secret_get("../../etc/passwd", sec_buf, sizeof(sec_buf)) == NULL);
+    assert(config_secret_get("foo/bar", sec_buf, sizeof(sec_buf)) == NULL);
+    assert(config_secret_get("MINEFOLIO_../../etc/passwd", sec_buf, sizeof(sec_buf)) == NULL);
+    assert(config_secret_get("MINEFOLIO_", sec_buf, sizeof(sec_buf)) == NULL);
+
+    assert(mf_mcp_secret_ref_valid("JWT_SECRET") == false);
+    assert(mf_mcp_secret_ref_valid("MCP_SECRET_../x") == false);
+    assert(mf_mcp_secret_ref_valid("MCP_SECRET_") == false);
+    assert(mf_mcp_secret_ref_valid("MCP_SECRET_BAD-NAME") == false);
+    assert(mf_mcp_secret_ref_valid(NULL) == false);
+    assert(mf_mcp_secret_ref_valid("") == false);
+    assert(mf_mcp_secret_ref_valid("MCP_SECRET_GITHUB_TOKEN") == true);
+    assert(mf_mcp_secret_ref_valid("MCP_SECRET_a1_B2") == true);
+
+    /* Spin up local loopback HTTP mock to verify assembled wire headers */
+    int lfd = socket(AF_INET, SOCK_STREAM, 0);
+    assert(lfd >= 0);
+    int yes = 1;
+    setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+    assert(bind(lfd, (struct sockaddr*)&addr, sizeof(addr)) == 0);
+    assert(listen(lfd, 8) == 0);
+
+    socklen_t alen = sizeof(addr);
+    assert(getsockname(lfd, (struct sockaddr*)&addr, &alen) == 0);
+    int port = (int)ntohs(addr.sin_port);
+
+    mock_mcp_http_srv_t srv = {.listen_fd = lfd, .expected_reqs = 4};
+    pthread_t           th;
+    assert(pthread_create(&th, NULL, mock_mcp_http_server_thread, &srv) == 0);
+
+    config_secret_set_test_mode(true);
+    config_secret_set_test_override("MINEFOLIO_MCP_ALLOW_LOCAL", "1");
+    config_secret_set_test_override("MCP_SECRET_TEST_CRLF", "tok\r\nX-Injected-Auth: evil");
+    config_secret_set_test_override("MCP_SECRET_TEST_GOOD", "valid_mcp_token_99");
+
+    char url[128];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/mcp", port);
+
+    /* Req 1: headers_json with CRLF in value and key must be skipped while good header remains */
+    {
+        mf_mcp_server_t s = {
+            .name = "hdr_crlf",
+            .transport = MCP_TRANSPORT_HTTP,
+            .timeout_ms = 5000,
+        };
+        snprintf(s.url, sizeof(s.url), "%s", url);
+        snprintf(s.headers_json,
+                 sizeof(s.headers_json),
+                 "{\"X-Good\":\"ok\",\"X-Bad-Val\":\"a\\r\\nX-Injected: evil\",\"X-Bad\\nKey\":\"1\"}");
+        mf_mcp_client_t* c = mf_mcp_client_new(&s);
+        assert(c != NULL);
+        char  err[256] = {0};
+        char* resp = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
+        assert(resp != NULL);
+        free(resp);
+        mf_mcp_client_free(c);
+
+        assert(strstr(srv.captured[0], "X-Good: ok") != NULL);
+        assert(strstr(srv.captured[0], "X-Injected:") == NULL);
+        assert(strstr(srv.captured[0], "X-Bad-Val:") == NULL);
+        assert(strstr(srv.captured[0], "X-Bad") == NULL);
+    }
+
+    /* Req 2: secret_ref token containing CRLF must not be emitted in Authorization header */
+    {
+        mf_mcp_server_t s = {
+            .name = "sec_crlf",
+            .transport = MCP_TRANSPORT_HTTP,
+            .timeout_ms = 5000,
+        };
+        snprintf(s.url, sizeof(s.url), "%s", url);
+        snprintf(s.secret_ref, sizeof(s.secret_ref), "MCP_SECRET_TEST_CRLF");
+        mf_mcp_client_t* c = mf_mcp_client_new(&s);
+        assert(c != NULL);
+        char  err[256] = {0};
+        char* resp = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
+        assert(resp != NULL);
+        free(resp);
+        mf_mcp_client_free(c);
+
+        assert(strstr(srv.captured[1], "X-Injected-Auth:") == NULL);
+        assert(strstr(srv.captured[1], "Authorization:") == NULL);
+    }
+
+    /* Req 3: non-MCP_SECRET_ secret_ref must not be read/sent even if present in config/env */
+    {
+        mf_mcp_server_t s = {
+            .name = "sec_non_allow",
+            .transport = MCP_TRANSPORT_HTTP,
+            .timeout_ms = 5000,
+        };
+        snprintf(s.url, sizeof(s.url), "%s", url);
+        snprintf(s.secret_ref, sizeof(s.secret_ref), "JWT_SECRET");
+        mf_mcp_client_t* c = mf_mcp_client_new(&s);
+        assert(c != NULL);
+        char  err[256] = {0};
+        char* resp = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
+        assert(resp != NULL);
+        free(resp);
+        mf_mcp_client_free(c);
+
+        assert(strstr(srv.captured[2], "Authorization:") == NULL);
+        assert(strstr(srv.captured[2], "test_jwt_secret_sec_regressions_32b") == NULL);
+    }
+
+    /* Req 4: valid MCP_SECRET_* token without CRLF is sent in Authorization header */
+    {
+        mf_mcp_server_t s = {
+            .name = "sec_good",
+            .transport = MCP_TRANSPORT_HTTP,
+            .timeout_ms = 5000,
+        };
+        snprintf(s.url, sizeof(s.url), "%s", url);
+        snprintf(s.secret_ref, sizeof(s.secret_ref), "MCP_SECRET_TEST_GOOD");
+        mf_mcp_client_t* c = mf_mcp_client_new(&s);
+        assert(c != NULL);
+        char  err[256] = {0};
+        char* resp = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
+        assert(resp != NULL);
+        free(resp);
+        mf_mcp_client_free(c);
+
+        assert(strstr(srv.captured[3], "Authorization: Bearer valid_mcp_token_99") != NULL);
+    }
+
+    pthread_join(th, NULL);
+    close(lfd);
+    config_secret_set_test_override("MINEFOLIO_MCP_ALLOW_LOCAL", NULL);
+    config_secret_set_test_override("MCP_SECRET_TEST_CRLF", NULL);
+    config_secret_set_test_override("MCP_SECRET_TEST_GOOD", NULL);
+}
+
+char* receipt_base64_encode(const unsigned char* data, size_t input_length, size_t* output_length);
+
+static void
+test_receipt_base64_padding(void)
+{
+    printf("[6] Receipt base64 RFC 4648 padding vectors...\n");
+
+    static const struct {
+        const char* input;
+        const char* expected;
+    } vectors[] = {
+        {"", ""},
+        {"f", "Zg=="},
+        {"fo", "Zm8="},
+        {"foo", "Zm9v"},
+        {"foob", "Zm9vYg=="},
+        {"fooba", "Zm9vYmE="},
+        {"foobar", "Zm9vYmFy"},
+    };
+
+    for (size_t i = 0; i < sizeof(vectors) / sizeof(vectors[0]); i++) {
+        size_t out_len = 0;
+        char*  enc = receipt_base64_encode(
+            (const unsigned char*)vectors[i].input, strlen(vectors[i].input), &out_len);
+        assert(enc != NULL);
+        assert(out_len == strlen(vectors[i].expected));
+        assert(strcmp(enc, vectors[i].expected) == 0);
+        free(enc);
+    }
+
+    /* Binary input with high bit and trailing zero bytes to ensure proper masking/padding */
+    const unsigned char bin[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+    size_t              bin_len = 0;
+    char*               bin_enc = receipt_base64_encode(bin, sizeof(bin), &bin_len);
+    assert(bin_enc != NULL);
+    assert(bin_len == 8);
+    assert(strcmp(bin_enc, "3q2+7w==") == 0);
+    free(bin_enc);
+}
+
+static void
+test_config_get_str_oob_regression(void)
+{
+    printf("[7] config_get_str bare key EOF OOB regression...\n");
+
+    const char* cfg_path = "/tmp/test_mf_config_oob.json";
+    char        out[64] = {0};
+
+    /* Case 1: file ends immediately after bare key without colon or quotes */
+    {
+        FILE* f = fopen(cfg_path, "wb");
+        assert(f != NULL);
+        fputs("{\"bare_key\"", f);
+        fclose(f);
+
+        memset(out, 'X', sizeof(out));
+        int rc = config_get_str(cfg_path, "bare_key", out, sizeof(out));
+        assert(rc == -1);
+        assert(out[0] == '\0');
+    }
+
+    /* Case 2: file ends right after colon/whitespace without opening quote */
+    {
+        FILE* f = fopen(cfg_path, "wb");
+        assert(f != NULL);
+        fputs("{\"bare_key\":   ", f);
+        fclose(f);
+
+        memset(out, 'X', sizeof(out));
+        int rc = config_get_str(cfg_path, "bare_key", out, sizeof(out));
+        assert(rc == -1);
+        assert(out[0] == '\0');
+    }
+
+    /* Case 2b: 4095-byte file ending right at buf[4095] NUL after bare key (strict ASan OOB check) */
+    {
+        FILE* f = fopen(cfg_path, "wb");
+        assert(f != NULL);
+        for (int i = 0; i < 4084; i++) {
+            fputc(' ', f);
+        }
+        fputs("{\"bare_key\"", f);
+        fclose(f);
+
+        memset(out, 'X', sizeof(out));
+        int rc = config_get_str(cfg_path, "bare_key", out, sizeof(out));
+        assert(rc == -1);
+        assert(out[0] == '\0');
+    }
+
+    /* Case 3: valid quoted value after a bare key prefix still parses */
+    {
+        FILE* f = fopen(cfg_path, "wb");
+        assert(f != NULL);
+        fputs("{\"bare_key\": \"ok_val\"}", f);
+        fclose(f);
+
+        memset(out, 0, sizeof(out));
+        int rc = config_get_str(cfg_path, "bare_key", out, sizeof(out));
+        assert(rc == 0);
+        assert(strcmp(out, "ok_val") == 0);
+    }
+
+    unlink(cfg_path);
+}
+
+static long
+csrf_mono_elapsed_ms(struct timespec t0, struct timespec t1)
+{
+    return (t1.tv_sec - t0.tv_sec) * 1000L + (t1.tv_nsec - t0.tv_nsec) / 1000000L;
+}
+
+static void
+csrf_test_ok_handler(csilk_ctx_t* c)
+{
+    csilk_string(c, CSILK_STATUS_OK, "ok");
+}
+
+static int
+csrf_pick_loopback_port(void)
+{
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    assert(s >= 0);
+    int opt = 1;
+    (void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in sin;
+    memset(&sin, 0, sizeof(sin));
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    sin.sin_port = 0;
+    assert(bind(s, (struct sockaddr*)&sin, sizeof(sin)) == 0);
+
+    socklen_t len = sizeof(sin);
+    assert(getsockname(s, (struct sockaddr*)&sin, &len) == 0);
+    int port = ntohs(sin.sin_port);
+    close(s);
+    assert(port > 0);
+    return port;
+}
+
+static int
+csrf_connect_loopback(int port)
+{
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) {
+        return -1;
+    }
+    struct sockaddr_in sin;
+    memset(&sin, 0, sizeof(sin));
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    sin.sin_port = htons((uint16_t)port);
+    if (connect(s, (struct sockaddr*)&sin, sizeof(sin)) != 0) {
+        close(s);
+        return -1;
+    }
+    return s;
+}
+
+static int
+csrf_send_all(int sock, const char* data, size_t len)
+{
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t n = send(sock, data + sent, len - sent, MSG_NOSIGNAL);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -1;
+        }
+        if (n == 0) {
+            return -1;
+        }
+        sent += (size_t)n;
+    }
+    return 0;
+}
+
+static const char*
+csrf_strcasestr_span(const char* hay, size_t hay_len, const char* needle)
+{
+    size_t nlen = strlen(needle);
+    if (nlen == 0 || hay_len < nlen) {
+        return NULL;
+    }
+    for (size_t i = 0; i <= hay_len - nlen; ++i) {
+        if (strncasecmp(hay + i, needle, nlen) == 0) {
+            return hay + i;
+        }
+    }
+    return NULL;
+}
+
+static bool
+csrf_http_response_complete(const char* buf, size_t len)
+{
+    const char* hdr_end = NULL;
+    for (size_t i = 0; i + 4 <= len; ++i) {
+        if (memcmp(buf + i, "\r\n\r\n", 4) == 0) {
+            hdr_end = buf + i;
+            break;
+        }
+    }
+    if (!hdr_end) {
+        return false;
+    }
+    size_t      hdr_len = (size_t)(hdr_end - buf);
+    size_t      body_start = hdr_len + 4;
+    const char* cl = csrf_strcasestr_span(buf, hdr_len, "Content-Length:");
+    if (cl) {
+        const char* p = cl + strlen("Content-Length:");
+        while (*p == ' ' || *p == '\t') {
+            p++;
+        }
+        unsigned long clen = strtoul(p, NULL, 10);
+        return len >= body_start + (size_t)clen;
+    }
+    return false;
+}
+
+static ssize_t
+csrf_read_http_response(int sock, char* buf, size_t size, int timeout_ms)
+{
+    size_t          total = 0;
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+    while (total < size - 1) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        long rem = (long)timeout_ms - csrf_mono_elapsed_ms(start, now);
+        if (rem <= 0) {
+            break;
+        }
+        struct pollfd pfd = {.fd = sock, .events = POLLIN, .revents = 0};
+        int           pr = poll(&pfd, 1, (int)rem);
+        if (pr <= 0) {
+            if (pr < 0 && errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        ssize_t n = recv(sock, buf + total, size - 1 - total, 0);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if (n == 0) {
+            break;
+        }
+        total += (size_t)n;
+        buf[total] = '\0';
+        if (csrf_http_response_complete(buf, total)) {
+            break;
+        }
+    }
+    buf[total] = '\0';
+    return (ssize_t)total;
+}
+
+typedef struct {
+    csilk_app_t*    app;
+    csilk_server_t* srv;
+    int             port;
+    pthread_t       thread;
+    atomic_int      exited;
+} csrf_test_srv_t;
+
+static void*
+csrf_test_srv_runner(void* arg)
+{
+    csrf_test_srv_t* h = (csrf_test_srv_t*)arg;
+    (void)csilk_app_run(h->app, h->port);
+    atomic_store_explicit(&h->exited, 1, memory_order_release);
+    return NULL;
+}
+
+static void
+csrf_send_http(int port, const char* raw_req, char* resp, size_t resp_sz)
+{
+    int fd = csrf_connect_loopback(port);
+    assert(fd >= 0);
+    assert(csrf_send_all(fd, raw_req, strlen(raw_req)) == 0);
+    ssize_t n = csrf_read_http_response(fd, resp, resp_sz, 2000);
+    close(fd);
+    assert(n > 0);
+}
+
+static int
+csrf_count_set_cookie(const char* resp, const char** out_line_start, size_t* out_line_len)
+{
+    const char* hdr_end = strstr(resp, "\r\n\r\n");
+    size_t      hdr_len = hdr_end ? (size_t)(hdr_end - resp) : strlen(resp);
+    int         count = 0;
+    const char* pos = resp;
+    const char* end = resp + hdr_len;
+
+    if (out_line_start) {
+        *out_line_start = NULL;
+    }
+    if (out_line_len) {
+        *out_line_len = 0;
+    }
+
+    while (pos < end) {
+        const char* nl = strstr(pos, "\r\n");
+        size_t      llen = nl ? (size_t)(nl - pos) : (size_t)(end - pos);
+        if (llen >= strlen("Set-Cookie:") && strncasecmp(pos, "Set-Cookie:", 11) == 0 &&
+            csrf_strcasestr_span(pos, llen, "csrf_token=") != NULL) {
+            if (count == 0) {
+                if (out_line_start) {
+                    *out_line_start = pos;
+                }
+                if (out_line_len) {
+                    *out_line_len = llen;
+                }
+            }
+            count++;
+        }
+        if (!nl) {
+            break;
+        }
+        pos = nl + 2;
+    }
+    return count;
+}
+
+static void
+test_csrf_middleware_oauth_and_no_duplicate_cookie(void)
+{
+    printf("[8] CSRF OAuth callback / IM bind-auth exclusion & single Set-Cookie regression...\n");
+    signal(SIGPIPE, SIG_IGN);
+    unsetenv("MINEFOLIO_COOKIE_SECURE");
+
+    csrf_test_srv_t srv = {0};
+    atomic_init(&srv.exited, 0);
+    srv.port = csrf_pick_loopback_port();
+    srv.app = csilk_app_new(NULL);
+    assert(srv.app != NULL);
+
+    csilk_config_t* cfg = csilk_app_config(srv.app);
+    assert(cfg != NULL);
+    csilk_server_config_t scfg = cfg->server;
+    scfg.worker_threads = 1;
+    scfg.idle_timeout_ms = 10000;
+    csilk_app_set_server_config(srv.app, scfg);
+    free(cfg);
+
+    csilk_app_get(srv.app, "/healthz", csrf_test_ok_handler);
+    csilk_app_use_group(srv.app, "/api", csrf_middleware_wrapper);
+    csilk_app_get(srv.app, "/api/ping", csrf_test_ok_handler);
+    csilk_app_get(srv.app, "/api/system/status", csrf_test_ok_handler);
+    csilk_app_post(srv.app, "/api/auth/oauth/callback", csrf_test_ok_handler);
+    csilk_app_post(srv.app, "/api/im/:platform/bind-auth", csrf_test_ok_handler);
+    csilk_app_post(srv.app, "/api/im/slack/other", csrf_test_ok_handler);
+    csilk_app_post(srv.app, "/api/protected", csrf_test_ok_handler);
+
+    srv.srv = csilk_app_server(srv.app);
+    assert(srv.srv != NULL);
+    assert(pthread_create(&srv.thread, NULL, csrf_test_srv_runner, &srv) == 0);
+
+    bool ready = false;
+    for (int i = 0; i < 200; i++) {
+        if (atomic_load_explicit(&srv.exited, memory_order_acquire) != 0) {
+            break;
+        }
+        int fd = csrf_connect_loopback(srv.port);
+        if (fd >= 0) {
+            const char* req = "GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+            char        resp[1024] = {0};
+            if (csrf_send_all(fd, req, strlen(req)) == 0 &&
+                csrf_read_http_response(fd, resp, sizeof(resp), 500) > 0 &&
+                strstr(resp, "HTTP/1.1 200") != NULL) {
+                close(fd);
+                ready = true;
+                break;
+            }
+            close(fd);
+        }
+        struct timespec ts = {0, 15000000L};
+        nanosleep(&ts, NULL);
+    }
+    assert(ready);
+
+    char resp[4096];
+    char seeded_token[64] = {0};
+
+    /* 1. Safe unauthenticated GET without HTTPS: must emit exactly ONE Set-Cookie: csrf_token (no Secure=1 duplicate) */
+    {
+        const char* req = "GET /api/ping HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+        csrf_send_http(srv.port, req, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+
+        const char* line = NULL;
+        size_t      llen = 0;
+        int         cnt = csrf_count_set_cookie(resp, &line, &llen);
+        assert(cnt == 1);
+        assert(line != NULL && llen > 0);
+        assert(csrf_strcasestr_span(line, llen, "Secure") == NULL);
+
+        const char* tv = csrf_strcasestr_span(line, llen, "csrf_token=");
+        assert(tv != NULL);
+        tv += strlen("csrf_token=");
+        size_t ti = 0;
+        while (ti + 1 < sizeof(seeded_token) && (size_t)(tv - line) + ti < llen &&
+               tv[ti] != ';' && tv[ti] != '\r' && tv[ti] != '\n') {
+            seeded_token[ti] = tv[ti];
+            ti++;
+        }
+        seeded_token[ti] = '\0';
+        assert(strlen(seeded_token) == 32);
+    }
+
+    /* 2. Safe unauthenticated GET with X-Forwarded-Proto: https: must emit exactly ONE Set-Cookie with Secure */
+    {
+        const char* req = "GET /api/system/status HTTP/1.1\r\nHost: localhost\r\n"
+                          "X-Forwarded-Proto: https\r\nConnection: close\r\n\r\n";
+        csrf_send_http(srv.port, req, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+
+        const char* line = NULL;
+        size_t      llen = 0;
+        int         cnt = csrf_count_set_cookie(resp, &line, &llen);
+        assert(cnt == 1);
+        assert(csrf_strcasestr_span(line, llen, "Secure") != NULL);
+    }
+
+    /* 3. POST /api/auth/oauth/callback without CSRF token (no cookie, and with stale cookie): both excluded */
+    {
+        const char* req1 =
+            "POST /api/auth/oauth/callback HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\n"
+            "Connection: close\r\n\r\n{}";
+        csrf_send_http(srv.port, req1, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+        assert(csrf_count_set_cookie(resp, NULL, NULL) == 1);
+
+        const char* req2 =
+            "POST /api/auth/oauth/callback HTTP/1.1\r\nHost: localhost\r\n"
+            "Cookie: csrf_token=existing_cookie_val\r\nContent-Length: 2\r\n"
+            "Connection: close\r\n\r\n{}";
+        csrf_send_http(srv.port, req2, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+        assert(csrf_count_set_cookie(resp, NULL, NULL) == 0);
+    }
+
+    /* 4. POST /api/im/slack/bind-auth without CSRF token (no cookie, and with stale cookie): both excluded */
+    {
+        const char* req1 =
+            "POST /api/im/slack/bind-auth HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\n"
+            "Connection: close\r\n\r\n{}";
+        csrf_send_http(srv.port, req1, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+        assert(csrf_count_set_cookie(resp, NULL, NULL) == 1);
+
+        const char* req2 =
+            "POST /api/im/slack/bind-auth HTTP/1.1\r\nHost: localhost\r\n"
+            "Cookie: csrf_token=existing_cookie_val\r\nContent-Length: 2\r\n"
+            "Connection: close\r\n\r\n{}";
+        csrf_send_http(srv.port, req2, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+        assert(csrf_count_set_cookie(resp, NULL, NULL) == 0);
+    }
+
+    /* 5. Non-excluded POST without CSRF token must return 403 and emit ZERO Set-Cookie headers */
+    {
+        const char* req1 =
+            "POST /api/im/slack/other HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\n"
+            "Connection: close\r\n\r\n{}";
+        csrf_send_http(srv.port, req1, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 403") != NULL);
+        assert(csrf_count_set_cookie(resp, NULL, NULL) == 0);
+
+        const char* req2 =
+            "POST /api/protected HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\n"
+            "Connection: close\r\n\r\n{}";
+        csrf_send_http(srv.port, req2, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 403") != NULL);
+        assert(csrf_count_set_cookie(resp, NULL, NULL) == 0);
+    }
+
+    /* 6. Non-excluded POST with matching cookie + X-CSRF-Token passes 200 */
+    {
+        char req[512];
+        snprintf(req,
+                 sizeof(req),
+                 "POST /api/protected HTTP/1.1\r\nHost: localhost\r\n"
+                 "Cookie: csrf_token=%s\r\nX-CSRF-Token: %s\r\nContent-Length: 2\r\n"
+                 "Connection: close\r\n\r\n{}",
+                 seeded_token,
+                 seeded_token);
+        csrf_send_http(srv.port, req, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+    }
+
+    csilk_server_stop(srv.srv);
+    pthread_join(srv.thread, NULL);
+    csilk_app_free(srv.app);
 }
 
 int
@@ -325,6 +1119,10 @@ main(void)
 
     csilk_db_pool_t* pool = setup_test_db();
     test_db_backed_regressions(pool);
+    test_secret_path_traversal_and_mcp_crlf();
+    test_receipt_base64_padding();
+    test_config_get_str_oob_regression();
+    test_csrf_middleware_oauth_and_no_duplicate_cookie();
 
     cleanup_db_files();
     printf("=== All Security & Audit Regression Tests Passed ===\n");

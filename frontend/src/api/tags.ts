@@ -5,6 +5,7 @@
 
 // frontend/src/api/tags.ts
 import http from '@/utils/http'
+import type { AxiosRequestConfig } from 'axios'
 import type { Tag } from '@/types'
 
 /**
@@ -24,28 +25,31 @@ export const tagsApi = {
    * @param data 标签数据
    * @param data.name 标签名称 (如 '差旅报销', '外卖', '副业')
    * @param data.color 标签颜色 HEX 字符串 (如 '#ff5722'，可选)
+   * @param config Axios 请求配置 (可选，用于转发如 X-Ledger-Id 等请求头)
    * @returns 空响应
    */
-  create: (data: { name: string; color?: string }) =>
-    http.post<void>('/tags', data),
+  create: (data: { name: string; color?: string }, config?: AxiosRequestConfig) =>
+    http.post<void>('/tags', data, config),
 
   /**
    * 修改指定标签的名称或颜色
    * @route PUT /api/tags/:id
    * @param id 标签 ID
    * @param data 更新的数据载荷
+   * @param config Axios 请求配置 (可选，用于转发如 X-Ledger-Id 等请求头)
    * @returns 空响应
    */
-  update: (id: number, data: { name?: string; color?: string }) =>
-    http.put<void>(`/tags/${id}`, data),
+  update: (id: number, data: { name?: string; color?: string }, config?: AxiosRequestConfig) =>
+    http.put<void>(`/tags/${id}`, data, config),
 
   /**
    * 删除指定标签
    * @route DELETE /api/tags/:id
    * @param id 标签 ID
+   * @param config Axios 请求配置 (可选，用于转发如 X-Ledger-Id 等请求头)
    * @returns 空响应
    */
-  delete: (id: number) => http.delete<void>(`/tags/${id}`),
+  delete: (id: number, config?: AxiosRequestConfig) => http.delete<void>(`/tags/${id}`, config),
 
   /**
    * 根据关键字联想匹配标签建议列表 (用于记账时快速补全)

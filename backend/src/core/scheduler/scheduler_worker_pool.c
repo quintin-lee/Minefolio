@@ -11,6 +11,7 @@ typedef struct scheduler_task_node {
 
 struct scheduler_worker_pool {
     pthread_t*             threads;
+    bool*                  started;
     int                    num_threads;
     scheduler_task_node_t* head;
     scheduler_task_node_t* tail;
@@ -70,7 +71,10 @@ scheduler_worker_pool_create(int num_threads)
 
     pool->num_threads = num_threads;
     pool->threads = (pthread_t*)calloc((size_t)num_threads, sizeof(pthread_t));
-    if (!pool->threads) {
+    pool->started = (bool*)calloc((size_t)num_threads, sizeof(bool));
+    if (!pool->threads || !pool->started) {
+        free(pool->threads);
+        free(pool->started);
         free(pool);
         return NULL;
     }
@@ -78,8 +82,16 @@ scheduler_worker_pool_create(int num_threads)
     pthread_mutex_init(&pool->lock, NULL);
     pthread_cond_init(&pool->cond, NULL);
 
+    int started_count = 0;
     for (int i = 0; i < num_threads; i++) {
-        pthread_create(&pool->threads[i], NULL, worker_thread, pool);
+        if (pthread_create(&pool->threads[i], NULL, worker_thread, pool) == 0) {
+            pool->started[i] = true;
+            started_count++;
+        }
+    }
+    if (started_count == 0) {
+        scheduler_worker_pool_destroy(pool);
+        return NULL;
     }
 
     return pool;
@@ -133,7 +145,9 @@ scheduler_worker_pool_destroy(scheduler_worker_pool_t* pool)
     pthread_mutex_unlock(&pool->lock);
 
     for (int i = 0; i < pool->num_threads; i++) {
-        pthread_join(pool->threads[i], NULL);
+        if (pool->started && pool->started[i]) {
+            pthread_join(pool->threads[i], NULL);
+        }
     }
 
     /* Free remaining queue */
@@ -146,6 +160,7 @@ scheduler_worker_pool_destroy(scheduler_worker_pool_t* pool)
 
     pthread_mutex_destroy(&pool->lock);
     pthread_cond_destroy(&pool->cond);
+    free(pool->started);
     free(pool->threads);
     free(pool);
 }

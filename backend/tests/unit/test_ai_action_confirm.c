@@ -9,7 +9,12 @@
 #include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/context.h"
 #include "services/ai/policy/confirmation.h"
+#include "services/ai/policy/permission.h"
 #include "infrastructure/repositories/asset_repo_impl.h"
+#include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
+#include "application/account/usecases.h"
+#include "core/financial/money.h"
+#include "core/ledger/ledger_engine.h"
 #include "csilk/csilk.h"
 
 static void
@@ -116,6 +121,7 @@ main(int argc, char** argv)
     }
 
     const char* test_db = "/tmp/test_ai_action_confirm.db";
+    ledger_register_balance_hooks();
     csilk_db_pool_t* pool = NULL;
     init_test_db(test_db, &pool);
 
@@ -411,6 +417,56 @@ main(int argc, char** argv)
         csilk_json_free(a2_json);
         printf("  ✅ Transfer asset balances updated successfully\n");
 
+        /* Verify V014 paired transfer_out / transfer_in transactions linked to transfers.from_tx_id / to_tx_id */
+        {
+            char uid_str[32];
+            snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+            csilk_json_t* tf_rows = csilk_db_query_param_json(
+                pool,
+                "SELECT id, from_tx_id, to_tx_id FROM transfers WHERE user_id=? ORDER BY id DESC LIMIT 1",
+                (const char*[]){uid_str, NULL});
+            assert(tf_rows != NULL && csilk_json_array_size(tf_rows) == 1);
+            const csilk_json_t* tf_r = csilk_json_array_get(tf_rows, 0);
+            int64_t from_tx_id = db_get_int(tf_r, "from_tx_id");
+            int64_t to_tx_id = db_get_int(tf_r, "to_tx_id");
+            assert(from_tx_id > 0 && to_tx_id > 0);
+            csilk_json_free(tf_rows);
+
+            char ftx_str[32], ttx_str[32];
+            snprintf(ftx_str, sizeof(ftx_str), "%lld", (long long)from_tx_id);
+            snprintf(ttx_str, sizeof(ttx_str), "%lld", (long long)to_tx_id);
+
+            csilk_json_t* out_rows = csilk_db_query_param_json(
+                pool,
+                "SELECT id, asset_id, linked_asset_id, transaction_type, amount, fx_rate_to_cny "
+                "FROM transactions WHERE id=?",
+                (const char*[]){ftx_str, NULL});
+            assert(out_rows != NULL && csilk_json_array_size(out_rows) == 1);
+            const csilk_json_t* out_r = csilk_json_array_get(out_rows, 0);
+            assert(strcmp(csilk_json_get_string(out_r, "transaction_type"), "transfer_out") == 0);
+            assert(db_get_int(out_r, "asset_id") == a2);
+            assert(db_get_int(out_r, "linked_asset_id") == a1);
+            assert(db_get_num(out_r, "amount") == 120.0);
+            assert(db_get_num(out_r, "fx_rate_to_cny") == 1.0);
+            csilk_json_free(out_rows);
+
+            csilk_json_t* in_rows = csilk_db_query_param_json(
+                pool,
+                "SELECT id, asset_id, linked_asset_id, transaction_type, parent_tx_id, amount, fx_rate_to_cny "
+                "FROM transactions WHERE id=?",
+                (const char*[]){ttx_str, NULL});
+            assert(in_rows != NULL && csilk_json_array_size(in_rows) == 1);
+            const csilk_json_t* in_r = csilk_json_array_get(in_rows, 0);
+            assert(strcmp(csilk_json_get_string(in_r, "transaction_type"), "transfer_in") == 0);
+            assert(db_get_int(in_r, "asset_id") == a1);
+            assert(db_get_int(in_r, "linked_asset_id") == a2);
+            assert(db_get_int(in_r, "parent_tx_id") == from_tx_id);
+            assert(db_get_num(in_r, "amount") == 120.0);
+            assert(db_get_num(in_r, "fx_rate_to_cny") == 1.0);
+            csilk_json_free(in_rows);
+            printf("  ✅ V014 transfer pairing (transfer_out + transfer_in + from_tx_id/to_tx_id) verified\n");
+        }
+
         /* Update message */
         ai_message_mark_action_executed(pool, user_id, tf_token);
         csilk_json_t* tf_check = csilk_db_query_param_json(
@@ -509,6 +565,341 @@ main(int argc, char** argv)
         assert(ai_confirmation_verify_token(user_id, 0.0, NULL, NULL, NULL) == 0);
 
         printf("  ✅ Non-v2 tokens rejected without recursion (legacy regression)\n");
+    }
+
+    /* ----------------------------------------------------------------- */
+    /* Test 8: Backdated AI Expense Confirm Invalidates Snapshots From Date */
+    /* ----------------------------------------------------------------- */
+    printf("[Test 8] Backdated AI expense confirm invalidates ledger_snapshots from date...\n");
+    {
+        money_t snap_bal;
+        money_from_double(1035.0, CURRENCY_CNY, &snap_bal);
+        assert(ledger_snapshot_save(pool, user_id, a1, "2026-11-05", NULL, snap_bal, "2026-11-05", 1, NULL) == 0);
+        assert(ledger_snapshot_save(pool, user_id, a1, "2026-11-12", NULL, snap_bal, "2026-11-12", 2, NULL) == 0);
+        assert(ledger_snapshot_save(pool, user_id, a1, "2026-11-18", NULL, snap_bal, "2026-11-18", 3, NULL) == 0);
+
+        csilk_json_t* exp_args = csilk_json_object();
+        csilk_json_add_number(exp_args, "amount", 35.0);
+        csilk_json_add_string(exp_args, "type", "expense");
+        csilk_json_add_string(exp_args, "date", "2026-11-11");
+        csilk_json_add_number(exp_args, "category_id", (double)cat);
+        csilk_json_add_number(exp_args, "asset_id", (double)a1);
+        csilk_json_add_string(exp_args, "note", "Backdated snack");
+        char* dt_tok = ai_confirmation_create_bound_token(
+            user_id, 1, "confirm_proposed_expense", exp_args, AI_RISK_HIGH, 300);
+        assert(dt_tok != NULL);
+        csilk_json_add_string(exp_args, "draft_token", dt_tok);
+
+        char* res_str = ai_tool_dispatch_parsed(ctx, "confirm_proposed_expense", exp_args);
+        assert(res_str != NULL);
+        assert(strstr(res_str, "success") != NULL);
+        free(res_str);
+        free(dt_tok);
+        csilk_json_free(exp_args);
+
+        /* Snapshot before 2026-11-11 must survive; snapshots >= 2026-11-11 must be invalidated */
+        csilk_json_t* s_before = NULL;
+        assert(ledger_snapshot_get_latest(pool, user_id, a1, "2026-11-10", &s_before) == 0);
+        assert(s_before != NULL);
+        assert(strcmp(csilk_json_get_string(s_before, "snapshot_date"), "2026-11-05") == 0);
+        csilk_json_free(s_before);
+
+        csilk_json_t* s_after = NULL;
+        assert(ledger_snapshot_get_latest(pool, user_id, a1, "2026-11-20", &s_after) == 0);
+        assert(s_after != NULL);
+        assert(strcmp(csilk_json_get_string(s_after, "snapshot_date"), "2026-11-05") == 0);
+        csilk_json_free(s_after);
+        printf("  ✅ Backdated AI expense confirm invalidated snapshots >= 2026-11-11 and preserved 2026-11-05\n");
+    }
+
+    /* ----------------------------------------------------------------- */
+    /* Test 9: Shared-ledger editor with viewer account perm rejected (1004) */
+    /* ----------------------------------------------------------------- */
+    printf("[Test 9] Shared-ledger editor with viewer permission rejected (1004) on AI confirm...\n");
+    {
+        int64_t owner_id = 902;
+        int64_t editor_id = 903;
+        int64_t sh_lid = 2;
+        int64_t acct_ro = 20;
+        int64_t acct_rw = 21;
+        int64_t asset_ro = 201;
+        int64_t asset_rw = 202;
+
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO users (id, username, password) VALUES (902, 'sh_owner_ai', 'h'), (903, 'sh_editor_ai', 'h')",
+            (const char*[]){NULL}));
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO ledgers (id, owner_id, name, is_default) VALUES (2, 902, '家庭共享账本', 0)",
+            (const char*[]){NULL}));
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO ledger_members (ledger_id, user_id, role) VALUES (2, 902, 'owner'), (2, 903, 'editor')",
+            (const char*[]){NULL}));
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO accounts (id, user_id, ledger_id, name, institution) VALUES "
+            "(20, 902, 2, '只读卡', 'bank_card'), (21, 902, 2, '日常卡', 'bank_card')",
+            (const char*[]){NULL}));
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO categories (id, user_id, ledger_id, name, type, icon) VALUES (20, 902, 2, '餐饮', 'expense', '')",
+            (const char*[]){NULL}));
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO assets (id, user_id, category_id, account_id, name, current_value, currency, ledger_id) VALUES "
+            "(201, 902, 20, 20, '只读资产', 1000.0, 'CNY', 2), "
+            "(202, 902, 20, 21, '可写资产', 1000.0, 'CNY', 2)",
+            (const char*[]){NULL}));
+
+        account_usecase_result_t ares = {0};
+        assert(account_permission_usecase_set(pool, owner_id, sh_lid, acct_ro, editor_id, "viewer", 0, 0, &ares) == 0);
+        assert(account_permission_usecase_set(pool, owner_id, sh_lid, acct_rw, editor_id, "operator", 0, 0, &ares) == 0);
+
+        ai_tool_context_t* ed_ctx = ai_tool_context_create(pool, editor_id, 10, "trace_rbac");
+        assert(ed_ctx != NULL);
+        csilk_json_add_int(ed_ctx->metadata, "ledger_id", sh_lid);
+
+        /* 9a. confirm_proposed_expense on viewer account rejected with 1004 */
+        csilk_json_t* e_args = csilk_json_object();
+        csilk_json_add_number(e_args, "amount", 50.0);
+        csilk_json_add_string(e_args, "type", "expense");
+        csilk_json_add_string(e_args, "date", "2026-11-20");
+        csilk_json_add_number(e_args, "category_id", 20.0);
+        csilk_json_add_number(e_args, "asset_id", (double)asset_ro);
+        csilk_json_add_string(e_args, "note", "Unauthorized expense");
+        char* e_tok = ai_confirmation_create_bound_token(
+            editor_id, 10, "confirm_proposed_expense", e_args, AI_RISK_HIGH, 300);
+        assert(e_tok != NULL);
+        csilk_json_add_string(e_args, "draft_token", e_tok);
+
+        char* e_res = ai_tool_dispatch_parsed(ed_ctx, "confirm_proposed_expense", e_args);
+        assert(e_res != NULL);
+        csilk_json_t* e_parsed = csilk_json_parse(e_res);
+        assert(e_parsed != NULL);
+        assert(!csilk_json_get_bool(e_parsed, "success"));
+        assert(csilk_json_get_string(e_parsed, "error") != NULL);
+        assert(db_get_int(e_parsed, "code") == 1004);
+        csilk_json_free(e_parsed);
+        free(e_res);
+        free(e_tok);
+        csilk_json_free(e_args);
+
+        /* Balance must remain untouched at 1000.0 */
+        csilk_json_t* aro_row = asset_get_raw(pool, owner_id, asset_ro);
+        assert(db_get_num(csilk_json_array_get(aro_row, 0), "current_value") == 1000.0);
+        csilk_json_free(aro_row);
+
+        /* 9b. confirm_proposed_transfer touching viewer account (source OR target) rejected with 1004 */
+        ai_permission_set_user_role(editor_id, AI_USER_ROLE_ADMIN);
+        csilk_json_t* t_args = csilk_json_object();
+        csilk_json_add_number(t_args, "amount", 100.0);
+        csilk_json_add_number(t_args, "from_asset_id", (double)asset_ro);
+        csilk_json_add_number(t_args, "to_asset_id", (double)asset_rw);
+        csilk_json_add_string(t_args, "date", "2026-11-20");
+        csilk_json_add_string(t_args, "note", "Unauthorized transfer out");
+        char* t_tok = ai_confirmation_create_bound_token(
+            editor_id, 10, "confirm_proposed_transfer", t_args, AI_RISK_HIGH, 300);
+        assert(t_tok != NULL);
+        csilk_json_add_string(t_args, "draft_token", t_tok);
+
+        char* t_res = ai_tool_dispatch_parsed(ed_ctx, "confirm_proposed_transfer", t_args);
+        assert(t_res != NULL);
+        csilk_json_t* t_parsed = csilk_json_parse(t_res);
+        assert(t_parsed != NULL);
+        assert(!csilk_json_get_bool(t_parsed, "success"));
+        assert(csilk_json_get_string(t_parsed, "error") != NULL);
+        assert(db_get_int(t_parsed, "code") == 1004);
+        csilk_json_free(t_parsed);
+        free(t_res);
+        free(t_tok);
+        csilk_json_free(t_args);
+
+        /* Also target viewer account */
+        csilk_json_t* t_args2 = csilk_json_object();
+        csilk_json_add_number(t_args2, "amount", 100.0);
+        csilk_json_add_number(t_args2, "from_asset_id", (double)asset_rw);
+        csilk_json_add_number(t_args2, "to_asset_id", (double)asset_ro);
+        csilk_json_add_string(t_args2, "date", "2026-11-20");
+        csilk_json_add_string(t_args2, "note", "Unauthorized transfer in");
+        char* t_tok2 = ai_confirmation_create_bound_token(
+            editor_id, 10, "confirm_proposed_transfer", t_args2, AI_RISK_HIGH, 300);
+        assert(t_tok2 != NULL);
+        csilk_json_add_string(t_args2, "draft_token", t_tok2);
+
+        char* t_res2 = ai_tool_dispatch_parsed(ed_ctx, "confirm_proposed_transfer", t_args2);
+        assert(t_res2 != NULL);
+        csilk_json_t* t_parsed2 = csilk_json_parse(t_res2);
+        assert(t_parsed2 != NULL);
+        assert(!csilk_json_get_bool(t_parsed2, "success"));
+        assert(db_get_int(t_parsed2, "code") == 1004);
+        csilk_json_free(t_parsed2);
+        free(t_res2);
+        free(t_tok2);
+        csilk_json_free(t_args2);
+
+        aro_row = asset_get_raw(pool, owner_id, asset_ro);
+        csilk_json_t* arw_row = asset_get_raw(pool, owner_id, asset_rw);
+        assert(db_get_num(csilk_json_array_get(aro_row, 0), "current_value") == 1000.0);
+        assert(db_get_num(csilk_json_array_get(arw_row, 0), "current_value") == 1000.0);
+        csilk_json_free(aro_row);
+        csilk_json_free(arw_row);
+
+        ai_tool_context_free(ed_ctx);
+        printf("  ✅ Shared-ledger editor with viewer permission rejected (1004) by expense & transfer confirm\n");
+
+        /* 9c. Positive operator confirm on shared ledger even when metadata["ledger_id"] defaults to editor's personal ledger */
+        int64_t personal_lid = 3;
+        int64_t acct_rw2 = 22;
+        int64_t asset_rw2 = 203;
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO ledgers (id, owner_id, name, is_default) VALUES (3, 903, 'CarolPersonal', 1)",
+            (const char*[]){NULL}));
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO accounts (id, user_id, ledger_id, name, institution) VALUES "
+            "(22, 902, 2, '备用可写卡', 'bank_card')",
+            (const char*[]){NULL}));
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO assets (id, user_id, category_id, account_id, name, current_value, currency, ledger_id) VALUES "
+            "(203, 902, 20, 22, '备用可写资产', 500.0, 'CNY', 2)",
+            (const char*[]){NULL}));
+        assert(account_permission_usecase_set(pool, owner_id, sh_lid, acct_rw2, editor_id, "operator", 0, 0, &ares) == 0);
+
+        ai_tool_context_t* ed_def_ctx = ai_tool_context_create(pool, editor_id, 10, "trace_op_default");
+        assert(ed_def_ctx != NULL);
+        /* Simulate ctx_ledger_id fallback to editor's personal default ledger (not explicit) */
+        csilk_json_add_int(ed_def_ctx->metadata, "ledger_id", personal_lid);
+
+        /* Positive expense on operator asset_rw -> succeeds, updates balance, stamps sh_lid (2, not 3) */
+        csilk_json_t* ok_ea = csilk_json_object();
+        csilk_json_add_number(ok_ea, "amount", 60.0);
+        csilk_json_add_string(ok_ea, "type", "expense");
+        csilk_json_add_string(ok_ea, "date", "2026-11-20");
+        csilk_json_add_number(ok_ea, "category_id", 20.0);
+        csilk_json_add_number(ok_ea, "asset_id", (double)asset_rw);
+        csilk_json_add_string(ok_ea, "note", "Shared op expense");
+        char* ok_et = ai_confirmation_create_bound_token(
+            editor_id, 10, "confirm_proposed_expense", ok_ea, AI_RISK_HIGH, 300);
+        assert(ok_et != NULL);
+        csilk_json_add_string(ok_ea, "draft_token", ok_et);
+
+        char* ok_er = ai_tool_dispatch_parsed(ed_def_ctx, "confirm_proposed_expense", ok_ea);
+        assert(ok_er != NULL);
+        csilk_json_t* ok_ep = csilk_json_parse(ok_er);
+        assert(ok_ep != NULL && csilk_json_get_bool(ok_ep, "success"));
+        int64_t ok_de_id = db_get_int(ok_ep, "id");
+        assert(ok_de_id > 0);
+        csilk_json_free(ok_ep);
+        free(ok_er);
+        free(ok_et);
+        csilk_json_free(ok_ea);
+
+        arw_row = asset_get_raw(pool, owner_id, asset_rw);
+        assert(db_get_num(csilk_json_array_get(arw_row, 0), "current_value") == 940.0);
+        csilk_json_free(arw_row);
+
+        char de_id_s[32];
+        snprintf(de_id_s, sizeof(de_id_s), "%lld", (long long)ok_de_id);
+        csilk_json_t* de_chk = csilk_db_query_param_json(
+            pool, "SELECT ledger_id FROM daily_expenses WHERE id=?", (const char*[]){de_id_s, NULL});
+        assert(de_chk != NULL && csilk_json_array_size(de_chk) == 1);
+        assert(db_get_int(csilk_json_array_get(de_chk, 0), "ledger_id") == sh_lid);
+        csilk_json_free(de_chk);
+
+        /* Positive transfer between operator assets asset_rw -> asset_rw2 with omitted/default metadata ledger_id */
+        csilk_json_t* ok_ta = csilk_json_object();
+        csilk_json_add_number(ok_ta, "amount", 150.0);
+        csilk_json_add_number(ok_ta, "from_asset_id", (double)asset_rw);
+        csilk_json_add_number(ok_ta, "to_asset_id", (double)asset_rw2);
+        csilk_json_add_string(ok_ta, "date", "2026-11-20");
+        csilk_json_add_string(ok_ta, "note", "Shared op transfer");
+        char* ok_tt = ai_confirmation_create_bound_token(
+            editor_id, 10, "confirm_proposed_transfer", ok_ta, AI_RISK_HIGH, 300);
+        assert(ok_tt != NULL);
+        csilk_json_add_string(ok_ta, "draft_token", ok_tt);
+
+        char* ok_tr = ai_tool_dispatch_parsed(ed_def_ctx, "confirm_proposed_transfer", ok_ta);
+        assert(ok_tr != NULL);
+        csilk_json_t* ok_tp = csilk_json_parse(ok_tr);
+        assert(ok_tp != NULL && csilk_json_get_bool(ok_tp, "success"));
+        int64_t ok_tf_id = db_get_int(ok_tp, "id");
+        assert(ok_tf_id > 0);
+        csilk_json_free(ok_tp);
+        free(ok_tr);
+        free(ok_tt);
+        csilk_json_free(ok_ta);
+
+        arw_row = asset_get_raw(pool, owner_id, asset_rw);
+        csilk_json_t* arw2_row = asset_get_raw(pool, owner_id, asset_rw2);
+        assert(db_get_num(csilk_json_array_get(arw_row, 0), "current_value") == 790.0);
+        assert(db_get_num(csilk_json_array_get(arw2_row, 0), "current_value") == 650.0);
+        csilk_json_free(arw_row);
+        csilk_json_free(arw2_row);
+
+        char tf_id_s[32];
+        snprintf(tf_id_s, sizeof(tf_id_s), "%lld", (long long)ok_tf_id);
+        csilk_json_t* tf_chk = csilk_db_query_param_json(
+            pool, "SELECT ledger_id, from_tx_id, to_tx_id FROM transfers WHERE id=?", (const char*[]){tf_id_s, NULL});
+        assert(tf_chk != NULL && csilk_json_array_size(tf_chk) == 1);
+        assert(db_get_int(csilk_json_array_get(tf_chk, 0), "ledger_id") == sh_lid);
+        int64_t ok_ftx = db_get_int(csilk_json_array_get(tf_chk, 0), "from_tx_id");
+        int64_t ok_ttx = db_get_int(csilk_json_array_get(tf_chk, 0), "to_tx_id");
+        csilk_json_free(tf_chk);
+
+        char ftx_buf[32], ttx_buf[32];
+        snprintf(ftx_buf, sizeof(ftx_buf), "%lld", (long long)ok_ftx);
+        snprintf(ttx_buf, sizeof(ttx_buf), "%lld", (long long)ok_ttx);
+        csilk_json_t* tx_chk = csilk_db_query_param_json(
+            pool, "SELECT ledger_id FROM transactions WHERE id IN (?, ?)", (const char*[]){ftx_buf, ttx_buf, NULL});
+        assert(tx_chk != NULL && csilk_json_array_size(tx_chk) == 2);
+        assert(db_get_int(csilk_json_array_get(tx_chk, 0), "ledger_id") == sh_lid);
+        assert(db_get_int(csilk_json_array_get(tx_chk, 1), "ledger_id") == sh_lid);
+        csilk_json_free(tx_chk);
+
+        /* Explicit cross-ledger mismatch (ledger_id_explicit=true with personal_lid) -> rejected 1004 */
+        csilk_json_add_bool(ed_def_ctx->metadata, "ledger_id_explicit", true);
+        csilk_json_t* mis_ea = csilk_json_object();
+        csilk_json_add_number(mis_ea, "amount", 10.0);
+        csilk_json_add_string(mis_ea, "type", "expense");
+        csilk_json_add_string(mis_ea, "date", "2026-11-20");
+        csilk_json_add_number(mis_ea, "category_id", 20.0);
+        csilk_json_add_number(mis_ea, "asset_id", (double)asset_rw);
+        char* mis_et = ai_confirmation_create_bound_token(
+            editor_id, 10, "confirm_proposed_expense", mis_ea, AI_RISK_HIGH, 300);
+        csilk_json_add_string(mis_ea, "draft_token", mis_et);
+        char* mis_er = ai_tool_dispatch_parsed(ed_def_ctx, "confirm_proposed_expense", mis_ea);
+        csilk_json_t* mis_ep = csilk_json_parse(mis_er);
+        assert(mis_ep != NULL && !csilk_json_get_bool(mis_ep, "success") && db_get_int(mis_ep, "code") == 1004);
+        csilk_json_free(mis_ep);
+        free(mis_er);
+        free(mis_et);
+        csilk_json_free(mis_ea);
+
+        ai_tool_context_free(ed_def_ctx);
+        printf("  ✅ Shared-ledger operator expense & transfer confirm updated balances & stamped ledger_id=%lld (ignoring default fallback)\n",
+               (long long)sh_lid);
+    }
+
+    /* ----------------------------------------------------------------- */
+    /* Test 10: ai_confirm_has_explicit_ledger rejects "0"/invalid IDs   */
+    /* ----------------------------------------------------------------- */
+    printf("[Test 10] Verifying ai_confirm_has_explicit_ledger...\n");
+    {
+        assert(ai_confirm_has_explicit_ledger(NULL, NULL, 0) == false);
+        assert(ai_confirm_has_explicit_ledger("", "", 0) == false);
+        assert(ai_confirm_has_explicit_ledger("0", NULL, 0) == false);
+        assert(ai_confirm_has_explicit_ledger(NULL, "0", 0) == false);
+        assert(ai_confirm_has_explicit_ledger("0", "0", 0) == false);
+        assert(ai_confirm_has_explicit_ledger("-1", "abc", -2) == false);
+        assert(ai_confirm_has_explicit_ledger("2", NULL, 0) == true);
+        assert(ai_confirm_has_explicit_ledger(NULL, "3", 0) == true);
+        assert(ai_confirm_has_explicit_ledger(NULL, NULL, 4) == true);
+        assert(ai_confirm_has_explicit_ledger("0", "5", 0) == true);
+        printf("  ✅ ai_confirm_has_explicit_ledger only treats positive parsed IDs as explicit\n");
     }
 
     if (saved_draft_token) {

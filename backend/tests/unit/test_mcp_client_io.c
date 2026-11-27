@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include "services/ai/tools/mcp/mcp_client.h"
 
@@ -110,6 +111,33 @@ int main(void) {
     c->read_fd = -1;
     close(in_pipe[0]);
     mf_mcp_client_free(c);
+
+    /* Test 5: Monotonic deadline prevents stderr trickling from resetting timeout_ms forever */
+    {
+        mf_mcp_server_t s_trickle = {
+            .name = "stderr_trickle",
+            .transport = MCP_TRANSPORT_STDIO,
+            .command = "bash",
+            .args_json = "[\"-c\", \"i=0; while [ $i -lt 25 ]; do printf x >&2; sleep 0.05; i=$((i+1)); done\"]",
+            .timeout_ms = 200
+        };
+        mf_mcp_client_t* ct = mf_mcp_client_new(&s_trickle);
+        assert(ct != NULL);
+
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        char err_t[256] = {0};
+        char* resp_t = mf_mcp_client_call_tool(ct, "dummy", "{}", err_t, sizeof(err_t));
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+
+        long elapsed_ms = (long)((t1.tv_sec - t0.tv_sec) * 1000LL +
+                                 (t1.tv_nsec - t0.tv_nsec) / 1000000LL);
+        assert(resp_t == NULL);
+        assert(strstr(err_t, "timed out") != NULL);
+        assert(elapsed_ms >= 180 && elapsed_ms < 500);
+        mf_mcp_client_free(ct);
+    }
+
     printf("PASS: test_mcp_client_io completed successfully\n");
     return 0;
 }

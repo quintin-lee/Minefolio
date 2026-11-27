@@ -239,6 +239,24 @@ decrypt_password_if_needed(csilk_ctx_t* c,
     return 0;
 }
 
+static bool
+is_registration_allowed(void)
+{
+    char        reg_cfg[32] = {0};
+    const char* v = config_env_get("ENABLE_REGISTRATION", reg_cfg, sizeof(reg_cfg), "1");
+    return !v || v[0] == '1' || strcasecmp(v, "true") == 0;
+}
+
+static void
+seed_new_user_defaults(csilk_db_pool_t* db_pool, int64_t user_id)
+{
+    int64_t ledger_id = ledger_get_default(db_pool, user_id);
+    category_usecase_seed_defaults(db_pool, user_id, ledger_id);
+    account_usecase_seed_default(db_pool, user_id, ledger_id);
+    mf_import_rule_seed_defaults(db_pool, user_id);
+    skill_usecase_seed_defaults(db_pool, user_id);
+}
+
 int
 auth_usecase_register(void*                      pool,
                       const register_user_cmd_t* cmd,
@@ -274,53 +292,84 @@ auth_usecase_register(void*                      pool,
     char err[256];
     if (mf_auth_rule_validate_username(cmd->username, err, sizeof(err)) != 0 ||
         mf_auth_rule_validate_password(password, err, sizeof(err)) != 0) {
+        OPENSSL_cleanse(password_buf, sizeof(password_buf));
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "用户名需≥2字符，密码需≥6字符");
         return -1;
     }
 
-    /* 检查用户名是否已存在 */
+    /* 预先快速校验（避免明显冲突或关闭注册时浪费 bcrypt 计算），权威性校验在事务内复核 */
     mf_user_t check_user = {0};
     if (mf_auth_repo_find_by_username(pool, cmd->username, &check_user) == 0) {
+        OPENSSL_cleanse(password_buf, sizeof(password_buf));
         out_res->code = 1004;
         snprintf(out_res->message, sizeof(out_res->message), "用户名已存在");
         return -1;
     }
 
-    /* 注册开放门禁：首个用户（系统初始化引导）必须放行；已有用户时受
-       ENABLE_REGISTRATION 配置控制（默认开放，可关闭以阻止后续注册）。
-       该规则此前仅有单测、生产注册路径无调用点，此处接入。 */
-    int user_count = mf_auth_repo_count(pool);
-    {
-        char        reg_cfg[32] = {0};
-        const char* v = config_env_get("ENABLE_REGISTRATION", reg_cfg, sizeof(reg_cfg), "1");
-        bool        allow_registration = !v || v[0] == '1' || strcasecmp(v, "true") == 0;
-        if (!mf_auth_rule_can_register(user_count, allow_registration)) {
-            out_res->code = 1004;
-            snprintf(out_res->message, sizeof(out_res->message), "当前系统已关闭用户注册");
-            return -1;
-        }
+    bool allow_registration = is_registration_allowed();
+    int  pre_count = mf_auth_repo_count(pool);
+    if (!mf_auth_rule_can_register(pre_count, allow_registration)) {
+        OPENSSL_cleanse(password_buf, sizeof(password_buf));
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "当前系统已关闭用户注册");
+        return -1;
     }
 
     char hashed[CSILK_BCRYPT_HASH_LEN];
     store_bcrypt_hash(password, hashed);
+    OPENSSL_cleanse(password_buf, sizeof(password_buf));
+
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+    db_tx_scope_t    scope;
+    if (db_tx_scope_begin(db_pool, "mf_register_scope", &scope) != 0) {
+        OPENSSL_cleanse(hashed, sizeof(hashed));
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+        return -1;
+    }
+
+    memset(&check_user, 0, sizeof(check_user));
+    if (mf_auth_repo_find_by_username(db_pool, cmd->username, &check_user) == 0) {
+        OPENSSL_cleanse(hashed, sizeof(hashed));
+        db_tx_scope_rollback(db_pool, &scope);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "用户名已存在");
+        return -1;
+    }
+
+    /* 注册开放门禁：首个用户（系统初始化引导）必须放行；已有用户时受 ENABLE_REGISTRATION 控制 */
+    int user_count = mf_auth_repo_count(db_pool);
+    if (!mf_auth_rule_can_register(user_count, allow_registration)) {
+        OPENSSL_cleanse(hashed, sizeof(hashed));
+        db_tx_scope_rollback(db_pool, &scope);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "当前系统已关闭用户注册");
+        return -1;
+    }
 
     const char* initial_role = (user_count == 0) ? "admin" : "user";
     int64_t     user_id = 0;
-    if (mf_auth_repo_create_with_role(pool, cmd->username, hashed, initial_role, &user_id) != 0 ||
+    if (mf_auth_repo_create_with_role(db_pool, cmd->username, hashed, initial_role, &user_id) !=
+            0 ||
         user_id <= 0) {
+        OPENSSL_cleanse(hashed, sizeof(hashed));
+        db_tx_scope_rollback(db_pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "注册失败");
         return -1;
     }
+    OPENSSL_cleanse(hashed, sizeof(hashed));
 
     /* 初始化默认账本，再按账本播种默认分类与导入规则 */
-    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
-    int64_t          ledger_id = ledger_get_default(db_pool, user_id);
-    category_usecase_seed_defaults(db_pool, user_id, ledger_id);
-    account_usecase_seed_default(db_pool, user_id, ledger_id);
-    mf_import_rule_seed_defaults(db_pool, user_id);
-    skill_usecase_seed_defaults(db_pool, user_id);
+    seed_new_user_defaults(db_pool, user_id);
+
+    if (db_tx_scope_commit(db_pool, &scope) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
 
     char*         token = jwt_generate_token(c, user_id, 0);
     csilk_json_t* resp = csilk_json_object();
@@ -1240,10 +1289,33 @@ auth_usecase_oauth_callback(void*                       pool,
             snprintf(out_res->message, sizeof(out_res->message), "账号已被禁用，请联系管理员");
             return -1;
         }
+        int is_2fa_active =
+            oauth_user.totp_enabled || ((oauth_user.totp_secret[0] != '\0') &&
+                                        (oauth_user.totp_backup_codes[0] != '\0' &&
+                                         strcmp(oauth_user.totp_backup_codes, "[]") != 0));
+        if (is_2fa_active) {
+            char* temp_token =
+                jwt_generate_temp_token(NULL, oauth_user.id, (int)oauth_user.token_version, 300);
+            csilk_json_t* resp = csilk_json_object();
+            csilk_json_add_bool(resp, "require_2fa", true);
+            csilk_json_add_string(resp, "temp_token", temp_token ? temp_token : "");
+            if (temp_token) {
+                free(temp_token);
+            }
+            *out_data = resp;
+            out_res->code = 0;
+            snprintf(out_res->message, sizeof(out_res->message), "ok");
+            return 0;
+        }
         user_id = oauth_user.id;
         token_version = (int)oauth_user.token_version;
         snprintf(final_username, sizeof(final_username), "%s", oauth_user.username);
     } else {
+        if (!is_registration_allowed()) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "当前系统已关闭用户注册");
+            return -1;
+        }
         mf_user_t check_un = {0};
         if (mf_auth_repo_find_by_username(pool, username_buf, &check_un) == 0) {
             snprintf(final_username,
@@ -1377,30 +1449,38 @@ auth_usecase_setup_first_admin(void*                  pool,
     pt_buf[pt_len] = '\0';
     const char* password = (const char*)pt_buf;
 
+    char hashed[CSILK_BCRYPT_HASH_LEN];
+    csilk_bcrypt_hash(password, strlen(password), CSILK_BCRYPT_DEFAULT_COST, hashed);
+    OPENSSL_cleanse(pt_buf, sizeof(pt_buf));
+
     db_tx_scope_t scope;
     if (db_tx_scope_begin(db_pool, "mf_setup_scope", &scope) != 0) {
+        OPENSSL_cleanse(hashed, sizeof(hashed));
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
         return -1;
     }
 
-    char hashed[CSILK_BCRYPT_HASH_LEN];
-    csilk_bcrypt_hash(password, strlen(password), CSILK_BCRYPT_DEFAULT_COST, hashed);
+    if (mf_auth_repo_count(db_pool) > 0) {
+        OPENSSL_cleanse(hashed, sizeof(hashed));
+        db_tx_scope_rollback(db_pool, &scope);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "系统已完成初始化，禁止重复设置");
+        return -1;
+    }
 
     int64_t user_id = 0;
     if (mf_auth_repo_create_with_role(db_pool, username, hashed, "admin", &user_id) != 0 ||
         user_id <= 0) {
+        OPENSSL_cleanse(hashed, sizeof(hashed));
         db_tx_scope_rollback(db_pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "初始化失败");
         return -1;
     }
+    OPENSSL_cleanse(hashed, sizeof(hashed));
 
-    int64_t ledger_id = ledger_get_default(db_pool, user_id);
-    category_usecase_seed_defaults(db_pool, user_id, ledger_id);
-    account_usecase_seed_default(db_pool, user_id, ledger_id);
-    mf_import_rule_seed_defaults(db_pool, user_id);
-    skill_usecase_seed_defaults(db_pool, user_id);
+    seed_new_user_defaults(db_pool, user_id);
 
     if (db_tx_scope_commit(db_pool, &scope) != 0) {
         db_tx_scope_rollback(db_pool, &scope);
@@ -1451,16 +1531,6 @@ user_summary_to_json(const mf_user_summary_t* u)
     csilk_json_add_string(obj, "oauth_provider", u->oauth_provider);
     csilk_json_add_string(obj, "created_at", u->created_at);
     return obj;
-}
-
-static void
-seed_new_user_defaults(csilk_db_pool_t* db_pool, int64_t user_id)
-{
-    int64_t ledger_id = ledger_get_default(db_pool, user_id);
-    category_usecase_seed_defaults(db_pool, user_id, ledger_id);
-    account_usecase_seed_default(db_pool, user_id, ledger_id);
-    mf_import_rule_seed_defaults(db_pool, user_id);
-    skill_usecase_seed_defaults(db_pool, user_id);
 }
 
 int

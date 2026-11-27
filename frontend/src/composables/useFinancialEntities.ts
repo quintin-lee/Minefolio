@@ -183,24 +183,31 @@ const collisionMap = ref<Map<string, { asset?: EntityDetail; account?: EntityDet
 const entitiesVersion = ref(0)
 const isLoaded = ref(false)
 const isLoading = ref(false)
+let entitiesEpoch = 0
+let loadingEpoch = -1
 
 /**
  * 清空模块级财务实体缓存（登出或切换账本时调用，防止跨用户/跨账本串台）
  */
 export function resetFinancialEntities(): void {
+  entitiesEpoch += 1
+  loadingEpoch = -1
   accountMap.value = new Map()
   assetMap.value = new Map()
   nameToEntityLookup.value = new Map()
   collisionMap.value = new Map()
   entitiesVersion.value += 1
   isLoaded.value = false
+  isLoading.value = false
 }
 
 export function useFinancialEntities() {
   async function loadEntities(force = false) {
-    if (isLoading.value) return
+    if (isLoading.value && loadingEpoch === entitiesEpoch) return
     if (isLoaded.value && !force) return
 
+    const epoch = entitiesEpoch
+    loadingEpoch = epoch
     isLoading.value = true
     try {
       const [accRes, assetRes, holdingsRes] = await Promise.allSettled([
@@ -208,6 +215,7 @@ export function useFinancialEntities() {
         assetsApi.list({ page_size: 100 }),
         reportsApi.holdings(),
       ])
+      if (epoch !== entitiesEpoch) return
 
       const nextAccounts = new Map<string | number, EntityDetail>()
       const nextAssets = new Map<string | number, EntityDetail>()
@@ -247,8 +255,10 @@ export function useFinancialEntities() {
         let page = 2
         const maxPages = 10
         while (allAssets.length < totalAssets && page <= maxPages) {
+          if (epoch !== entitiesEpoch) return
           try {
             const nextPage = await assetsApi.list({ page, page_size: 100 })
+            if (epoch !== entitiesEpoch) return
             if (!Array.isArray(nextPage?.list) || nextPage.list.length === 0) break
             allAssets.push(...nextPage.list)
             page += 1
@@ -292,6 +302,7 @@ export function useFinancialEntities() {
         }
       }
 
+      if (epoch !== entitiesEpoch) return
       accountMap.value = nextAccounts
       assetMap.value = nextAssets
       nameToEntityLookup.value = nextLookup
@@ -301,7 +312,10 @@ export function useFinancialEntities() {
     } catch {
       // ignore
     } finally {
-      isLoading.value = false
+      if (epoch === entitiesEpoch) {
+        isLoading.value = false
+        loadingEpoch = -1
+      }
     }
   }
 

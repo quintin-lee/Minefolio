@@ -5,6 +5,7 @@
 
 // frontend/src/api/categories.ts
 import http from '@/utils/http'
+import type { AxiosRequestConfig } from 'axios'
 import type { Category, CategoryInput } from '@/types'
 
 /**
@@ -37,25 +38,28 @@ export const categoriesApi = {
    * @param data.parent_id 父分类 ID (可选，未指定则为根分类)
    * @param data.icon 图标名称 (可选)
    * @param data.sort_order 排序序号 (可选)
+   * @param config Axios 请求配置 (可选，用于转发如 X-Ledger-Id 等请求头)
    * @returns 空响应
    */
-   create: (data: CategoryInput) => http.post<void>('/categories', data),
+   create: (data: CategoryInput, config?: AxiosRequestConfig) => http.post<void>('/categories', data, config),
 
   /**
    * 更新指定分类信息
    * @route PUT /api/categories/:id
    * @param id 分类 ID
    * @param data 更新的数据载荷
+   * @param config Axios 请求配置 (可选，用于转发如 X-Ledger-Id 等请求头)
    * @returns 空响应
    */
-   update: (id: number, data: CategoryInput) => http.put<void>(`/categories/${id}`, data),
+   update: (id: number, data: CategoryInput, config?: AxiosRequestConfig) => http.put<void>(`/categories/${id}`, data, config),
 
   /**
    * 删除指定分类节点 (注意：若有子节点或已被资产/交易关联则可能受限)
    * @route DELETE /api/categories/:id
    * @param id 分类 ID
+   * @param config Axios 请求配置 (可选，用于转发如 X-Ledger-Id 等请求头)
    * @returns 空响应
    */
-  delete: (id: number) => http.delete<void>(`/categories/${id}`),
+  delete: (id: number, config?: AxiosRequestConfig) => http.delete<void>(`/categories/${id}`, config),
 }
 

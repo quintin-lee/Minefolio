@@ -355,7 +355,7 @@ receipt_scan_execute_json(csilk_db_pool_t*         pool,
                         continue;
                     }
                     int is_active =
-                        csilk_json_get(r, "is_active") ? csilk_json_get_bool(r, "is_active") : 1;
+                        csilk_json_get(r, "is_active") ? db_get_bool(r, "is_active") : 1;
                     if (!is_active) {
                         continue;
                     }

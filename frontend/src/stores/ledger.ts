@@ -47,13 +47,18 @@ export const useLedgerStore = defineStore('ledger', () => {
     return r === 'owner' || r === 'editor'
   })
 
+  /** 账本列表加载请求序号：防止登出 reset() 或并发拉取后过期响应写回状态/localStorage */
+  let fetchSeq = 0
+
   /**
    * 从服务端拉取当前用户参与的所有账本列表，并初始化选中当前激活账本
    */
   async function fetchLedgers() {
+    const seq = ++fetchSeq
     loading.value = true
     try {
       const data = await ledgerApi.list()
+      if (seq !== fetchSeq) return
       ledgers.value = Array.isArray(data) ? data : []
       if (ledgers.value.length > 0) {
         const found = ledgers.value.find((l) => l.id === currentLedgerId.value)
@@ -66,7 +71,9 @@ export const useLedgerStore = defineStore('ledger', () => {
         }
       }
     } finally {
-      loading.value = false
+      if (seq === fetchSeq) {
+        loading.value = false
+      }
     }
   }
 
@@ -92,9 +99,13 @@ export const useLedgerStore = defineStore('ledger', () => {
    * 到同一设备上的下一位登录用户；登录后 LedgerSelector 会重新拉取)
    */
   function reset() {
+    fetchSeq++
     ledgers.value = []
     currentLedgerId.value = null
     loading.value = false
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(STORAGE_KEY)
+    }
   }
 
   return {

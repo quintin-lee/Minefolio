@@ -195,9 +195,13 @@ function requireOnline(): boolean {
   return false
 }
 
+function activeLedgerId(): number {
+  return Number(localStorage.getItem('minefolio_active_ledger_id') || 0)
+}
+
 function loadLocalAssets() {
   try {
-    const ledgerId = Number(localStorage.getItem('minefolio_active_ledger_id') || 0)
+    const ledgerId = activeLedgerId()
     assets.value = rowsFrom(query(
       'SELECT * FROM assets WHERE __deleted = 0 AND (ledger_id = ? OR ledger_id = 0) ORDER BY id',
       [ledgerId]
@@ -228,11 +232,15 @@ function formatFlowType(t: string) {
 
 async function loadData() {
   loading.value = true
+  const ledgerId = activeLedgerId()
+  const plansKey = `dca_plans:${ledgerId}`
+  const pendKey = `dca_executions:${ledgerId}`
+  const cfKey = `cashflow_calendar:${ledgerId}`
 
   // 缓存优先：先用上次成功的在线响应填充 UI
-  const plansCache = loadViewCache<DcaPlan[]>('dca_plans')
-  const pendCache = loadViewCache<DcaExecution[]>('dca_executions')
-  const cfCache = loadViewCache<MonthlyCashflowSummary>('cashflow_calendar')
+  const plansCache = loadViewCache<DcaPlan[]>(plansKey)
+  const pendCache = loadViewCache<DcaExecution[]>(pendKey)
+  const cfCache = loadViewCache<MonthlyCashflowSummary>(cfKey)
   if (plansCache.data) dcaPlans.value = plansCache.data
   if (pendCache.data) pendingExecutions.value = pendCache.data
   if (cfCache.data) {
@@ -255,16 +263,16 @@ async function loadData() {
     if (plansRes.status === 'fulfilled') {
       const pVal = plansRes.value
       dcaPlans.value = Array.isArray(pVal) ? pVal : (pVal as any)?.list || []
-      saveViewCache('dca_plans', dcaPlans.value)
+      saveViewCache(plansKey, dcaPlans.value)
     }
     if (pendRes.status === 'fulfilled') {
       pendingExecutions.value = pendRes.value || []
-      saveViewCache('dca_executions', pendingExecutions.value)
+      saveViewCache(pendKey, pendingExecutions.value)
     }
     if (cfRes.status === 'fulfilled') {
       cashflowSummary.value = cfRes.value
       calendarEvents.value = cfRes.value?.events || []
-      saveViewCache('cashflow_calendar', cfRes.value)
+      saveViewCache(cfKey, cfRes.value)
     }
     if (astRes.status === 'fulfilled') {
       assets.value = Array.isArray(astRes.value) ? astRes.value : (astRes.value as any)?.list || []

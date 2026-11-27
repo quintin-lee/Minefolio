@@ -13,7 +13,7 @@
     "cli": "node cli.js",
     "onebot": "node adapters/onebot-server.js",
     "ilink": "node ilink-server.js",
-    "test": "node --test ilink/test/ adapters/test/",
+    "test": "node --test ilink/test/ adapters/test/ tests/",
     "test:adapters": "node --test adapters/test/"
   },
   "dependencies": {}

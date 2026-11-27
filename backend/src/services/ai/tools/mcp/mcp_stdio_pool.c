@@ -28,6 +28,7 @@ static pool_entry_t
     s_pool[MF_MCP_STDIO_POOL_CAP]; /* 固定容量，上限由 MINEFOLIO_MCP_STDIO_MAX_PROCS 控制逻辑 */
 static size_t          s_pool_count = 0;
 static uint64_t        s_next_reserve_id = 0;
+static bool            s_shutting_down = false;
 static pthread_mutex_t s_pool_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* 解锁执行 I/O 后必须按 reserve_id 重新定位占位槽，禁止复用解锁前的数组下标。 */
@@ -96,8 +97,18 @@ mf_mcp_stdio_pool_acquire(
     }
 
     /* 阶段 1：锁内做纯簿记 —— 命中就绪闲置 / 抢占 LRU / 预留占位槽。
-       所有 spawn + 握手 I/O（initialize）在锁外执行，避免串行化并发 dispatch。 */
+       所有 spawn + 握手 I/O（initialize）与淘汰回收（mf_mcp_client_free）在锁外执行，
+       避免持锁阻塞或串行化并发 dispatch。 */
+    mf_mcp_client_t* evicted_dead = NULL;
     pthread_mutex_lock(&s_pool_lock);
+
+    if (s_shutting_down) {
+        pthread_mutex_unlock(&s_pool_lock);
+        if (err && err_sz) {
+            snprintf(err, err_sz, "mcp stdio pool: shut down");
+        }
+        return NULL;
+    }
 
     size_t slot = find_idle_slot(user_id, server_id);
     if (slot != SIZE_MAX) {
@@ -116,7 +127,7 @@ mf_mcp_stdio_pool_acquire(
     }
 
     /* 池满时先 LRU 淘汰一个"就绪且闲置"的条目（仅淘汰非 in_progress 的），
-       在锁内安全地 free 其子进程（mf_mcp_client_free 只触碰子进程，不碰池） */
+       先在锁内从池中摘除指针，解锁后再 free 其子进程，避免持锁阻塞 waitpid。 */
     if (s_pool_count >= (size_t)max || s_pool_count >= MF_MCP_STDIO_POOL_CAP) {
         size_t victim = SIZE_MAX;
         time_t oldest = 0;
@@ -134,16 +145,16 @@ mf_mcp_stdio_pool_acquire(
             pthread_mutex_unlock(&s_pool_lock);
             goto short_lived;
         }
-        /* 淘汰：先取出末位将被覆盖的条目客户端指针，再移动末位到 victim，
-           最后 free 被驱逐的旧子进程（lock-safe：仅触碰子进程，不碰池）。 */
-        mf_mcp_client_t* dead = s_pool[victim].client;
+        evicted_dead = s_pool[victim].client;
         s_pool[victim] = s_pool[--s_pool_count];
-        mf_mcp_client_free(dead);
     }
 
     /* 预留占位槽：in_progress=true / client=NULL，稍后锁外 initialize */
     if (s_pool_count >= MF_MCP_STDIO_POOL_CAP) {
         pthread_mutex_unlock(&s_pool_lock);
+        if (evicted_dead) {
+            mf_mcp_client_free(evicted_dead);
+        }
         goto short_lived;
     }
     size_t   reserve = s_pool_count++;
@@ -161,6 +172,10 @@ mf_mcp_stdio_pool_acquire(
     s_pool[reserve].in_progress = true;
     pthread_mutex_unlock(&s_pool_lock);
 
+    if (evicted_dead) {
+        mf_mcp_client_free(evicted_dead);
+    }
+
     /* 阶段 2：锁外 spawn + 握手（子进程 I/O，秒级）。
        占位槽已预留，并发同键线程在阶段 1 会看到 in_progress 而转 short-lived。
        注意：解锁期间 s_pool 可能被其他线程淘汰压缩或 shutdown 清空，
@@ -172,6 +187,9 @@ mf_mcp_stdio_pool_acquire(
             size_t idx = find_reserved_slot(my_reserve_id);
             if (idx != SIZE_MAX && s_pool_count > 0) {
                 s_pool[idx] = s_pool[--s_pool_count]; /* 回收占位槽 */
+            }
+            if (s_shutting_down && s_pool_count == 0) {
+                s_shutting_down = false;
             }
             pthread_mutex_unlock(&s_pool_lock);
             if (err && err_sz) {
@@ -186,6 +204,9 @@ mf_mcp_stdio_pool_acquire(
             if (idx != SIZE_MAX && s_pool_count > 0) {
                 s_pool[idx] = s_pool[--s_pool_count]; /* 回收占位槽 */
             }
+            if (s_shutting_down && s_pool_count == 0) {
+                s_shutting_down = false;
+            }
             pthread_mutex_unlock(&s_pool_lock);
             return NULL;
         }
@@ -193,8 +214,14 @@ mf_mcp_stdio_pool_acquire(
         /* 阶段 3：锁内重定位占位槽并回填就绪条目 */
         pthread_mutex_lock(&s_pool_lock);
         size_t idx = find_reserved_slot(my_reserve_id);
-        if (idx == SIZE_MAX) {
-            /* 握手期间池被 shutdown 清空，不可越界回写；释放客户端并失败返回 */
+        if (idx == SIZE_MAX || s_shutting_down) {
+            /* 握手期间池被 shutdown，摘除占位槽并释放客户端后失败返回 */
+            if (idx != SIZE_MAX && s_pool_count > 0) {
+                s_pool[idx] = s_pool[--s_pool_count];
+            }
+            if (s_shutting_down && s_pool_count == 0) {
+                s_shutting_down = false;
+            }
             pthread_mutex_unlock(&s_pool_lock);
             mf_mcp_client_free(c);
             if (err && err_sz) {
@@ -226,12 +253,24 @@ mf_mcp_stdio_pool_release(mf_mcp_client_t* client)
     if (!client) {
         return;
     }
+    mf_mcp_client_t* to_free = NULL;
     pthread_mutex_lock(&s_pool_lock);
     for (size_t i = 0; i < s_pool_count; i++) {
         if (s_pool[i].client == client) {
-            s_pool[i].in_use = false;
-            s_pool[i].last_used = time(NULL);
+            if (s_shutting_down) {
+                to_free = s_pool[i].client;
+                s_pool[i] = s_pool[--s_pool_count];
+                if (s_pool_count == 0) {
+                    s_shutting_down = false;
+                }
+            } else {
+                s_pool[i].in_use = false;
+                s_pool[i].last_used = time(NULL);
+            }
             pthread_mutex_unlock(&s_pool_lock);
+            if (to_free) {
+                mf_mcp_client_free(to_free);
+            }
             return; /* 池条目：保持子进程存活供下次 acquire 复用 */
         }
     }
@@ -247,8 +286,11 @@ mf_mcp_stdio_pool_evict_idle(void)
     if (ttl <= 0) {
         return 0;
     }
-    time_t now = time(NULL);
-    int    evicted = 0;
+    time_t           now = time(NULL);
+    mf_mcp_client_t* dead[MF_MCP_STDIO_POOL_CAP];
+    size_t           dead_count = 0;
+    int              evicted = 0;
+
     pthread_mutex_lock(&s_pool_lock);
     size_t i = 0;
     while (i < s_pool_count) {
@@ -260,9 +302,10 @@ mf_mcp_stdio_pool_evict_idle(void)
             continue;
         }
         if (!s_pool[i].in_use && (now - s_pool[i].last_used) > (time_t)ttl) {
-            mf_mcp_client_t* dead = s_pool[i].client;
+            if (s_pool[i].client && dead_count < MF_MCP_STDIO_POOL_CAP) {
+                dead[dead_count++] = s_pool[i].client;
+            }
             s_pool[i] = s_pool[--s_pool_count]; /* 末位覆盖 */
-            mf_mcp_client_free(dead);
             evicted++;
             /* 不 i++，检查被覆盖的末位 */
         } else {
@@ -270,21 +313,41 @@ mf_mcp_stdio_pool_evict_idle(void)
         }
     }
     pthread_mutex_unlock(&s_pool_lock);
+
+    for (size_t k = 0; k < dead_count; k++) {
+        mf_mcp_client_free(dead[k]);
+    }
     return evicted;
 }
 
 int
 mf_mcp_stdio_pool_shutdown(void)
 {
-    int count = 0;
+    mf_mcp_client_t* dead[MF_MCP_STDIO_POOL_CAP];
+    size_t           dead_count = 0;
+    int              count = 0;
+
     pthread_mutex_lock(&s_pool_lock);
-    while (s_pool_count > 0) {
-        s_pool_count--;
-        /* 进行中的占位槽 client==NULL：mf_mcp_client_free(NULL) 为 no-op，安全。 */
-        mf_mcp_client_t* dead = s_pool[s_pool_count].client;
-        mf_mcp_client_free(dead);
-        count++;
+    s_shutting_down = true;
+    size_t i = 0;
+    while (i < s_pool_count) {
+        if (!s_pool[i].in_use && !s_pool[i].in_progress) {
+            if (s_pool[i].client && dead_count < MF_MCP_STDIO_POOL_CAP) {
+                dead[dead_count++] = s_pool[i].client;
+            }
+            s_pool[i] = s_pool[--s_pool_count];
+            count++;
+        } else {
+            i++;
+        }
+    }
+    if (s_pool_count == 0) {
+        s_shutting_down = false;
     }
     pthread_mutex_unlock(&s_pool_lock);
+
+    for (size_t k = 0; k < dead_count; k++) {
+        mf_mcp_client_free(dead[k]);
+    }
     return count;
 }

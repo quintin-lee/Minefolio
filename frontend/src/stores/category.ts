@@ -85,10 +85,14 @@ export const useCategoryStore = defineStore('category', () => {
   let hasRevalidated = false
   /** 并发去重：在途的全量加载 Promise */
   let inflightLoad: Promise<Category[]> | null = null
+  /** 异步代际计数：防止 reset()/invalidate() 后在途请求回写旧账号或过期分类树 */
+  let loadEpoch = 0
 
   async function revalidateCategories() {
+    const epoch = loadEpoch
     try {
       const res = await categoriesApi.list()
+      if (epoch !== loadEpoch) return
       if (Array.isArray(res)) {
         const cleaned = sanitizeNodes(res)
         allNodes.value = cleaned
@@ -97,7 +101,9 @@ export const useCategoryStore = defineStore('category', () => {
         setSwrCache(CATEGORY_CACHE_KEY, cleaned)
       }
     } catch (err) {
-      console.warn('[category store] SWR background revalidation failed:', err)
+      if (epoch === loadEpoch) {
+        console.warn('[category store] SWR background revalidation failed:', err)
+      }
     }
   }
 
@@ -118,25 +124,30 @@ export const useCategoryStore = defineStore('category', () => {
       return inflightLoad
     }
     if (type) {
+      const epoch = loadEpoch
       loading.value = true
       try {
-        return sanitizeNodes(await categoriesApi.list({ type }))
+        const res = sanitizeNodes(await categoriesApi.list({ type }))
+        if (epoch !== loadEpoch) return []
+        return res
       } finally {
-        loading.value = false
+        if (epoch === loadEpoch) loading.value = false
       }
     }
+    const epoch = loadEpoch
     loading.value = true
     let req: Promise<Category[]> | null = null
     req = (async () => {
       try {
         const res = sanitizeNodes(await categoriesApi.list())
+        if (epoch !== loadEpoch) return []
         allNodes.value = res
         loaded.value = true
         hasRevalidated = true
         setSwrCache(CATEGORY_CACHE_KEY, res)
         return res
       } finally {
-        loading.value = false
+        if (epoch === loadEpoch) loading.value = false
         if (inflightLoad === req) inflightLoad = null
       }
     })()
@@ -161,7 +172,9 @@ export const useCategoryStore = defineStore('category', () => {
         ? parent.children
         : allNodes.value.filter(c => Number(c.parent_id) === pid)
     }
+    const epoch = loadEpoch
     const rawChildren = await categoriesApi.children(pid)
+    if (epoch !== loadEpoch) return []
     const children = Array.isArray(rawChildren) ? rawChildren : []
     expanded.value.add(pid)
     if (parent) {
@@ -254,7 +267,10 @@ export const useCategoryStore = defineStore('category', () => {
    * 清除本地分类缓存标记 (在分类新增、修改或删除后调用)
    */
   function invalidate() {
+    loadEpoch++
+    inflightLoad = null
     loaded.value = false
+    loading.value = false
     expanded.value.clear()
     hasRevalidated = false
     clearSwrCache(CATEGORY_CACHE_KEY)
@@ -265,6 +281,8 @@ export const useCategoryStore = defineStore('category', () => {
    * 防止上一账号的分类树泄露给同一设备上的下一位登录用户)
    */
   function reset() {
+    loadEpoch++
+    inflightLoad = null
     allNodes.value = []
     loaded.value = false
     loading.value = false

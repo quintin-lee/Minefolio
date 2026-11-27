@@ -96,8 +96,7 @@ ENV CC=gcc-14 \
 ############################################################
 
 RUN --mount=type=bind,source=hosts,target=/etc/hosts \
-    git config --global http.sslVerify false \
-    && git config --global http.version HTTP/1.1 \
+    git config --global http.version HTTP/1.1 \
     && git config --global http.lowSpeedLimit 0 \
     && if [ -n "${HTTP_PROXY}" ]; then \
     git config --global http.proxy ${HTTP_PROXY}; \
@@ -164,23 +163,21 @@ RUN strip backend/build/minefolio \
 # 回退源 registry.npmmirror.com tgz (国内镜像, 经 hosts 固定 IP 挂载)。
 # 两级独立 RUN, 主源失败不影响回退; 回退也失败才报错退出。
 RUN --mount=type=bind,source=hosts,target=/etc/hosts \
-    mkdir -p /src/deps/csilk/share/swagger-ui \
-    && curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
-         https://registry.npmjs.org/swagger-ui-dist/-/swagger-ui-dist-5.32.6.tgz \
+    SWAGGER_SHA512="ef9b6d64d69808ba053e7a333d9713514ea64b7c0a4fc97b58b8d4e732521c57896b6de2e6fb67cdee888829788c330f7904d7557220a2fab8335d4d35f42f48" \
+    && mkdir -p /src/deps/csilk/share/swagger-ui \
+    && { { curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
+                https://registry.npmjs.org/swagger-ui-dist/-/swagger-ui-dist-5.32.6.tgz \
+           && printf '%s  /tmp/swagger-ui-dist.tgz\n' "${SWAGGER_SHA512}" | sha512sum -c -; } \
+         || { echo "WARN: npmjs primary failed, trying npmmirror"; \
+              curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
+                  https://registry.npmmirror.com/swagger-ui-dist/-/swagger-ui-dist-5.32.6.tgz \
+              && printf '%s  /tmp/swagger-ui-dist.tgz\n' "${SWAGGER_SHA512}" | sha512sum -c -; } \
+         || { echo "ERROR: all swagger-ui sources failed"; exit 1; }; } \
     && mkdir -p /tmp/swagger-ui-extract \
     && tar -xzf /tmp/swagger-ui-dist.tgz -C /tmp/swagger-ui-extract \
-    && cp -r $(find /tmp/swagger-ui-extract -type d -name package | head -1)/* /src/deps/csilk/share/swagger-ui/ \
+    && cp -r "$(find /tmp/swagger-ui-extract -type d -name package | head -1)"/* /src/deps/csilk/share/swagger-ui/ \
     && rm -rf /tmp/swagger-ui-dist.tgz /tmp/swagger-ui-extract \
-    || { echo "WARN: npmjs primary failed, trying npmmirror"; \
-         curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
-             https://registry.npmmirror.com/swagger-ui-dist/-/swagger-ui-dist-5.32.6.tgz \
-         && mkdir -p /tmp/swagger-ui-extract \
-         && tar -xzf /tmp/swagger-ui-dist.tgz -C /tmp/swagger-ui-extract \
-         && cp -r $(find /tmp/swagger-ui-extract -type d -name package | head -1)/* /src/deps/csilk/share/swagger-ui/ \
-         && rm -rf /tmp/swagger-ui-dist.tgz /tmp/swagger-ui-extract \
-         || { echo "ERROR: all swagger-ui sources failed"; exit 1; }; \
-         ls /src/deps/csilk/share/swagger-ui/; \
-       }
+    && ls /src/deps/csilk/share/swagger-ui/
 
 
 
@@ -207,7 +204,7 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 
 RUN --mount=type=bind,source=hosts,target=/etc/hosts \
-    npm install --registry=${NPM_REGISTRY}
+    npm ci --registry=${NPM_REGISTRY}
 
 COPY frontend ./
 
@@ -280,16 +277,25 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
 # 解包后把 bin/lib/include/share 拷入 /usr/local (node/npm/npx 为真实文件, 非软链), 再删临时目录,
 # 使 node/npm/npx 进入默认 PATH, resolve_exec_on_path() 可解析; 同时不保留 tarball 冗余目录减小镜像体积。
 # 用 .tar.gz (gzip 为 tar 内置解压), 无需额外 xz 包; Ubuntu 24.04 默认 tar 无 xz 解压器。
+ARG TARGETARCH
 ARG NODE_VERSION=20.18.1
 RUN --mount=type=bind,source=hosts,target=/etc/hosts \
+    set -eu; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "$arch" in \
+      amd64) node_arch="x64"; node_sha256="259e5a8bf2e15ecece65bd2a47153262eda71c0b2c9700d5e703ce4951572784" ;; \
+      arm64) node_arch="arm64"; node_sha256="73cd297378572e0bc9dfc187c5ec8cca8d43aee6a596c10ebea1ed5f9ec682b6" ;; \
+      *) echo "ERROR: unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
     curl --noproxy '*' -fsSL -o /tmp/node.tar.gz \
-         https://mirrors.tuna.tsinghua.edu.cn/nodejs-release/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz \
+         "https://mirrors.tuna.tsinghua.edu.cn/nodejs-release/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node_arch}.tar.gz" \
+    && printf '%s  /tmp/node.tar.gz\n' "${node_sha256}" | sha256sum -c - \
     && tar -xzf /tmp/node.tar.gz -C /opt \
-    && cp -a /opt/node-v${NODE_VERSION}-linux-x64/bin /usr/local/ \
-    && cp -a /opt/node-v${NODE_VERSION}-linux-x64/lib /usr/local/ \
-    && cp -a /opt/node-v${NODE_VERSION}-linux-x64/include /usr/local/ \
-    && cp -a /opt/node-v${NODE_VERSION}-linux-x64/share /usr/local/ \
-    && rm -rf /opt/node-v${NODE_VERSION}-linux-x64 /tmp/node.tar.gz \
+    && cp -a "/opt/node-v${NODE_VERSION}-linux-${node_arch}/bin" /usr/local/ \
+    && cp -a "/opt/node-v${NODE_VERSION}-linux-${node_arch}/lib" /usr/local/ \
+    && cp -a "/opt/node-v${NODE_VERSION}-linux-${node_arch}/include" /usr/local/ \
+    && cp -a "/opt/node-v${NODE_VERSION}-linux-${node_arch}/share" /usr/local/ \
+    && rm -rf "/opt/node-v${NODE_VERSION}-linux-${node_arch}" /tmp/node.tar.gz \
     && node --version && npm --version && npx --version
 
 

@@ -33,6 +33,74 @@ im_inst_body_str(csilk_json_t* body, const char* key)
     return (v && v[0]) ? v : NULL;
 }
 
+static csilk_json_t*
+im_instance_normalize_row(const csilk_json_t* row)
+{
+    if (!row || !csilk_json_is_object(row)) {
+        return NULL;
+    }
+    csilk_json_t* out = csilk_json_object();
+    if (!out) {
+        return NULL;
+    }
+    size_t n = csilk_json_object_size(row);
+    for (size_t i = 0; i < n; i++) {
+        const char*         key = csilk_json_object_key(row, i);
+        const csilk_json_t* val = csilk_json_object_val(row, i);
+        if (!key || !val) {
+            continue;
+        }
+        if (strcmp(key, "id") == 0 || strcmp(key, "mf_user_id") == 0 ||
+            strcmp(key, "login_epoch") == 0 || strcmp(key, "verify_attempts") == 0) {
+            csilk_json_add_int(out, key, db_get_int(row, key));
+        } else if (strcmp(key, "enabled") == 0) {
+            csilk_json_add_bool(out, key, db_get_bool(row, key) != 0);
+        } else {
+            csilk_json_t* copy = csilk_json_copy(val);
+            if (copy && !csilk_json_add_object(out, key, copy)) {
+                csilk_json_free(copy);
+            }
+        }
+    }
+    return out;
+}
+
+static csilk_json_t*
+im_instance_normalize_owned(csilk_json_t* row)
+{
+    if (!row) {
+        return NULL;
+    }
+    csilk_json_t* norm = im_instance_normalize_row(row);
+    csilk_json_free(row);
+    return norm;
+}
+
+static csilk_json_t*
+im_instance_normalize_list(csilk_json_t* list)
+{
+    csilk_json_t* out = csilk_json_array();
+    if (!out) {
+        if (list) {
+            csilk_json_free(list);
+        }
+        return NULL;
+    }
+    if (list && csilk_json_is_array(list)) {
+        size_t n = csilk_json_array_size(list);
+        for (size_t i = 0; i < n; i++) {
+            csilk_json_t* norm = im_instance_normalize_row(csilk_json_array_get(list, i));
+            if (norm && !csilk_json_array_append(out, norm)) {
+                csilk_json_free(norm);
+            }
+        }
+    }
+    if (list) {
+        csilk_json_free(list);
+    }
+    return out;
+}
+
 static int
 im_inst_valid_status(const char* status)
 {
@@ -109,7 +177,8 @@ im_instance_usecase_create(void*          pool,
         return -1;
     }
     if (out) {
-        *out = mf_im_bot_instance_get((csilk_db_pool_t*)pool, user_id, id);
+        *out = im_instance_normalize_owned(
+            mf_im_bot_instance_get((csilk_db_pool_t*)pool, user_id, id));
     }
     return 0;
 }
@@ -117,13 +186,13 @@ im_instance_usecase_create(void*          pool,
 csilk_json_t*
 im_instance_usecase_list(void* pool, int64_t user_id)
 {
-    return mf_im_bot_instance_list((csilk_db_pool_t*)pool, user_id);
+    return im_instance_normalize_list(mf_im_bot_instance_list((csilk_db_pool_t*)pool, user_id));
 }
 
 csilk_json_t*
 im_instance_usecase_get(void* pool, int64_t user_id, int64_t id)
 {
-    return mf_im_bot_instance_get((csilk_db_pool_t*)pool, user_id, id);
+    return im_instance_normalize_owned(mf_im_bot_instance_get((csilk_db_pool_t*)pool, user_id, id));
 }
 
 int
@@ -284,13 +353,14 @@ im_instance_usecase_delete(
 csilk_json_t*
 im_instance_gateway_list(void* pool)
 {
-    return mf_im_bot_instance_list_all((csilk_db_pool_t*)pool);
+    return im_instance_normalize_list(mf_im_bot_instance_list_all((csilk_db_pool_t*)pool));
 }
 
 csilk_json_t*
 im_instance_gateway_get(void* pool, int64_t id)
 {
-    csilk_json_t* inst = mf_im_bot_instance_get_any((csilk_db_pool_t*)pool, id);
+    csilk_json_t* inst =
+        im_instance_normalize_owned(mf_im_bot_instance_get_any((csilk_db_pool_t*)pool, id));
     if (!inst) {
         return NULL;
     }
@@ -424,7 +494,7 @@ im_instance_gateway_heartbeat_ext(void*          pool,
         csilk_json_t* data = csilk_json_object();
         csilk_json_add_string(data, "status", status);
         csilk_json_add_int(data, "login_epoch", (int64_t)epoch);
-        csilk_json_add_int(data, "enabled", enabled ? 1 : 0);
+        csilk_json_add_bool(data, "enabled", enabled != 0);
         *out = data;
     }
     return 0;

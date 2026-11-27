@@ -52,6 +52,7 @@ int
 main(void)
 {
     printf("=== Running Integration Unit Test: Ledger Engine Core ===\n");
+    ledger_register_balance_hooks();
     const char* db_file = "/tmp/test_ledger_engine.db";
     init_test_db(db_file);
     csilk_db_pool_t* pool = db_get_pool();
@@ -702,6 +703,26 @@ main(void)
         int rc_stranger = balance_apply_delta_m(pool, 301, 999, delta_neg, "daily_expense", 3, "Stranger spend");
         assert(rc_stranger != 0);
         printf("    ✓ Viewer and stranger correctly rejected.\n");
+    }
+
+    // 10. Balance hook registration & fail-closed behavior when unregistered
+    {
+        printf("\n>>> Testing Section 10: Balance Hook Fail-Closed & Restoration <<<\n");
+        money_t rb_delta;
+        assert(rollback_position_fc(pool, 202, user_id, 0, &rb_delta) == 0);
+        assert(money_is_zero(rb_delta));
+
+        balance_register_hooks(NULL);
+        money_t cny_delta;
+        money_from_double(100.0, CURRENCY_CNY, &cny_delta);
+        assert(balance_apply_delta_m(pool, 204, user_id, cny_delta, "hook_test", 1, "Unregistered") ==
+               -1);
+        assert(rollback_position_fc(pool, 202, user_id, 0, &rb_delta) == -1);
+
+        ledger_register_balance_hooks();
+        assert(balance_apply_delta_m(pool, 204, user_id, cny_delta, "hook_test", 2, "Restored") ==
+               0);
+        printf("    ✓ Unregistered hooks fail closed and ledger_register_balance_hooks restores.\n");
     }
 
     unlink(db_file);

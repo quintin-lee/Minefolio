@@ -47,8 +47,8 @@ export const imApi = {
   /**
    * 解绑指定的 IM 账号
    */
-  unbind: (platform: string, im_user_id: string) =>
-    http.delete<{ code: number; message: string }>('/im/bindings', {
+  unbind: (platform: string, im_user_id: string): Promise<void> =>
+    http.delete<void>('/im/bindings', {
       data: { platform, im_user_id },
     }),
 

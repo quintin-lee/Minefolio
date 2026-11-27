@@ -127,6 +127,11 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
 
     int64_t acct_ledger_id = 0, acct_id = 0;
     asset_get_ledger_and_account((csilk_db_pool_t*)pool, cmd->asset_id, &acct_ledger_id, &acct_id);
+    if (cmd->ledger_id > 0 && acct_ledger_id > 0 && acct_ledger_id != cmd->ledger_id) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "标的资产不属于当前账本");
+        return -1;
+    }
     if (acct_id > 0 || acct_ledger_id > 0) {
         int64_t chk_lid = acct_ledger_id > 0 ? acct_ledger_id : cmd->ledger_id;
         int     perm_chk = account_usecase_check_permission(
@@ -139,9 +144,25 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
     }
 
     if (cmd->linked_asset_id > 0) {
+        if (!tx_asset_exists(pool, cmd->user_id, cmd->linked_asset_id)) {
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "关联资金账户无效");
+            return -1;
+        }
         int64_t linked_ledger_id = 0, linked_acct_id = 0;
         asset_get_ledger_and_account(
             (csilk_db_pool_t*)pool, cmd->linked_asset_id, &linked_ledger_id, &linked_acct_id);
+        if (cmd->ledger_id > 0 && linked_ledger_id > 0 && linked_ledger_id != cmd->ledger_id) {
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "关联资金账户不属于当前账本");
+            return -1;
+        }
+        if (acct_ledger_id > 0 && linked_ledger_id > 0 && acct_ledger_id != linked_ledger_id) {
+            out_res->code = 1002;
+            snprintf(
+                out_res->message, sizeof(out_res->message), "标的资产与关联资金账户不属于同一账本");
+            return -1;
+        }
         if (linked_acct_id > 0 || linked_ledger_id > 0) {
             int64_t chk_lid = linked_ledger_id > 0 ? linked_ledger_id : cmd->ledger_id;
             int     perm_chk = account_usecase_check_permission(
@@ -154,12 +175,6 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
                 return -1;
             }
         }
-    }
-
-    if (cmd->linked_asset_id > 0 && !tx_asset_exists(pool, cmd->user_id, cmd->linked_asset_id)) {
-        out_res->code = 1002;
-        snprintf(out_res->message, sizeof(out_res->message), "关联资金账户无效");
-        return -1;
     }
 
     {
@@ -299,11 +314,20 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
     const csilk_json_t* old_row = csilk_json_array_get(old_rows, 0);
 
     int64_t     old_asset_id = db_get_int(old_row, "asset_id");
-    const char* type = (cmd->type && cmd->type[0])
-                           ? cmd->type
-                           : csilk_json_get_string(old_row, "transaction_type");
-    if (!type || strlen(type) == 0) {
-        type = csilk_json_get_string(old_row, "type");
+    const char* old_type = csilk_json_get_string(old_row, "transaction_type");
+    if (!old_type || strlen(old_type) == 0) {
+        old_type = csilk_json_get_string(old_row, "type");
+    }
+    const char* type = (cmd->type && cmd->type[0]) ? cmd->type : old_type;
+
+    if ((old_type &&
+         (strcmp(old_type, "transfer_out") == 0 || strcmp(old_type, "transfer_in") == 0)) ||
+        (type && (strcmp(type, "transfer_out") == 0 || strcmp(type, "transfer_in") == 0))) {
+        csilk_json_free(old_rows);
+        out_res->code = 1002;
+        snprintf(
+            out_res->message, sizeof(out_res->message), "转账记录不支持局部编辑，请删除后重新创建");
+        return -1;
     }
 
     const tx_type_t* ttype = tx_type_lookup(type ? type : "");
@@ -351,9 +375,8 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
         return -1;
     }
 
-    bool    type_supports_linked = (strcmp(type, "buy") == 0 || strcmp(type, "sell") == 0 ||
-                                    strcmp(type, "transfer_in") == 0 ||
-                                    strcmp(type, "transfer_out") == 0 || strcmp(type, "fee") == 0);
+    bool type_supports_linked =
+        (strcmp(type, "buy") == 0 || strcmp(type, "sell") == 0 || strcmp(type, "fee") == 0);
     int64_t target_linked_id = 0;
     if (type_supports_linked) {
         if (cmd->has_linked_asset_id) {
@@ -384,11 +407,39 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
         return -1;
     }
 
-    if (target_linked_id > 0 && !tx_asset_exists(pool, cmd->user_id, target_linked_id)) {
+    int64_t acct_ledger_id = 0, acct_id = 0;
+    asset_get_ledger_and_account(
+        (csilk_db_pool_t*)pool, target_asset_id, &acct_ledger_id, &acct_id);
+    if (cmd->ledger_id > 0 && acct_ledger_id > 0 && acct_ledger_id != cmd->ledger_id) {
         csilk_json_free(old_rows);
         out_res->code = 1002;
-        snprintf(out_res->message, sizeof(out_res->message), "关联资金账户无效");
+        snprintf(out_res->message, sizeof(out_res->message), "标的资产不属于当前账本");
         return -1;
+    }
+
+    if (target_linked_id > 0) {
+        if (!tx_asset_exists(pool, cmd->user_id, target_linked_id)) {
+            csilk_json_free(old_rows);
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "关联资金账户无效");
+            return -1;
+        }
+        int64_t linked_ledger_id = 0, linked_acct_id = 0;
+        asset_get_ledger_and_account(
+            (csilk_db_pool_t*)pool, target_linked_id, &linked_ledger_id, &linked_acct_id);
+        if (cmd->ledger_id > 0 && linked_ledger_id > 0 && linked_ledger_id != cmd->ledger_id) {
+            csilk_json_free(old_rows);
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "关联资金账户不属于当前账本");
+            return -1;
+        }
+        if (acct_ledger_id > 0 && linked_ledger_id > 0 && acct_ledger_id != linked_ledger_id) {
+            csilk_json_free(old_rows);
+            out_res->code = 1002;
+            snprintf(
+                out_res->message, sizeof(out_res->message), "标的资产与关联资金账户不属于同一账本");
+            return -1;
+        }
     }
 
     {

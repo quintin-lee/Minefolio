@@ -260,3 +260,10 @@ int ledger_rebuild_account(csilk_db_pool_t*        pool,
  * @return 0 成功；< 0 失败
  */
 int ledger_rebuild_portfolio(csilk_db_pool_t* pool, int64_t user_id);
+
+/**
+ * @brief 向 common/balance 注册账本核算、持仓重建及汇率查询回调钩子
+ *
+ * 必须在服务启动或调用跨币种/卖出/回滚路径前执行。
+ */
+void ledger_register_balance_hooks(void);

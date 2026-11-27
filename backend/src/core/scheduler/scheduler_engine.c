@@ -37,6 +37,7 @@
 static void*                    s_db_pool = NULL;
 static scheduler_worker_pool_t* s_worker_pool = NULL;
 static pthread_t                s_engine_thread;
+static bool                     s_engine_thread_started = false;
 static pthread_mutex_t          s_engine_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t           s_engine_cond = PTHREAD_COND_INITIALIZER;
 static bool                     s_running = false;
@@ -868,12 +869,19 @@ scheduler_engine_trigger_job_now(int64_t job_id, int64_t user_id, const char* re
 static void
 on_market_event_received(int event_type, const char* key, double val, void* user_data)
 {
-    if (!s_db_pool || !s_worker_pool) {
+    (void)user_data;
+
+    pthread_mutex_lock(&s_engine_lock);
+    void*                    db_pool = s_running ? s_db_pool : NULL;
+    scheduler_worker_pool_t* wp = s_running ? s_worker_pool : NULL;
+    pthread_mutex_unlock(&s_engine_lock);
+
+    if (!db_pool || !wp) {
         return;
     }
 
     /* Query active market event jobs */
-    csilk_json_t* rows = scheduler_repo_list_enabled_by_trigger(s_db_pool, "market_event");
+    csilk_json_t* rows = scheduler_repo_list_enabled_by_trigger(db_pool, "market_event");
     if (!rows) {
         return;
     }
@@ -1090,7 +1098,20 @@ scheduler_engine_start(void* pool)
 
     scheduler_event_subscribe(on_market_event_received, NULL);
 
-    pthread_create(&s_engine_thread, NULL, scheduler_engine_thread, NULL);
+    if (pthread_create(&s_engine_thread, NULL, scheduler_engine_thread, NULL) != 0) {
+        s_running = false;
+        s_engine_thread_started = false;
+        scheduler_event_reset();
+        scheduler_worker_pool_t* wp = s_worker_pool;
+        s_worker_pool = NULL;
+        s_db_pool = NULL;
+        pthread_mutex_unlock(&s_engine_lock);
+        if (wp) {
+            scheduler_worker_pool_destroy(wp);
+        }
+        return -1;
+    }
+    s_engine_thread_started = true;
     pthread_mutex_unlock(&s_engine_lock);
     return 0;
 }
@@ -1104,10 +1125,17 @@ scheduler_engine_stop(void)
         return;
     }
     s_running = false;
+    bool join_engine = s_engine_thread_started;
+    s_engine_thread_started = false;
     pthread_cond_broadcast(&s_engine_cond);
     pthread_mutex_unlock(&s_engine_lock);
 
-    pthread_join(s_engine_thread, NULL);
+    /* Unsubscribe market event listeners BEFORE tearing down worker pool or DB pool */
+    scheduler_event_reset();
+
+    if (join_engine) {
+        pthread_join(s_engine_thread, NULL);
+    }
 
     pthread_mutex_lock(&s_engine_lock);
     scheduler_worker_pool_t* wp = s_worker_pool;
@@ -1122,7 +1150,6 @@ scheduler_engine_stop(void)
     s_db_pool = NULL;
     pthread_mutex_unlock(&s_engine_lock);
 
-    scheduler_event_reset();
     atomic_store(&s_ai_jobs_running, 0);
 }
 

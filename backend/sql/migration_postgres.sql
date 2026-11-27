@@ -8,10 +8,42 @@ CREATE TABLE IF NOT EXISTS users (
     totp_secret       TEXT DEFAULT '',
     totp_enabled      BOOLEAN DEFAULT FALSE,
     totp_backup_codes TEXT DEFAULT '',
+    oauth_provider    TEXT DEFAULT '',
+    oauth_id          TEXT DEFAULT '',
     role              VARCHAR(32) NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
     disabled          INTEGER NOT NULL DEFAULT 0,
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 账本空间主表（置于 transfers / category_seed_state 之前以满足外键依赖）
+CREATE TABLE IF NOT EXISTS ledgers (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(128) NOT NULL,
+    description TEXT DEFAULT '',
+    currency VARCHAR(16) NOT NULL DEFAULT 'CNY',
+    icon VARCHAR(64) DEFAULT 'ph:wallet',
+    color VARCHAR(32) DEFAULT '#3b82f6',
+    is_default INTEGER NOT NULL DEFAULT 0,
+    invite_code VARCHAR(32) UNIQUE,
+    invite_expires_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ledgers_owner ON ledgers(owner_id);
+CREATE INDEX IF NOT EXISTS idx_ledgers_invite ON ledgers(invite_code);
+
+-- 账本成员关系表
+CREATE TABLE IF NOT EXISTS ledger_members (
+    id BIGSERIAL PRIMARY KEY,
+    ledger_id BIGINT NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role VARCHAR(32) NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')),
+    joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (ledger_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ledger_members_user ON ledger_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_ledger_members_ledger ON ledger_members(ledger_id);
 
 CREATE TABLE IF NOT EXISTS categories (
     id         BIGSERIAL PRIMARY KEY,
@@ -100,6 +132,10 @@ CREATE TABLE IF NOT EXISTS transfers (
     to_tx_id      BIGINT REFERENCES transactions(id) ON DELETE CASCADE,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_transfers_user ON transfers(user_id);
+CREATE INDEX IF NOT EXISTS idx_transfers_ledger ON transfers(ledger_id);
+CREATE INDEX IF NOT EXISTS idx_transfers_from_asset ON transfers(from_asset_id);
+CREATE INDEX IF NOT EXISTS idx_transfers_to_asset ON transfers(to_asset_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_from_tx ON transfers(from_tx_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_to_tx ON transfers(to_tx_id);
 
@@ -110,12 +146,6 @@ CREATE TABLE IF NOT EXISTS tags (
     color      TEXT DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, name)
-);
-
-CREATE TABLE IF NOT EXISTS expense_tags (
-    expense_id BIGINT NOT NULL REFERENCES daily_expenses(id) ON DELETE CASCADE,
-    tag_id     BIGINT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    PRIMARY KEY (expense_id, tag_id)
 );
 
 CREATE TABLE IF NOT EXISTS daily_expenses (
@@ -130,6 +160,12 @@ CREATE TABLE IF NOT EXISTS daily_expenses (
     note         TEXT,
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS expense_tags (
+    expense_id BIGINT NOT NULL REFERENCES daily_expenses(id) ON DELETE CASCADE,
+    tag_id     BIGINT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (expense_id, tag_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_daily_expenses_date ON daily_expenses(expense_date);
@@ -156,10 +192,12 @@ CREATE INDEX IF NOT EXISTS idx_balance_logs_asset ON asset_balance_logs(asset_id
 CREATE INDEX IF NOT EXISTS idx_categories_user_parent ON categories(user_id, parent_id);
 CREATE INDEX IF NOT EXISTS idx_categories_user_type ON categories(user_id, type);
 
--- 默认分类种子状态（每个用户只种一次）
+-- 默认分类种子状态（按用户与账本级追踪；V008）
 CREATE TABLE IF NOT EXISTS category_seed_state (
-    user_id    BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    seeded_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ledger_id  BIGINT NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+    seeded_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, ledger_id)
 );
 
 CREATE TABLE IF NOT EXISTS ai_sessions (
@@ -221,6 +259,68 @@ CREATE TABLE IF NOT EXISTS ai_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- AI 会话摘要持久化 (V010)
+CREATE TABLE IF NOT EXISTS ai_session_summaries (
+    id BIGSERIAL PRIMARY KEY,
+    session_id BIGINT NOT NULL UNIQUE REFERENCES ai_sessions(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    summary_text TEXT NOT NULL DEFAULT '',
+    token_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ai_session_summaries_user ON ai_session_summaries(user_id, updated_at);
+
+-- 储蓄目标表 (V009)
+CREATE TABLE IF NOT EXISTS savings_goals (
+    id             BIGSERIAL PRIMARY KEY,
+    user_id        BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name           TEXT NOT NULL,
+    target_amount  DOUBLE PRECISION NOT NULL,
+    current_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+    deadline       TEXT,
+    note           TEXT,
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_savings_goals_user ON savings_goals(user_id);
+
+-- MCP 服务器与工具 schema 缓存 (V011)
+CREATE TABLE IF NOT EXISTS mcp_server (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(128) NOT NULL,
+    transport VARCHAR(16) NOT NULL CHECK (transport IN ('http','stdio')),
+    url VARCHAR(512),
+    command VARCHAR(512),
+    args JSONB,
+    env JSONB,
+    headers JSONB,
+    secret_ref VARCHAR(128),
+    enabled BOOLEAN NOT NULL DEFAULT true,
+    timeout_ms INTEGER NOT NULL DEFAULT 30000,
+    discovered_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS mcp_server_tool (
+    id BIGSERIAL PRIMARY KEY,
+    server_id BIGINT NOT NULL REFERENCES mcp_server(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    tool_name VARCHAR(128) NOT NULL,
+    qualified_name VARCHAR(192) NOT NULL,
+    description TEXT,
+    input_schema JSONB NOT NULL,
+    is_mutation BOOLEAN NOT NULL DEFAULT false,
+    risk_level VARCHAR(16) NOT NULL DEFAULT 'medium' CHECK (risk_level IN ('low','medium','high')),
+    fetched_at TIMESTAMPTZ NOT NULL,
+    UNIQUE (user_id, qualified_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mcp_server_user ON mcp_server(user_id, enabled);
+CREATE INDEX IF NOT EXISTS idx_mcp_server_tool_user ON mcp_server_tool(user_id);
+
 -- 定投计划表
 CREATE TABLE IF NOT EXISTS dca_plans (
     id BIGSERIAL PRIMARY KEY,
@@ -281,36 +381,6 @@ CREATE TABLE IF NOT EXISTS cashflow_schedules (
 );
 CREATE INDEX IF NOT EXISTS idx_cashflow_schedules_user ON cashflow_schedules(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_cashflow_schedules_ledger ON cashflow_schedules(ledger_id);
-
--- 账本空间主表
-CREATE TABLE IF NOT EXISTS ledgers (
-    id BIGSERIAL PRIMARY KEY,
-    owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(128) NOT NULL,
-    description TEXT DEFAULT '',
-    currency VARCHAR(16) NOT NULL DEFAULT 'CNY',
-    icon VARCHAR(64) DEFAULT 'ph:wallet',
-    color VARCHAR(32) DEFAULT '#3b82f6',
-    is_default INTEGER NOT NULL DEFAULT 0,
-    invite_code VARCHAR(32) UNIQUE,
-    invite_expires_at TIMESTAMP,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_ledgers_owner ON ledgers(owner_id);
-CREATE INDEX IF NOT EXISTS idx_ledgers_invite ON ledgers(invite_code);
-
--- 账本成员关系表
-CREATE TABLE IF NOT EXISTS ledger_members (
-    id BIGSERIAL PRIMARY KEY,
-    ledger_id BIGINT NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role VARCHAR(32) NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')),
-    joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (ledger_id, user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_ledger_members_user ON ledger_members(user_id);
-CREATE INDEX IF NOT EXISTS idx_ledger_members_ledger ON ledger_members(ledger_id);
 
 -- 业务表 ledger_id 关联
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS ledger_id BIGINT;
@@ -693,6 +763,7 @@ CREATE TABLE IF NOT EXISTS im_bot_instances (
     last_error                 TEXT,
     last_seen_at               TIMESTAMPTZ,
     last_inbound_at            TIMESTAMPTZ,
+    capability                 TEXT NOT NULL DEFAULT 'readonly',
     created_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(mf_user_id, platform, adapter)
@@ -729,3 +800,19 @@ CREATE INDEX IF NOT EXISTS idx_im_push_outbox_expires
     ON im_push_outbox(status, expires_at_ts);
 CREATE INDEX IF NOT EXISTS idx_im_push_outbox_job_log
     ON im_push_outbox(job_run_log_id) WHERE job_run_log_id IS NOT NULL;
+
+-- V039: iLink 微信对话记账能力开关与短码确认草案 (PostgreSQL)
+CREATE TABLE IF NOT EXISTS im_pending_actions (
+    code         TEXT PRIMARY KEY,
+    user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_id   BIGINT NOT NULL,
+    action_type  TEXT NOT NULL DEFAULT 'daily_expense',
+    draft_token  TEXT NOT NULL,
+    args_json    TEXT NOT NULL,
+    expires_at   BIGINT NOT NULL,
+    consumed_at  BIGINT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_im_pending_actions_user
+    ON im_pending_actions(user_id, expires_at);

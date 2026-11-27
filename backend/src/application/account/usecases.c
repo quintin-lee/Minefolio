@@ -589,15 +589,18 @@ account_usecase_seed_default(void* pool, int64_t user_id, int64_t ledger_id)
     }
 
     pthread_mutex_lock(&s_account_seed_mutex);
-    if (account_seed_cache_contains(pool, user_id, lid)) {
-        pthread_mutex_unlock(&s_account_seed_mutex);
+    int cached = account_seed_cache_contains(pool, user_id, lid);
+    pthread_mutex_unlock(&s_account_seed_mutex);
+    if (cached) {
         return;
     }
+
     int64_t def_id = account_create_default(db_pool, user_id, lid);
     if (def_id > 0) {
+        pthread_mutex_lock(&s_account_seed_mutex);
         account_seed_cache_add(pool, user_id, lid);
+        pthread_mutex_unlock(&s_account_seed_mutex);
     }
-    pthread_mutex_unlock(&s_account_seed_mutex);
 }
 
 /* ===== RBAC Permission use cases (Owner only) ===== */

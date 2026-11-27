@@ -47,7 +47,7 @@
                   <Icon icon="ph:file-text-bold" class="summary-icon" />
                   生成简报 Markdown 内容 (已推送微信)
                 </div>
-                <div class="markdown-preview" v-html="renderMarkdown(row.output_summary)" />
+                <div class="markdown-preview" v-html="renderedLogOutputs.get(row.id) || ''" />
               </div>
 
               <div v-if="!row.error_message && !row.output_summary" class="empty-detail">
@@ -162,7 +162,7 @@
             <Icon icon="ph:file-text-bold" class="summary-icon" />
             生成的研报内容
           </div>
-          <div class="markdown-preview" v-html="renderMarkdown(selectedLog.output_summary)" />
+          <div class="markdown-preview" v-html="selectedLogHtml" />
         </div>
       </div>
     </el-dialog>
@@ -311,7 +311,27 @@ const getNotifyStatusLabel = (status?: string) => {
   }
 }
 
-const renderMarkdown = (text?: string) => renderSafeMarkdown(text)
+let logMarkdownCache = new Map<number, { raw: string; html: string }>()
+const renderedLogOutputs = computed(() => {
+  const nextCache = new Map<number, { raw: string; html: string }>()
+  const result = new Map<number, string>()
+  for (const log of logs.value) {
+    if (!log.output_summary) continue
+    const raw = log.output_summary
+    const cached = logMarkdownCache.get(log.id)
+    const html = cached && cached.raw === raw ? cached.html : renderSafeMarkdown(raw)
+    nextCache.set(log.id, { raw, html })
+    result.set(log.id, html)
+  }
+  logMarkdownCache = nextCache
+  return result
+})
+
+const selectedLogHtml = computed(() => {
+  const log = selectedLog.value
+  if (!log?.output_summary) return ''
+  return renderedLogOutputs.value.get(log.id) ?? renderSafeMarkdown(log.output_summary)
+})
 
 defineExpose({
   open

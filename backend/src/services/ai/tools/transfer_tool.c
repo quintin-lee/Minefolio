@@ -1,7 +1,9 @@
 #include "services/ai/tools/transfer_tool.h"
 #include "services/ai/tools/schema.h"
 #include "services/ai/policy/confirmation.h"
+#include "application/transfer/usecases.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
 #include "common/balance.h"
 #include "common/db.h"
 #include "core/ledger/ledger_engine.h"
@@ -167,6 +169,7 @@ exec_confirm_proposed_transfer(const ai_tool_t*         tool,
     const char* note = args ? csilk_json_get_string(args, "note") : "";
     const char* draft_token = args ? csilk_json_get_string(args, "draft_token") : "";
     const char* date = args ? csilk_json_get_string(args, "date") : NULL;
+    const char* currency = args ? csilk_json_get_string(args, "currency") : NULL;
 
     if (amount <= 0.0) {
         return strdup("{\"error\":\"amount must be positive\"}");
@@ -183,36 +186,62 @@ exec_confirm_proposed_transfer(const ai_tool_t*         tool,
         return strdup(err_buf);
     }
 
-    db_tx_scope_t scope;
-    if (db_tx_scope_begin(ctx->pool, "ai_confirm_transfer", &scope) != 0) {
-        return strdup("{\"error\":\"failed to begin transaction\"}");
+    char date_buf[32];
+    if (!date || !date[0]) {
+        time_t    now = time(NULL);
+        struct tm tm_now;
+        localtime_r(&now, &tm_now);
+        snprintf(date_buf,
+                 sizeof(date_buf),
+                 "%04d-%02d-%02d",
+                 tm_now.tm_year + 1900,
+                 tm_now.tm_mon + 1,
+                 tm_now.tm_mday);
+        date = date_buf;
     }
 
-    int64_t transfer_id = mf_ai_repo_transfer_insert(
-        ctx->pool, ctx->user_id, from_id, to_id, amount, "CNY", date, note ? note : "");
-    if (transfer_id <= 0) {
-        db_tx_scope_rollback(ctx->pool, &scope);
-        return strdup("{\"error\":\"failed to insert transfer record\"}");
-    }
+    int64_t arg_lid = args ? db_get_int(args, "ledger_id") : 0;
+    int64_t meta_lid = (ctx && ctx->metadata) ? db_get_int(ctx->metadata, "ledger_id") : 0;
+    bool    meta_explicit =
+        (ctx && ctx->metadata) ? csilk_json_get_bool(ctx->metadata, "ledger_id_explicit") : false;
+    int64_t explicit_lid = arg_lid > 0 ? arg_lid : (meta_explicit ? meta_lid : 0);
 
-    money_t amt_m;
-    money_from_double(amount, CURRENCY_CNY, &amt_m);
-    if (ledger_apply_transfer(ctx->pool,
-                              ctx->user_id,
-                              from_id,
-                              to_id,
-                              amt_m,
-                              transfer_id,
-                              note && note[0] ? note : "AI 转账") != 0) {
-        db_tx_scope_rollback(ctx->pool, &scope);
-        return strdup("{\"error\":\"failed to apply balance deltas for transfer\"}");
+    int64_t from_lid = 0, to_lid = 0;
+    if (asset_get_ledger_and_account(ctx->pool, from_id, &from_lid, NULL) == 0 &&
+        asset_get_ledger_and_account(ctx->pool, to_id, &to_lid, NULL) == 0) {
+        if (explicit_lid > 0 && ((from_lid > 0 && explicit_lid != from_lid) ||
+                                 (to_lid > 0 && explicit_lid != to_lid))) {
+            return strdup("{\"error\":\"Forbidden: 不支持跨账本划转\",\"code\":1004}");
+        }
     }
+    int64_t ledger_id =
+        (from_lid > 0) ? from_lid : ((to_lid > 0) ? to_lid : (arg_lid > 0 ? arg_lid : meta_lid));
 
-    db_tx_scope_commit(ctx->pool, &scope);
+    create_transfer_cmd_t cmd = {
+        .user_id = ctx->user_id,
+        .from_asset_id = from_id,
+        .to_asset_id = to_id,
+        .amount = amount,
+        .currency = (currency && currency[0]) ? currency : "CNY",
+        .transfer_date = date,
+        .note = (note && note[0]) ? note : "AI 转账",
+        .ledger_id = ledger_id,
+    };
+    transfer_usecase_result_t tres = {0};
+    if (transfer_usecase_create(ctx->pool, &cmd, &tres) != 0 || tres.code != 0) {
+        csilk_json_t* err_obj = csilk_json_object();
+        csilk_json_add_string(
+            err_obj, "error", tres.message[0] ? tres.message : "failed to create transfer");
+        csilk_json_add_int(err_obj, "code", tres.code ? tres.code : 500);
+        size_t elen = 0;
+        char*  es = csilk_json_serialize(err_obj, &elen);
+        csilk_json_free(err_obj);
+        return es;
+    }
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_bool(res, "success", true);
-    csilk_json_add_number(res, "id", (double)transfer_id);
+    csilk_json_add_number(res, "id", (double)tres.id);
     csilk_json_add_string(res, "message", "转账成功，双方账户余额已同步扣增");
 
     size_t len = 0;

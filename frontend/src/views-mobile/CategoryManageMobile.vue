@@ -29,7 +29,7 @@
       </div>
     </template>
 
-    <CategorySheet v-model="categorySheet" :record="editingCategory" :categories="categories" @saved="load" />
+    <CategorySheet v-model="categorySheet" :record="editingCategory" :categories="categories" @saved="onCategorySaved" />
     <TagSheet v-model="tagSheet" :record="editingTag" @saved="load" />
   </div>
 </template>
@@ -38,11 +38,15 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { query, rowsFrom, run, persist } from '@/db/local'
+import { categoriesApi } from '@/api/categories'
+import { tagsApi } from '@/api/tags'
+import { useCategoryStore } from '@/stores/category'
 import { offlineApi } from '@/utils/offline-http'
 import CategorySheet from '@/components/mobile/CategorySheet.vue'
 import TagSheet from '@/components/mobile/TagSheet.vue'
 import type { Category, Tag } from '@/types'
 
+const categoryStore = useCategoryStore()
 const tab = ref<'categories' | 'tags'>('categories')
 const categories = ref<Category[]>([])
 const tags = ref<Tag[]>([])
@@ -51,9 +55,58 @@ const tagSheet = ref(false)
 const editingCategory = ref<Category | null>(null)
 const editingTag = ref<Tag | null>(null)
 
-function load() {
-  categories.value = rowsFrom(query('SELECT * FROM categories WHERE __deleted = 0 ORDER BY sort_order ASC, id ASC')) as unknown as Category[]
-  tags.value = rowsFrom(query('SELECT * FROM tags WHERE __deleted = 0 ORDER BY id ASC')) as unknown as Tag[]
+function flattenCategories(list: Category[]): Category[] {
+  const out: Category[] = []
+  const seen = new Set<number>()
+  const walk = (nodes: Category[]) => {
+    for (const node of nodes) {
+      const id = Number(node.id)
+      if (!seen.has(id)) {
+        seen.add(id)
+        out.push(node)
+      }
+      if (Array.isArray(node.children) && node.children.length > 0) {
+        walk(node.children)
+      }
+    }
+  }
+  walk(list)
+  return out
+}
+
+async function loadCategories() {
+  try {
+    const res = await categoriesApi.list()
+    categories.value = flattenCategories(Array.isArray(res) ? res : [])
+  } catch {
+    try {
+      categories.value = rowsFrom(query('SELECT * FROM categories WHERE __deleted = 0 ORDER BY sort_order ASC, id ASC')) as unknown as Category[]
+    } catch {
+      categories.value = []
+    }
+  }
+}
+
+async function loadTags() {
+  try {
+    const res = await tagsApi.list()
+    tags.value = Array.isArray(res) ? res : []
+  } catch {
+    try {
+      tags.value = rowsFrom(query('SELECT * FROM tags WHERE __deleted = 0 ORDER BY id ASC')) as unknown as Tag[]
+    } catch {
+      tags.value = []
+    }
+  }
+}
+
+async function load() {
+  await Promise.all([loadCategories(), loadTags()])
+}
+
+async function onCategorySaved() {
+  categoryStore.invalidate()
+  await load()
 }
 
 function openCategory(record: Category | null = null) {
@@ -69,7 +122,8 @@ async function removeCategory(c: Category) {
   try {
     await ElMessageBox.confirm(`删除分类「${c.name}」？`, '确认删除', { type: 'warning' })
     await offlineApi.delete(`/categories/${c.id}`)
-    load()
+    categoryStore.invalidate()
+    await load()
   } catch (err: any) {
     if (err !== 'cancel' && err !== 'close') ElMessage.error(String(err?.response?.data?.message || err?.message || '删除失败'))
   }
@@ -79,9 +133,13 @@ async function removeTag(tag: Tag) {
   try {
     await ElMessageBox.confirm(`删除标签「${tag.name}」？`, '确认删除', { type: 'warning' })
     await offlineApi.delete(`/tags/${tag.id}`)
-    run('UPDATE expense_tags SET __deleted = 1 WHERE tag_id = ?', [tag.id])
-    persist()
-    load()
+    try {
+      run('UPDATE expense_tags SET __deleted = 1 WHERE tag_id = ?', [tag.id])
+      persist()
+    } catch {
+      // localDb 不可用或未初始化时忽略本地级联更新
+    }
+    await load()
   } catch (err: any) {
     if (err !== 'cancel' && err !== 'close') ElMessage.error(String(err?.response?.data?.message || err?.message || '删除失败'))
   }

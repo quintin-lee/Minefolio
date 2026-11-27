@@ -6,6 +6,7 @@
 #include "services/market/market_scheduler.h"
 #include "services/market/exchange_rate_service.h"
 #include "infrastructure/repositories/asset_repo_impl.h"
+#include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
 #include "infrastructure/repositories/market_repo_impl.h"
 #include "common/balance.h"
 #include "common/db.h"
@@ -96,6 +97,145 @@ market_usecase_quote(const fetch_quote_cmd_t* cmd,
     return 0;
 }
 
+static int
+market_apply_quote_tx(void*                    pool,
+                      int64_t                  user_id,
+                      int64_t                  asset_id,
+                      const market_quote_t*    q,
+                      const char*              today,
+                      double*                  out_new_nv,
+                      market_usecase_result_t* out_res)
+{
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+    db_tx_scope_t    scope;
+    if (db_tx_scope_begin(db_pool, "mf_market_sync_asset", &scope) != 0) {
+        if (out_res) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+        }
+        return -1;
+    }
+
+    /* Re-read asset currency/net_value/quantity inside tx scope so updates never use stale pre-HTTP state */
+    csilk_json_t* fresh_rows = asset_get_raw(db_pool, user_id, asset_id);
+    if (!fresh_rows || csilk_json_array_size(fresh_rows) == 0) {
+        if (fresh_rows) {
+            csilk_json_free(fresh_rows);
+        }
+        db_tx_scope_rollback(db_pool, &scope);
+        if (out_res) {
+            out_res->code = 1003;
+            snprintf(out_res->message, sizeof(out_res->message), "资产不存在");
+        }
+        return -1;
+    }
+
+    const csilk_json_t* fresh = csilk_json_array_get(fresh_rows, 0);
+    const char*         asset_cur_str = csilk_json_get_string(fresh, "currency");
+    double              old_nv = db_get_num(fresh, "net_value");
+    double              qty_val = db_get_num(fresh, "quantity");
+    currency_t          asset_cur =
+        currency_from_str((asset_cur_str && asset_cur_str[0]) ? asset_cur_str : "CNY");
+    csilk_json_free(fresh_rows);
+
+    currency_t quote_cur =
+        currency_from_str(q->currency[0] ? q->currency : currency_code(&asset_cur));
+    price_t p_quote;
+    if (price_from_double(q->current_price, 4, quote_cur, &p_quote) != DECIMAL_OK) {
+        db_tx_scope_rollback(db_pool, &scope);
+        if (out_res) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "行情价格格式无效");
+        }
+        return -1;
+    }
+
+    price_t p_new = p_quote;
+    if (!currency_equals(quote_cur, asset_cur)) {
+        p_new = balance_convert_price_fx(p_quote, asset_cur, 0.0);
+        if (!decimal_is_positive(p_new.unit_price)) {
+            db_tx_scope_rollback(db_pool, &scope);
+            if (out_res) {
+                out_res->code = 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "行情币种换算失败");
+            }
+            return -1;
+        }
+        decimal_t rounded_unit;
+        if (decimal_round(p_new.unit_price, 4, ROUND_HALF_UP, &rounded_unit) == DECIMAL_OK &&
+            decimal_is_positive(rounded_unit)) {
+            p_new.unit_price = rounded_unit;
+        }
+    }
+
+    if (mf_market_repo_update_asset_quote(pool, user_id, asset_id, p_new) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        if (out_res) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "更新资产行情失败");
+        }
+        return -1;
+    }
+
+    if (mf_market_repo_record_price_history(pool, asset_id, today, p_new, asset_cur) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        if (out_res) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "记录价格历史失败");
+        }
+        return -1;
+    }
+
+    if (qty_val > 0) {
+        price_t    p_old;
+        quantity_t qty;
+        money_t    delta;
+        price_from_double(old_nv, 4, asset_cur, &p_old);
+        quantity_from_double(qty_val, 4, &qty);
+        mf_market_rule_calc_sync_delta(p_old, p_new, qty, asset_cur, &delta);
+        if (!money_is_zero(delta)) {
+            int b_rc = balance_apply_delta_m(db_pool,
+                                             asset_id,
+                                             user_id,
+                                             delta,
+                                             "asset_market_sync",
+                                             asset_id,
+                                             "Market quote sync");
+            if (b_rc != 0) {
+                db_tx_scope_rollback(db_pool, &scope);
+                if (out_res) {
+                    out_res->code = (b_rc == -1) ? 1002 : 1004;
+                    snprintf(out_res->message, sizeof(out_res->message), "更新资产余额失败");
+                }
+                return -1;
+            }
+        }
+    }
+
+    if (ledger_snapshot_invalidate_from(db_pool, user_id, asset_id, today) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        if (out_res) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "失效账本快照失败");
+        }
+        return -1;
+    }
+
+    if (db_tx_scope_commit(db_pool, &scope) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        if (out_res) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        }
+        return -1;
+    }
+
+    if (out_new_nv) {
+        *out_new_nv = price_to_double(p_new);
+    }
+    return 0;
+}
+
 int
 market_usecase_do_sync_user(void* pool, int64_t user_id, int* out_synced, int* out_failed)
 {
@@ -122,8 +262,6 @@ market_usecase_do_sync_user(void* pool, int64_t user_id, int* out_synced, int* o
         int64_t             uid = db_get_int(item, "user_id");
         const char*         symbol = csilk_json_get_string(item, "symbol");
         const char*         source = csilk_json_get_string(item, "quote_source");
-        double              old_nv = db_get_num(item, "net_value");
-        double              qty_val = db_get_num(item, "quantity");
 
         if (!symbol || !symbol[0]) {
             continue;
@@ -131,50 +269,11 @@ market_usecase_do_sync_user(void* pool, int64_t user_id, int* out_synced, int* o
 
         market_quote_t q;
         if (quote_engine_fetch_quote(symbol, source, &q) == 0 && q.current_price > 0) {
-            double     new_nv = q.current_price;
-            currency_t cur = currency_from_str(q.currency[0] ? q.currency : "CNY");
-            price_t    p_new;
-            price_from_double(new_nv, 4, cur, &p_new);
-
-            csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
-            db_tx_scope_t    scope;
-            if (db_tx_scope_begin(db_pool, "mf_market_sync_asset", &scope) != 0) {
+            if (market_apply_quote_tx(pool, uid, aid, &q, today, NULL, NULL) == 0) {
+                synced++;
+            } else {
                 failed++;
-                continue;
             }
-
-            int write_ok = 1;
-            if (mf_market_repo_update_asset_quote(pool, uid, aid, p_new) != 0 ||
-                mf_market_repo_record_price_history(pool, aid, today, p_new, cur) != 0) {
-                write_ok = 0;
-            }
-
-            if (write_ok && qty_val > 0) {
-                price_t p_old;
-                price_from_double(old_nv, 4, cur, &p_old);
-                quantity_t qty;
-                quantity_from_double(qty_val, 4, &qty);
-                money_t delta;
-                mf_market_rule_calc_sync_delta(p_old, p_new, qty, cur, &delta);
-                if (!money_is_zero(delta)) {
-                    if (balance_apply_delta_m(db_pool,
-                                              aid,
-                                              uid,
-                                              delta,
-                                              "asset_market_sync",
-                                              aid,
-                                              "Market quote sync") != 0) {
-                        write_ok = 0;
-                    }
-                }
-            }
-
-            if (!write_ok || db_tx_scope_commit(db_pool, &scope) != 0) {
-                db_tx_scope_rollback(db_pool, &scope);
-                failed++;
-                continue;
-            }
-            synced++;
         } else {
             failed++;
         }
@@ -303,83 +402,23 @@ market_usecase_sync_single(void*                    pool,
     const csilk_json_t* item = csilk_json_array_get(asset_rows, 0);
     const char*         symbol = csilk_json_get_string(item, "symbol");
     const char*         source = csilk_json_get_string(item, "quote_source");
-    double              old_nv = db_get_num(item, "net_value");
-    double              qty_val = db_get_num(item, "quantity");
 
     market_quote_t q;
-    if (quote_engine_fetch_quote(symbol, source, &q) != 0 || q.current_price <= 0) {
-        csilk_json_free(asset_rows);
+    int            fetch_rc = quote_engine_fetch_quote(symbol, source, &q);
+    csilk_json_free(asset_rows);
+    if (fetch_rc != 0 || q.current_price <= 0) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "同步行情数据失败");
         return -1;
     }
 
-    double     new_nv = q.current_price;
-    currency_t cur = currency_from_str(q.currency[0] ? q.currency : "CNY");
-    price_t    p_new;
-    price_from_double(new_nv, 4, cur, &p_new);
-
-    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
-    db_tx_scope_t    scope;
-    if (db_tx_scope_begin(db_pool, "mf_market_sync_single", &scope) != 0) {
-        csilk_json_free(asset_rows);
-        out_res->code = 1004;
-        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
-        return -1;
-    }
-
-    if (mf_market_repo_update_asset_quote(pool, user_id, asset_id, p_new) != 0) {
-        db_tx_scope_rollback(db_pool, &scope);
-        csilk_json_free(asset_rows);
-        out_res->code = 1004;
-        snprintf(out_res->message, sizeof(out_res->message), "更新资产行情失败");
-        return -1;
-    }
-
     char today[32];
     get_today_str(today, sizeof(today));
-    if (mf_market_repo_record_price_history(pool, asset_id, today, p_new, cur) != 0) {
-        db_tx_scope_rollback(db_pool, &scope);
-        csilk_json_free(asset_rows);
-        out_res->code = 1004;
-        snprintf(out_res->message, sizeof(out_res->message), "记录价格历史失败");
+
+    double new_nv = 0.0;
+    if (market_apply_quote_tx(pool, user_id, asset_id, &q, today, &new_nv, out_res) != 0) {
         return -1;
     }
-
-    if (qty_val > 0) {
-        price_t p_old;
-        price_from_double(old_nv, 4, cur, &p_old);
-        quantity_t qty;
-        quantity_from_double(qty_val, 4, &qty);
-        money_t delta;
-        mf_market_rule_calc_sync_delta(p_old, p_new, qty, cur, &delta);
-        if (!money_is_zero(delta)) {
-            int b_rc = balance_apply_delta_m(db_pool,
-                                             asset_id,
-                                             user_id,
-                                             delta,
-                                             "asset_market_sync",
-                                             asset_id,
-                                             "Market quote sync");
-            if (b_rc != 0) {
-                db_tx_scope_rollback(db_pool, &scope);
-                csilk_json_free(asset_rows);
-                out_res->code = (b_rc == -1) ? 1002 : 1004;
-                snprintf(out_res->message, sizeof(out_res->message), "更新资产余额失败");
-                return -1;
-            }
-        }
-    }
-
-    if (db_tx_scope_commit(db_pool, &scope) != 0) {
-        db_tx_scope_rollback(db_pool, &scope);
-        csilk_json_free(asset_rows);
-        out_res->code = 1004;
-        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
-        return -1;
-    }
-
-    csilk_json_free(asset_rows);
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_string(res, "symbol", q.symbol);

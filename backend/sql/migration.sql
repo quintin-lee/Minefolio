@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS categories (
     icon       TEXT,
     sort_order INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ledger_id  INTEGER,
     UNIQUE(user_id, name, parent_id)
 );
 
@@ -71,7 +72,9 @@ CREATE TABLE IF NOT EXISTS assets (
     note          TEXT,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    account_id    INTEGER REFERENCES accounts(id) ON DELETE RESTRICT
+    account_id    INTEGER REFERENCES accounts(id) ON DELETE RESTRICT,
+    ledger_id     INTEGER,
+    cost_method   TEXT DEFAULT 'weighted_average'
 );
 
 CREATE INDEX IF NOT EXISTS idx_assets_account ON assets(account_id);
@@ -107,7 +110,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     currency         TEXT DEFAULT 'CNY',
     transaction_date TIMESTAMP NOT NULL,
     note             TEXT,
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ledger_id        INTEGER,
+    fx_rate_to_cny   REAL DEFAULT 1.0
 );
 
 CREATE TABLE IF NOT EXISTS transfers (
@@ -124,6 +129,10 @@ CREATE TABLE IF NOT EXISTS transfers (
     to_tx_id      INTEGER REFERENCES transactions(id) ON DELETE CASCADE,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_transfers_user ON transfers(user_id);
+CREATE INDEX IF NOT EXISTS idx_transfers_ledger ON transfers(ledger_id);
+CREATE INDEX IF NOT EXISTS idx_transfers_from_asset ON transfers(from_asset_id);
+CREATE INDEX IF NOT EXISTS idx_transfers_to_asset ON transfers(to_asset_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_from_tx ON transfers(from_tx_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_to_tx ON transfers(to_tx_id);
 
@@ -153,7 +162,8 @@ CREATE TABLE IF NOT EXISTS daily_expenses (
     expense_date DATE NOT NULL,
     note         TEXT,
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ledger_id    INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_daily_expenses_date ON daily_expenses(expense_date);
@@ -179,10 +189,12 @@ CREATE INDEX IF NOT EXISTS idx_balance_logs_asset ON asset_balance_logs(asset_id
 CREATE INDEX IF NOT EXISTS idx_categories_user_parent ON categories(user_id, parent_id);
 CREATE INDEX IF NOT EXISTS idx_categories_user_type ON categories(user_id, type);
 
--- 默认分类种子状态（每个用户只种一次；老账号懒加载时顺带做旧名迁移）
+-- 默认分类种子状态（按用户与账本级追踪；V008）
 CREATE TABLE IF NOT EXISTS category_seed_state (
-    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    seeded_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ledger_id  INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+    seeded_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, ledger_id)
 );
 
 -- AI chat: sessions and messages
@@ -246,6 +258,68 @@ CREATE TABLE IF NOT EXISTS ai_settings (
     config_json TEXT NOT NULL DEFAULT '{}',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- AI 会话摘要持久化 (V010)
+CREATE TABLE IF NOT EXISTS ai_session_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL UNIQUE REFERENCES ai_sessions(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    summary_text TEXT NOT NULL DEFAULT '',
+    token_count INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ai_session_summaries_user ON ai_session_summaries(user_id, updated_at);
+
+-- 储蓄目标表 (V009)
+CREATE TABLE IF NOT EXISTS savings_goals (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name           TEXT NOT NULL,
+    target_amount  REAL NOT NULL,
+    current_amount REAL NOT NULL DEFAULT 0,
+    deadline       TEXT,
+    note           TEXT,
+    created_at     TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_savings_goals_user ON savings_goals(user_id);
+
+-- MCP 服务器与工具 schema 缓存 (V011)
+CREATE TABLE IF NOT EXISTS mcp_server (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    transport TEXT NOT NULL CHECK (transport IN ('http','stdio')),
+    url TEXT,
+    command TEXT,
+    args TEXT,
+    env TEXT,
+    headers TEXT,
+    secret_ref TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    timeout_ms INTEGER NOT NULL DEFAULT 30000,
+    discovered_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS mcp_server_tool (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    server_id INTEGER NOT NULL REFERENCES mcp_server(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL,
+    tool_name TEXT NOT NULL,
+    qualified_name TEXT NOT NULL,
+    description TEXT,
+    input_schema TEXT NOT NULL,
+    is_mutation INTEGER NOT NULL DEFAULT 0,
+    risk_level TEXT NOT NULL DEFAULT 'medium' CHECK (risk_level IN ('low','medium','high')),
+    fetched_at TEXT NOT NULL,
+    UNIQUE (user_id, qualified_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mcp_server_user ON mcp_server(user_id, enabled);
+CREATE INDEX IF NOT EXISTS idx_mcp_server_tool_user ON mcp_server_tool(user_id);
 
 -- 定投计划表
 CREATE TABLE IF NOT EXISTS dca_plans (
@@ -338,12 +412,7 @@ CREATE TABLE IF NOT EXISTS ledger_members (
 CREATE INDEX IF NOT EXISTS idx_ledger_members_user ON ledger_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_ledger_members_ledger ON ledger_members(ledger_id);
 
--- 业务表 ledger_id 关联
-ALTER TABLE assets ADD COLUMN ledger_id INTEGER;
-ALTER TABLE transactions ADD COLUMN ledger_id INTEGER;
-ALTER TABLE daily_expenses ADD COLUMN ledger_id INTEGER;
-ALTER TABLE categories ADD COLUMN ledger_id INTEGER;
-
+-- 业务表 ledger_id 索引（列已内联于建表语句）
 CREATE INDEX IF NOT EXISTS idx_assets_ledger ON assets(ledger_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_ledger ON transactions(ledger_id);
 CREATE INDEX IF NOT EXISTS idx_daily_expenses_ledger ON daily_expenses(ledger_id);
@@ -470,16 +539,11 @@ CREATE TABLE IF NOT EXISTS ledger_snapshots (
 CREATE INDEX IF NOT EXISTS idx_snapshots_lookup 
     ON ledger_snapshots(user_id, asset_id, snapshot_date DESC);
 
--- 为 transactions 添加历史汇率字段
-ALTER TABLE transactions ADD COLUMN fx_rate_to_cny REAL DEFAULT 1.0;
-
--- 本币交易直接置 1.0
+-- 本币交易历史汇率默认置 1.0（fx_rate_to_cny 列已内联于 transactions）
 UPDATE transactions SET fx_rate_to_cny = 1.0 
 WHERE asset_id IN (SELECT id FROM assets WHERE currency = 'CNY');
 
--- 资产多策略成本结转与交易批次明细表 (V021)
-ALTER TABLE assets ADD COLUMN cost_method TEXT DEFAULT 'weighted_average';
-
+-- 资产多策略成本结转与交易批次明细表 (V021，cost_method 列已内联于 assets)
 CREATE TABLE IF NOT EXISTS transaction_lots (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id             INTEGER NOT NULL,
@@ -713,6 +777,7 @@ CREATE TABLE IF NOT EXISTS im_bot_instances (
     last_error                 TEXT,
     last_seen_at               TEXT,
     last_inbound_at            TEXT,
+    capability                 TEXT NOT NULL DEFAULT 'readonly',
     created_at                 TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                 TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(mf_user_id, platform, adapter)
@@ -750,9 +815,7 @@ CREATE INDEX IF NOT EXISTS idx_im_push_outbox_expires
 CREATE INDEX IF NOT EXISTS idx_im_push_outbox_job_log
     ON im_push_outbox(job_run_log_id) WHERE job_run_log_id IS NOT NULL;
 
--- V039: iLink 记账能力开关与短码确认草案
-ALTER TABLE im_bot_instances ADD COLUMN capability TEXT NOT NULL DEFAULT 'readonly';
-
+-- V039: iLink 记账能力开关与短码确认草案（capability 列已内联于 im_bot_instances）
 CREATE TABLE IF NOT EXISTS im_pending_actions (
     code         TEXT PRIMARY KEY,
     user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
