@@ -46,7 +46,7 @@
       </el-form-item>
 
       <el-row :gutter="12">
-        <el-col :span="12">
+        <el-col :xs="24" :sm="12">
           <el-form-item label="定投周期" prop="frequency">
             <el-select v-model="form.frequency" style="width: 100%">
               <el-option label="按周 (Weekly)" value="weekly" />
@@ -55,7 +55,7 @@
             </el-select>
           </el-form-item>
         </el-col>
-        <el-col :span="12">
+        <el-col :xs="24" :sm="12">
           <el-form-item :label="form.frequency === 'weekly' || form.frequency === 'biweekly' ? '执行日' : '定投日期'" prop="day_of_period">
             <el-select v-if="form.frequency === 'weekly' || form.frequency === 'biweekly'" v-model="form.day_of_period" style="width: 100%">
               <el-option label="周一" :value="1" />

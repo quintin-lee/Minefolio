@@ -232,17 +232,17 @@
 
           <!-- 买入/卖出：单价 × 数量 + 手续费 -->
           <el-row v-if="isTradingType(form.transaction_type)" :gutter="16" class="trading-fields">
-            <el-col :span="8">
+            <el-col :xs="24" :sm="8">
               <el-form-item :label="`交易单价 (${quantityUnit ? '元/' + quantityUnit : '单价'})`">
                 <el-input-number v-model="form.price_per_unit" :precision="4" :min="0" style="width: 100%" :controls="false" placeholder="0.0000" @input="calculateAmount" @change="calculateAmount" />
               </el-form-item>
             </el-col>
-            <el-col :span="8">
+            <el-col :xs="24" :sm="8">
               <el-form-item label="交易数量">
                 <el-input-number v-model="form.quantity" :precision="4" :min="0" style="width: 100%" :controls="false" placeholder="0.0000" @input="calculateAmount" @change="calculateAmount" />
               </el-form-item>
             </el-col>
-            <el-col :span="8">
+            <el-col :xs="24" :sm="8">
               <el-form-item label="手续费">
                 <el-input-number v-model="form.fee" :precision="2" :min="0" style="width: 100%" :controls="false" placeholder="0.00" />
               </el-form-item>
@@ -272,7 +272,7 @@
           <el-alert v-if="editingId" type="info" :closable="false" show-icon title="修改金额/类型将自动联动计算并更新关联资产的账户余额" style="margin-bottom: 16px" />
 
           <el-row :gutter="16">
-            <el-col :span="14">
+            <el-col :xs="24" :sm="14">
               <el-form-item :label="isTradingType(form.transaction_type) ? '投资标的资产' : '资产账户'" prop="asset_id">
                 <el-select
                   v-model="form.asset_id"
@@ -291,7 +291,7 @@
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col :span="10">
+            <el-col :xs="24" :sm="10">
               <el-form-item label="结算币种" prop="currency">
                 <el-select v-model="form.currency" placeholder="默认 CNY" style="width: 100%">
                   <el-option v-for="cur in currencyOptions" :key="cur" :label="cur" :value="cur" />
@@ -317,7 +317,7 @@
           </el-row>
 
           <el-row :gutter="16">
-            <el-col :span="12">
+            <el-col :xs="24" :sm="12">
               <el-form-item label="交易分类" prop="category_id">
                 <el-cascader
                   v-model="form._catPath"
@@ -330,7 +330,7 @@
                 />
               </el-form-item>
             </el-col>
-            <el-col :span="12">
+            <el-col :xs="24" :sm="12">
               <el-form-item label="交易日期" prop="transaction_date">
                 <el-date-picker v-model="form.transaction_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" placeholder="选择日期" />
               </el-form-item>

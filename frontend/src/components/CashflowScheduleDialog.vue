@@ -55,7 +55,7 @@
       </el-form-item>
 
       <el-row :gutter="12">
-        <el-col :span="12">
+        <el-col :xs="24" :sm="12">
           <el-form-item label="支付频次" prop="frequency">
             <el-select v-model="form.frequency" style="width: 100%">
               <el-option label="单次 (Once)" value="once" />
@@ -66,7 +66,7 @@
             </el-select>
           </el-form-item>
         </el-col>
-        <el-col :span="12">
+        <el-col :xs="24" :sm="12">
           <el-form-item label="首次/到期日" prop="start_date">
             <el-date-picker
               v-model="form.start_date"
