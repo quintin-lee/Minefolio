@@ -1146,6 +1146,12 @@ onBeforeUnmount(() => {
     align-items: stretch;
     gap: 14px;
   }
+  .page-title {
+    font-size: 18px;
+  }
+  .page-subtitle {
+    display: none;
+  }
   .header-actions {
     flex-wrap: wrap;
   }

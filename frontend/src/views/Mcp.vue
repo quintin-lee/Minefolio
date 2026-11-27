@@ -451,4 +451,21 @@ onMounted(() => {
   border: 1px dashed var(--el-border-color);
   border-radius: 12px;
 }
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .page-title {
+    font-size: 18px;
+  }
+  .page-subtitle {
+    display: none;
+  }
+  .header-actions {
+    width: 100%;
+  }
+}
 </style>

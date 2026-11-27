@@ -493,4 +493,21 @@ onUnmounted(() => {
   font-size: 12px;
   color: var(--el-text-color-placeholder);
 }
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .page-title {
+    font-size: 18px;
+  }
+  .page-subtitle {
+    display: none;
+  }
+  .header-actions {
+    width: 100%;
+  }
+}
 </style>
