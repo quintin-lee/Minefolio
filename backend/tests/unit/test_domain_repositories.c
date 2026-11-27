@@ -22,6 +22,8 @@
 #include "application/daily_expense/commands.h"
 #include "application/daily_expense/usecases.h"
 #include "common/balance.h"
+#include "infrastructure/repositories/import_rule_repo_impl.h"
+#include "services/import_service.h"
 
 #include "core/financial/currency.h"
 #include "core/financial/money.h"
@@ -1690,6 +1692,191 @@ test_mcp_server_repository(csilk_db_pool_t* pool, int64_t user_id)
     printf("  ✅ MCP Server & Tool Repository passed\n");
 }
 
+static void
+test_smart_import_rule_bool_and_csv_amount_validation(csilk_db_pool_t* pool, int64_t user_id)
+{
+    printf("--- 16. Testing Smart Import Rule db_get_bool & CSV Amount Validation ---\n");
+
+    /* 1. Verify db_get_bool parses DB string/integer boolean encodings */
+    csilk_json_t* row_str_one = csilk_json_object();
+    csilk_json_add_string(row_str_one, "is_active", "1");
+    assert(db_get_bool(row_str_one, "is_active") == 1);
+    csilk_json_free(row_str_one);
+
+    csilk_json_t* row_str_t = csilk_json_object();
+    csilk_json_add_string(row_str_t, "is_active", "t");
+    assert(db_get_bool(row_str_t, "is_active") == 1);
+    csilk_json_free(row_str_t);
+
+    csilk_json_t* row_str_zero = csilk_json_object();
+    csilk_json_add_string(row_str_zero, "is_active", "0");
+    assert(db_get_bool(row_str_zero, "is_active") == 0);
+    csilk_json_free(row_str_zero);
+
+    csilk_json_t* row_str_f = csilk_json_object();
+    csilk_json_add_string(row_str_f, "is_active", "f");
+    assert(db_get_bool(row_str_f, "is_active") == 0);
+    csilk_json_free(row_str_f);
+
+    /* 2. Set up dedicated ledger, categories, and cash asset */
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    csilk_json_t* ins_ledger = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO ledgers (owner_id, name, currency, is_default) "
+        "VALUES (?, 'Import Test Ledger', 'CNY', 0) RETURNING id",
+        (const char*[]){uid_str, NULL});
+    assert(ins_ledger && csilk_json_array_size(ins_ledger) > 0);
+    int64_t ledger_id = db_get_int(csilk_json_array_get(ins_ledger, 0), "id");
+    csilk_json_free(ins_ledger);
+    assert(ledger_id > 0);
+
+    char lid_str[32];
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+
+    csilk_json_t* ins_cat_inactive = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, asset_type, currency, ledger_id) "
+        "VALUES (?, 'Import Inactive Cat', 'expense', 'cash', 'CNY', ?) RETURNING id",
+        (const char*[]){uid_str, lid_str, NULL});
+    assert(ins_cat_inactive && csilk_json_array_size(ins_cat_inactive) > 0);
+    int64_t inactive_cat_id = db_get_int(csilk_json_array_get(ins_cat_inactive, 0), "id");
+    csilk_json_free(ins_cat_inactive);
+
+    csilk_json_t* ins_cat_coffee = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, asset_type, currency, ledger_id) "
+        "VALUES (?, 'Import Coffee Cat', 'expense', 'cash', 'CNY', ?) RETURNING id",
+        (const char*[]){uid_str, lid_str, NULL});
+    assert(ins_cat_coffee && csilk_json_array_size(ins_cat_coffee) > 0);
+    int64_t coffee_cat_id = db_get_int(csilk_json_array_get(ins_cat_coffee, 0), "id");
+    csilk_json_free(ins_cat_coffee);
+
+    csilk_json_t* ins_cat_asset = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, asset_type, currency, ledger_id) "
+        "VALUES (?, 'Import Cash Cat', 'asset', 'cash', 'CNY', ?) RETURNING id",
+        (const char*[]){uid_str, lid_str, NULL});
+    assert(ins_cat_asset && csilk_json_array_size(ins_cat_asset) > 0);
+    int64_t asset_cat_id = db_get_int(csilk_json_array_get(ins_cat_asset, 0), "id");
+    csilk_json_free(ins_cat_asset);
+
+    char asset_cat_str[32];
+    snprintf(asset_cat_str, sizeof(asset_cat_str), "%lld", (long long)asset_cat_id);
+
+    csilk_json_t* ins_asset = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Import Test Cash', 1000.0, 'CNY', ?) RETURNING id",
+        (const char*[]){uid_str, asset_cat_str, lid_str, NULL});
+    assert(ins_asset && csilk_json_array_size(ins_asset) > 0);
+    int64_t asset_id = db_get_int(csilk_json_array_get(ins_asset, 0), "id");
+    csilk_json_free(ins_asset);
+    assert(asset_id > 0);
+
+    /* 3. Insert inactive rule (priority 0) and active rule (priority 1) for same keyword */
+    int64_t rule_inactive_id = mf_import_rule_insert(
+        pool, user_id, "latte", "all", "contains", inactive_cat_id, "expense", 0, 0);
+    int64_t rule_active_id = mf_import_rule_insert(
+        pool, user_id, "latte", "all", "contains", coffee_cat_id, "expense", 1, 1);
+    assert(rule_inactive_id > 0 && rule_active_id > 0);
+
+    csilk_json_t* rules = mf_import_rule_list(pool, user_id);
+    assert(rules != NULL && csilk_json_array_size(rules) >= 2);
+    int seen_inactive = 0, seen_active = 0;
+    for (size_t i = 0; i < csilk_json_array_size(rules); i++) {
+        csilk_json_t* r = csilk_json_array_get(rules, i);
+        int64_t       rid = db_get_int(r, "id");
+        if (rid == rule_inactive_id) {
+            assert(db_get_bool(r, "is_active") == 0);
+            seen_inactive = 1;
+        } else if (rid == rule_active_id) {
+            assert(db_get_bool(r, "is_active") == 1);
+            seen_active = 1;
+        }
+    }
+    assert(seen_inactive && seen_active);
+    csilk_json_free(rules);
+
+    /* 4. Daily expense CSV import must skip inactive rule and match active rule */
+    const char* rule_csv =
+        "date,asset,category,type,amount,currency,note\n"
+        "2026-11-01,Import Test Cash,,expense,25.50,CNY,morning latte\n";
+    char* result_json = NULL;
+    char  err_buf[256] = {0};
+    int   rc = import_daily_expenses_csv_execute(
+        pool, 0, user_id, ledger_id, rule_csv, strlen(rule_csv), &result_json, err_buf, sizeof(err_buf));
+    assert(rc == 0 && result_json != NULL);
+    csilk_json_t* parsed = csilk_json_parse(result_json);
+    assert(parsed != NULL);
+    assert(db_get_int(parsed, "imported") == 1);
+    assert(db_get_int(parsed, "errors") == 0);
+    assert(db_get_int(parsed, "matched_rules") == 1);
+    csilk_json_free(parsed);
+    free(result_json);
+    result_json = NULL;
+
+    csilk_json_t* exp_rows = csilk_db_query_param_json(
+        pool,
+        "SELECT category_id FROM daily_expenses WHERE user_id = ? AND ledger_id = ? AND note = 'morning latte'",
+        (const char*[]){uid_str, lid_str, NULL});
+    assert(exp_rows && csilk_json_array_size(exp_rows) == 1);
+    assert(db_get_int(csilk_json_array_get(exp_rows, 0), "category_id") == coffee_cat_id);
+    csilk_json_free(exp_rows);
+
+    /* 5. Daily expense CSV import rejects negative, zero, NaN, and non-numeric amounts */
+    const char* bad_exp_csv =
+        "date,asset,category,type,amount,currency,note\n"
+        "2026-11-02,Import Test Cash,Import Coffee Cat,expense,-10,CNY,neg\n"
+        "2026-11-02,Import Test Cash,Import Coffee Cat,expense,0,CNY,zero\n"
+        "2026-11-02,Import Test Cash,Import Coffee Cat,expense,NaN,CNY,nan\n"
+        "2026-11-02,Import Test Cash,Import Coffee Cat,expense,abc,CNY,nonnum\n"
+        "2026-11-02,Import Test Cash,Import Coffee Cat,expense,12.3xyz,CNY,garbage\n";
+    rc = import_daily_expenses_csv_execute(pool,
+                                           0,
+                                           user_id,
+                                           ledger_id,
+                                           bad_exp_csv,
+                                           strlen(bad_exp_csv),
+                                           &result_json,
+                                           err_buf,
+                                           sizeof(err_buf));
+    assert(rc == 0 && result_json != NULL);
+    parsed = csilk_json_parse(result_json);
+    assert(parsed != NULL);
+    assert(db_get_int(parsed, "imported") == 0);
+    assert(db_get_int(parsed, "errors") == 5);
+    csilk_json_free(parsed);
+    free(result_json);
+    result_json = NULL;
+
+    /* 6. Transaction CSV import rejects negative, zero, NaN, and non-numeric amounts, accepts > 0 */
+    const char* tx_csv =
+        "date,asset,category,type,source_type,amount,price,qty,fee,currency,linked,note\n"
+        "2026-11-02,Import Test Cash,Import Coffee Cat,deposit,income,-50,1,1,0,CNY,,neg\n"
+        "2026-11-02,Import Test Cash,Import Coffee Cat,deposit,income,0,1,1,0,CNY,,zero\n"
+        "2026-11-02,Import Test Cash,Import Coffee Cat,deposit,income,NaN,1,1,0,CNY,,nan\n"
+        "2026-11-02,Import Test Cash,Import Coffee Cat,deposit,income,notanumber,1,1,0,CNY,,nonnum\n"
+        "2026-11-02,Import Test Cash,Import Coffee Cat,deposit,income,99px,1,1,0,CNY,,garbage\n"
+        "2026-11-02,Import Test Cash,Import Coffee Cat,deposit,income,100.00,1,1,0,CNY,,valid\n";
+    rc = import_transactions_csv_execute(
+        pool, 0, user_id, ledger_id, tx_csv, strlen(tx_csv), &result_json, err_buf, sizeof(err_buf));
+    assert(rc == 0 && result_json != NULL);
+    parsed = csilk_json_parse(result_json);
+    assert(parsed != NULL);
+    assert(db_get_int(parsed, "imported") == 1);
+    assert(db_get_int(parsed, "errors") == 5);
+    csilk_json_free(parsed);
+    free(result_json);
+
+    /* Clean up rules */
+    mf_import_rule_delete(pool, user_id, rule_inactive_id);
+    mf_import_rule_delete(pool, user_id, rule_active_id);
+
+    printf("  ✅ Smart Import Rule db_get_bool & CSV Amount Validation passed\n");
+}
+
 int
 main(void)
 {
@@ -1720,6 +1907,7 @@ main(void)
     test_report_monthly_precision_edge(pool, user_id, asset_id);
     test_daily_expense_tags_array_contract(pool, user_id, asset_id);
     test_report_expense_percentage_closure();
+    test_smart_import_rule_bool_and_csv_amount_validation(pool, user_id);
 
     teardown_test_db(pool);
     printf("\nAll domain repository tests passed!\n");
