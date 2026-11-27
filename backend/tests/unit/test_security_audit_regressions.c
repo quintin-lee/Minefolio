@@ -598,6 +598,46 @@ test_secret_path_traversal_and_mcp_crlf(void)
     config_secret_set_test_override("MCP_SECRET_TEST_GOOD", NULL);
 }
 
+char* receipt_base64_encode(const unsigned char* data, size_t input_length, size_t* output_length);
+
+static void
+test_receipt_base64_padding(void)
+{
+    printf("[6] Receipt base64 RFC 4648 padding vectors...\n");
+
+    static const struct {
+        const char* input;
+        const char* expected;
+    } vectors[] = {
+        {"", ""},
+        {"f", "Zg=="},
+        {"fo", "Zm8="},
+        {"foo", "Zm9v"},
+        {"foob", "Zm9vYg=="},
+        {"fooba", "Zm9vYmE="},
+        {"foobar", "Zm9vYmFy"},
+    };
+
+    for (size_t i = 0; i < sizeof(vectors) / sizeof(vectors[0]); i++) {
+        size_t out_len = 0;
+        char*  enc = receipt_base64_encode(
+            (const unsigned char*)vectors[i].input, strlen(vectors[i].input), &out_len);
+        assert(enc != NULL);
+        assert(out_len == strlen(vectors[i].expected));
+        assert(strcmp(enc, vectors[i].expected) == 0);
+        free(enc);
+    }
+
+    /* Binary input with high bit and trailing zero bytes to ensure proper masking/padding */
+    const unsigned char bin[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+    size_t              bin_len = 0;
+    char*               bin_enc = receipt_base64_encode(bin, sizeof(bin), &bin_len);
+    assert(bin_enc != NULL);
+    assert(bin_len == 8);
+    assert(strcmp(bin_enc, "3q2+7w==") == 0);
+    free(bin_enc);
+}
+
 int
 main(void)
 {
@@ -609,6 +649,7 @@ main(void)
     csilk_db_pool_t* pool = setup_test_db();
     test_db_backed_regressions(pool);
     test_secret_path_traversal_and_mcp_crlf();
+    test_receipt_base64_padding();
 
     cleanup_db_files();
     printf("=== All Security & Audit Regression Tests Passed ===\n");
