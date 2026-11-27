@@ -11,17 +11,17 @@
 #include <math.h>
 
 typedef struct {
-    int64_t id;
-    double  current_value;
-    char    currency[16];
-    char    created_date[16];
-    int     is_liability;
+    int64_t   id;
+    decimal_t current_value;
+    char      currency[16];
+    char      created_date[16];
+    int       is_liability;
 } trend_asset_t;
 
 typedef struct {
-    int64_t asset_id;
-    double  delta;
-    char    log_date[16];
+    int64_t   asset_id;
+    decimal_t delta;
+    char      log_date[16];
 } trend_log_t;
 
 static csilk_json_t*
@@ -45,7 +45,7 @@ portfolio_usecase_build_trend_30d(void* pool, int64_t user_id, int64_t ledger_id
     for (size_t i = 0; i < num_assets; i++) {
         csilk_json_t* r = csilk_json_array_get(asset_rows, i);
         assets[i].id = db_get_int(r, "id");
-        assets[i].current_value = db_get_num(r, "current_value");
+        assets[i].current_value = db_get_decimal(r, "current_value");
         const char* cur = csilk_json_get_string(r, "currency");
         snprintf(assets[i].currency, sizeof(assets[i].currency), "%s", cur ? cur : "CNY");
         const char* cd = csilk_json_get_string(r, "created_date");
@@ -67,7 +67,7 @@ portfolio_usecase_build_trend_30d(void* pool, int64_t user_id, int64_t ledger_id
     for (size_t i = 0; i < num_logs; i++) {
         csilk_json_t* r = csilk_json_array_get(log_rows, i);
         logs[i].asset_id = db_get_int(r, "asset_id");
-        logs[i].delta = db_get_num(r, "delta");
+        logs[i].delta = db_get_decimal(r, "delta");
         const char* ld = csilk_json_get_string(r, "log_date");
         snprintf(logs[i].log_date, sizeof(logs[i].log_date), "%s", ld ? ld : "");
     }
@@ -75,8 +75,12 @@ portfolio_usecase_build_trend_30d(void* pool, int64_t user_id, int64_t ledger_id
         csilk_json_free(log_rows);
     }
 
-    double day_assets[30] = {0};
-    double day_liabs[30] = {0};
+    decimal_t day_assets[30];
+    decimal_t day_liabs[30];
+    for (int d = 0; d < 30; d++) {
+        day_assets[d] = decimal_zero();
+        day_liabs[d] = decimal_zero();
+    }
 
     for (int d = 0; d < 30; d++) {
         const char* target_date = dates[d];
@@ -84,20 +88,39 @@ portfolio_usecase_build_trend_30d(void* pool, int64_t user_id, int64_t ledger_id
             if (strcmp(assets[a].created_date, target_date) > 0) {
                 continue;
             }
-            double val = assets[a].current_value;
+            decimal_t val = assets[a].current_value;
             for (size_t l = 0; l < num_logs; l++) {
                 if (logs[l].asset_id == assets[a].id && strcmp(logs[l].log_date, target_date) > 0) {
-                    val -= logs[l].delta;
+                    decimal_t next_val;
+                    if (decimal_sub(val, logs[l].delta, &next_val) == DECIMAL_OK) {
+                        val = next_val;
+                    }
                 }
             }
             currency_t acur = currency_from_str(assets[a].currency);
-            double     rate =
-                exchange_rate_get_historical_or_latest((csilk_db_pool_t*)pool, acur, target_date);
-            double conv_val = val * rate;
+            decimal_t  conv_val = val;
+            if (!currency_equals(acur, CURRENCY_CNY)) {
+                double rate = exchange_rate_get_historical_or_latest(
+                    (csilk_db_pool_t*)pool, acur, target_date);
+                decimal_t rate_dec;
+                if (decimal_from_double(rate, 6, &rate_dec) != DECIMAL_OK) {
+                    rate_dec = decimal_one();
+                }
+                if (decimal_mul(val, rate_dec, &conv_val) != DECIMAL_OK) {
+                    continue;
+                }
+            }
             if (assets[a].is_liability) {
-                day_liabs[d] += fabs(conv_val);
+                decimal_t abs_conv = decimal_abs(conv_val);
+                decimal_t next_liab;
+                if (decimal_add(day_liabs[d], abs_conv, &next_liab) == DECIMAL_OK) {
+                    day_liabs[d] = next_liab;
+                }
             } else {
-                day_assets[d] += conv_val;
+                decimal_t next_asset;
+                if (decimal_add(day_assets[d], conv_val, &next_asset) == DECIMAL_OK) {
+                    day_assets[d] = next_asset;
+                }
             }
         }
     }
@@ -111,11 +134,18 @@ portfolio_usecase_build_trend_30d(void* pool, int64_t user_id, int64_t ledger_id
 
     csilk_json_t* trend_arr = csilk_json_array();
     for (int d = 0; d < 30; d++) {
+        decimal_t net_worth_d = decimal_zero();
+        if (decimal_sub(day_assets[d], day_liabs[d], &net_worth_d) != DECIMAL_OK) {
+            net_worth_d = day_assets[d];
+        }
         csilk_json_t* item = csilk_json_object();
         csilk_json_add_string(item, "date", dates[d]);
-        csilk_json_add_number(item, "total_assets", day_assets[d]);
-        csilk_json_add_number(item, "total_liabilities", day_liabs[d]);
-        csilk_json_add_number(item, "net_worth", day_assets[d] - day_liabs[d]);
+        csilk_json_add_number(
+            item, "total_assets", mf_round_to_decimals(decimal_to_double(day_assets[d]), 2));
+        csilk_json_add_number(
+            item, "total_liabilities", mf_round_to_decimals(decimal_to_double(day_liabs[d]), 2));
+        csilk_json_add_number(
+            item, "net_worth", mf_round_to_decimals(decimal_to_double(net_worth_d), 2));
         csilk_json_array_append(trend_arr, item);
     }
     return trend_arr;

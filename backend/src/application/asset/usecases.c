@@ -12,6 +12,7 @@
 #include "application/account/usecases.h"
 #include "infrastructure/repositories/account_repo_impl.h"
 #include "infrastructure/repositories/account_permission_repo_impl.h"
+#include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
 #include "services/market/exchange_rate_service.h"
 #include "common/ledger_utils.h"
 #include <time.h>
@@ -226,7 +227,8 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
         cmd->quote_source ? cmd->quote_source : csilk_json_get_string(cr, "quote_source");
     const char* asset_type = csilk_json_get_string(cr, "asset_type");
 
-    /* RF-2: 成本结转方法变更检查与防篡改规则 */
+    /* RF-2: 成本结转方法变更检查与防篡改规则（延迟到事务作用域内执行写操作） */
+    int need_update_cost_method = 0;
     if (cmd->cost_method && cmd->cost_method[0] != '\0') {
         if (!mf_asset_rule_is_valid_cost_method(cmd->cost_method)) {
             csilk_json_free(cur);
@@ -252,13 +254,7 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
                          "资产已存在交易记录，禁止变更成本结转方法");
                 return -1;
             }
-
-            if (asset_update_cost_method(db_pool, cmd->user_id, cmd->id, cmd->cost_method) != 0) {
-                csilk_json_free(cur);
-                out_res->code = 1004;
-                snprintf(out_res->message, sizeof(out_res->message), "更新成本结转方法失败");
-                return -1;
-            }
+            need_update_cost_method = 1;
         }
     }
 
@@ -291,117 +287,131 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
         need_reattach = 1;
     }
 
-    if (cmd->has_net_value || cmd->has_quantity || cmd->has_cost_basis || cmd->has_unit_cost) {
-        if (is_investment) {
-            double old_qty = db_get_num(cr, "quantity");
-            double old_cost = db_get_num(cr, "cost_basis");
-            double old_net = db_get_num(cr, "net_value");
-            double old_current = db_get_num(cr, "current_value");
+    if (is_investment &&
+        (cmd->has_net_value || cmd->has_quantity || cmd->has_cost_basis || cmd->has_unit_cost)) {
+        double old_qty = db_get_num(cr, "quantity");
+        double old_cost = db_get_num(cr, "cost_basis");
+        double old_net = db_get_num(cr, "net_value");
+        double old_current = db_get_num(cr, "current_value");
 
-            double new_qty = cmd->has_quantity ? cmd->quantity : old_qty;
-            double new_net = cmd->has_net_value ? cmd->net_value : old_net;
-            double new_cost = cmd->has_cost_basis ? cmd->cost_basis : old_cost;
+        double new_qty = cmd->has_quantity ? cmd->quantity : old_qty;
+        double new_net = cmd->has_net_value ? cmd->net_value : old_net;
+        double new_cost = cmd->has_cost_basis ? cmd->cost_basis : old_cost;
 
-            /* Pre-compute values before starting the transaction scope */
-            currency_t asset_currency = currency_from_str(currency);
+        /* Pre-compute values before starting the transaction scope */
+        currency_t asset_currency = currency_from_str(currency);
 
-            quantity_t qty_obj;
-            quantity_from_double(new_qty, 4, &qty_obj);
+        quantity_t qty_obj;
+        quantity_from_double(new_qty, 4, &qty_obj);
 
-            if (cmd->has_unit_cost && !cmd->has_cost_basis && cmd->unit_cost >= 0.0 &&
-                new_qty > 0.0) {
-                price_t uc_obj;
-                money_t uc_total;
-                price_from_double(cmd->unit_cost, 4, asset_currency, &uc_obj);
-                if (price_times_quantity(uc_obj, qty_obj, &uc_total) == DECIMAL_OK) {
-                    new_cost = money_to_double(uc_total);
-                }
+        if (cmd->has_unit_cost && !cmd->has_cost_basis && cmd->unit_cost >= 0.0 && new_qty > 0.0) {
+            price_t uc_obj;
+            money_t uc_total;
+            price_from_double(cmd->unit_cost, 4, asset_currency, &uc_obj);
+            if (price_times_quantity(uc_obj, qty_obj, &uc_total) == DECIMAL_OK) {
+                new_cost = money_to_double(uc_total);
             }
+        }
 
-            price_t net_obj;
-            price_from_double(new_net, 4, asset_currency, &net_obj);
+        price_t net_obj;
+        price_from_double(new_net, 4, asset_currency, &net_obj);
 
-            /* Multiply: money_t (2 decimal places) = price_times_quantity(net_obj, qty_obj, &new_val_m) */
-            money_t new_val_m;
-            if (price_times_quantity(net_obj, qty_obj, &new_val_m) != DECIMAL_OK) {
-                csilk_json_free(cur);
-                out_res->code = 1004;
-                snprintf(out_res->message, sizeof(out_res->message), "金额计算溢出");
-                return -1;
-            }
+        /* Multiply: money_t (2 decimal places) = price_times_quantity(net_obj, qty_obj, &new_val_m) */
+        money_t new_val_m;
+        if (price_times_quantity(net_obj, qty_obj, &new_val_m) != DECIMAL_OK) {
+            csilk_json_free(cur);
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "金额计算溢出");
+            return -1;
+        }
 
-            money_t old_val_m;
-            money_from_double(old_current, asset_currency, &old_val_m);
+        money_t old_val_m;
+        money_from_double(old_current, asset_currency, &old_val_m);
 
-            money_t delta_m;
-            if (money_sub(new_val_m, old_val_m, &delta_m) != DECIMAL_OK) {
-                csilk_json_free(cur);
-                out_res->code = 1004;
-                snprintf(out_res->message, sizeof(out_res->message), "金额计算溢出");
-                return -1;
-            }
+        money_t delta_m;
+        if (money_sub(new_val_m, old_val_m, &delta_m) != DECIMAL_OK) {
+            csilk_json_free(cur);
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "金额计算溢出");
+            return -1;
+        }
 
-            db_tx_scope_t scope;
-            if (db_tx_scope_begin(db_pool, "mf_asset_update_investment", &scope) != 0) {
-                csilk_json_free(cur);
-                out_res->code = 1004;
-                snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
-                return -1;
-            }
+        db_tx_scope_t scope;
+        if (db_tx_scope_begin(db_pool, "mf_asset_update_investment", &scope) != 0) {
+            csilk_json_free(cur);
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+            return -1;
+        }
 
-            if (!money_is_zero(delta_m)) {
-                int b_rc = balance_apply_delta_m(db_pool,
-                                                 cmd->id,
-                                                 cmd->user_id,
-                                                 delta_m,
-                                                 "asset_netvalue",
-                                                 cmd->id,
-                                                 "net_value update");
-                if (b_rc != 0) {
-                    db_tx_scope_rollback(db_pool, &scope);
-                    csilk_json_free(cur);
-                    out_res->code = (b_rc == -1) ? 1002 : 1004;
-                    snprintf(out_res->message, sizeof(out_res->message), "更新资产余额失败");
-                    return -1;
-                }
-            }
+        if (need_update_cost_method &&
+            asset_update_cost_method(db_pool, cmd->user_id, cmd->id, cmd->cost_method) != 0) {
+            db_tx_scope_rollback(db_pool, &scope);
+            csilk_json_free(cur);
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "更新成本结转方法失败");
+            return -1;
+        }
 
-            double updated_current = money_to_double(new_val_m);
-            if (!asset_update_position(
-                    db_pool, cmd->user_id, cmd->id, new_net, new_qty, new_cost) ||
-                !asset_update_basic(db_pool,
-                                    cmd->user_id,
-                                    cmd->id,
-                                    name,
-                                    account_no,
-                                    updated_current,
-                                    currency,
-                                    note,
-                                    symbol,
-                                    quote_source)) {
+        if (!money_is_zero(delta_m)) {
+            int b_rc = balance_apply_delta_m(db_pool,
+                                             cmd->id,
+                                             cmd->user_id,
+                                             delta_m,
+                                             "asset_netvalue",
+                                             cmd->id,
+                                             "net_value update");
+            if (b_rc != 0) {
                 db_tx_scope_rollback(db_pool, &scope);
                 csilk_json_free(cur);
-                out_res->code = 1004;
-                snprintf(out_res->message, sizeof(out_res->message), "更新资产持仓或基本信息失败");
+                out_res->code = (b_rc == -1) ? 1002 : 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "更新资产余额失败");
                 return -1;
             }
+        }
 
-            if (need_reattach &&
-                asset_update_account(db_pool, cmd->user_id, cmd->id, reattach_acct)) {
-                db_tx_scope_rollback(db_pool, &scope);
-                csilk_json_free(cur);
-                out_res->code = 1004;
-                snprintf(out_res->message, sizeof(out_res->message), "账户重挂失败");
-                return -1;
-            }
+        double updated_current = money_to_double(new_val_m);
+        if (!asset_update_position(db_pool, cmd->user_id, cmd->id, new_net, new_qty, new_cost) ||
+            !asset_update_basic(db_pool,
+                                cmd->user_id,
+                                cmd->id,
+                                name,
+                                account_no,
+                                updated_current,
+                                currency,
+                                note,
+                                symbol,
+                                quote_source)) {
+            db_tx_scope_rollback(db_pool, &scope);
+            csilk_json_free(cur);
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "更新资产持仓或基本信息失败");
+            return -1;
+        }
 
-            if (db_tx_scope_commit(db_pool, &scope) != 0) {
-                db_tx_scope_rollback(db_pool, &scope);
-                csilk_json_free(cur);
-                out_res->code = 1004;
-                snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
-                return -1;
-            }
+        if (need_reattach &&
+            asset_update_account(db_pool, cmd->user_id, cmd->id, reattach_acct) != 0) {
+            db_tx_scope_rollback(db_pool, &scope);
+            csilk_json_free(cur);
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "账户重挂失败");
+            return -1;
+        }
+
+        if (ledger_snapshot_invalidate_from(db_pool, cmd->user_id, cmd->id, "1970-01-01") != 0) {
+            db_tx_scope_rollback(db_pool, &scope);
+            csilk_json_free(cur);
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "失效账本快照失败");
+            return -1;
+        }
+
+        if (db_tx_scope_commit(db_pool, &scope) != 0) {
+            db_tx_scope_rollback(db_pool, &scope);
+            csilk_json_free(cur);
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+            return -1;
         }
         csilk_json_free(cur);
         out_res->code = 0;
@@ -409,7 +419,24 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
         return 0;
     }
 
-    /* 普通资产更新 */
+    /* 普通资产更新（含 cost_method / 基本信息 / adjustment 流水 / 账户重挂，全量纳入同一事务） */
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(db_pool, "mf_asset_update_basic", &scope) != 0) {
+        csilk_json_free(cur);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+        return -1;
+    }
+
+    if (need_update_cost_method &&
+        asset_update_cost_method(db_pool, cmd->user_id, cmd->id, cmd->cost_method) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        csilk_json_free(cur);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "更新成本结转方法失败");
+        return -1;
+    }
+
     double upd_current_val =
         (cmd->current_value != 0.0) ? cmd->current_value : db_get_num(cr, "current_value");
     if (!asset_update_basic(db_pool,
@@ -422,16 +449,26 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
                             note,
                             symbol,
                             quote_source)) {
+        db_tx_scope_rollback(db_pool, &scope);
         csilk_json_free(cur);
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "更新失败");
         return -1;
     }
 
-    if (need_reattach && asset_update_account(db_pool, cmd->user_id, cmd->id, reattach_acct)) {
+    if (need_reattach && asset_update_account(db_pool, cmd->user_id, cmd->id, reattach_acct) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
         csilk_json_free(cur);
         out_res->code = 1004;
         snprintf(out_res->message, sizeof(out_res->message), "账户重挂失败");
+        return -1;
+    }
+
+    if (db_tx_scope_commit(db_pool, &scope) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        csilk_json_free(cur);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
         return -1;
     }
 
