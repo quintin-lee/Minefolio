@@ -92,11 +92,21 @@ test_ssrf_and_mcp_url_hardening(void)
     assert(mf_http_host_is_private_literal("2130706433") == true);
     assert(mf_http_host_is_private_literal("8.8.8.8") == false);
     assert(mf_http_host_is_private_literal("1.1.1.1") == false);
+    assert(mf_http_host_is_private_literal("localhost.") == true);
+    assert(mf_http_host_is_private_literal("169.254.169.254.") == true);
 
-    /* Cloud metadata must be blocked even when allow_local == true */
+    /* Cloud metadata & trailing-dot variants must be blocked even when allow_local == true */
     char resolve_buf[320] = {0};
     assert(mf_http_validate_and_resolve_url(
                "http://169.254.169.254/latest/meta-data", 0, true, false, resolve_buf, sizeof(resolve_buf)) !=
+           0);
+    assert(mf_http_validate_and_resolve_url(
+               "http://169.254.169.254./latest/meta-data", 0, true, false, resolve_buf, sizeof(resolve_buf)) !=
+           0);
+    assert(mf_http_validate_and_resolve_url(
+               "http://localhost./api", 0, false, false, resolve_buf, sizeof(resolve_buf)) != 0);
+    assert(mf_http_validate_and_resolve_url(
+               "http://nonexistent.invalid./api", 0, true, false, resolve_buf, sizeof(resolve_buf)) !=
            0);
     assert(mf_http_validate_and_resolve_url(
                "http://127.0.0.1:8080/api", 0, false, false, resolve_buf, sizeof(resolve_buf)) != 0);

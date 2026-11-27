@@ -187,10 +187,16 @@ mf_http_host_is_private_literal(const char* host)
     for (size_t i = 0; buf[i]; i++) {
         buf[i] = (char)tolower((unsigned char)buf[i]);
     }
+    size_t hlen = strlen(buf);
+    while (hlen > 0 && buf[hlen - 1] == '.') {
+        buf[--hlen] = '\0';
+    }
+    if (hlen == 0) {
+        return true;
+    }
     if (strcmp(buf, "localhost") == 0 || strcmp(buf, "host.docker.internal") == 0) {
         return true;
     }
-    size_t hlen = strlen(buf);
     if ((hlen > 6 && strcmp(buf + hlen - 6, ".local") == 0) ||
         (hlen > 9 && strcmp(buf + hlen - 9, ".internal") == 0) ||
         (hlen > 4 && strcmp(buf + hlen - 4, ".lan") == 0) ||
@@ -236,6 +242,13 @@ mf_http_validate_and_resolve_url(const char* url,
     if (!extract_host_and_port(url, host, sizeof(host), port, sizeof(port))) {
         return -1;
     }
+    size_t host_len = strlen(host);
+    while (host_len > 0 && host[host_len - 1] == '.') {
+        host[--host_len] = '\0';
+    }
+    if (host_len == 0) {
+        return -1;
+    }
 
     if (!allow_local && mf_http_host_is_private_literal(host)) {
         return -1;
@@ -268,9 +281,6 @@ mf_http_validate_and_resolve_url(const char* url,
     struct addrinfo* res = NULL;
     int              gai = getaddrinfo(host, port, &hints, &res);
     if (gai != 0 || !res) {
-        if (allow_local) {
-            return 0;
-        }
         return -1;
     }
 
