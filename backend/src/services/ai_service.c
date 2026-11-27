@@ -577,6 +577,7 @@ ai_chat_handler(csilk_ctx_t* c)
         if (sid <= 0) {
             csilk_json_free(body);
             respond_error(c, 500, "创建会话失败");
+            ai_config_release(cfg);
             return;
         }
     } else {
@@ -584,6 +585,7 @@ ai_chat_handler(csilk_ctx_t* c)
         if (!sess) {
             csilk_json_free(body);
             respond_not_found(c);
+            ai_config_release(cfg);
             return;
         }
         const char* current_title = csilk_json_get_string(csilk_json_array_get(sess, 0), "title");

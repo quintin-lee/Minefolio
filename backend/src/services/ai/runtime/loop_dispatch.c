@@ -285,6 +285,8 @@ loop_dispatch_parallel_tools(ai_runtime_context_t*         ctx,
         /* 分配失败降级为串行执行 */
         free(threads);
         free(spawned);
+        threads = NULL;
+        spawned = NULL;
         for (size_t t = 0; t < n_calls; t++) {
             if (!tasks[t].result_str) {
                 ai_parallel_tool_worker(&tasks[t]);
