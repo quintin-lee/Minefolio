@@ -579,7 +579,14 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
     ai_policy_decision_t* decision =
         ai_policy_evaluate_ex(ctx->user_id, ctx->session_id, tool_name, args, risk, false);
     if (!decision || !decision->allowed) {
-        const char* reason = decision ? decision->reason : "Policy rejection";
+        char reason_buf[256];
+        if (decision && decision->reason[0]) {
+            snprintf(reason_buf, sizeof(reason_buf), "%s", decision->reason);
+        } else if (decision) {
+            snprintf(reason_buf, sizeof(reason_buf), "%s", "blocked by policy");
+        } else {
+            snprintf(reason_buf, sizeof(reason_buf), "%s", "Policy rejection");
+        }
         if (cached) {
             mf_mcp_server_tool_repo_free_list(cached, cached_count);
         }
@@ -588,7 +595,7 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
         }
         csilk_json_t* err = csilk_json_object();
         csilk_json_add_string(err, "error", "policy_denied");
-        csilk_json_add_string(err, "reason", reason ? reason : "blocked by policy");
+        csilk_json_add_string(err, "reason", reason_buf);
         size_t len = 0;
         char*  out = csilk_json_serialize(err, &len);
         csilk_json_free(err);

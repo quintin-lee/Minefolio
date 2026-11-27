@@ -86,9 +86,9 @@ api_ai_news_get_date(csilk_ctx_t* c)
         csilk_json_free(result);
         return;
     }
-    csilk_json_t* first = csilk_json_array_get(result, 0);
-    respond_ok(c, first);
+    csilk_json_t* first = csilk_json_copy(csilk_json_array_get(result, 0));
     csilk_json_free(result);
+    respond_ok(c, first);
 }
 
 static void
