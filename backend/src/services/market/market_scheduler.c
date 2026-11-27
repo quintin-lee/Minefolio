@@ -193,6 +193,28 @@ is_any_equity_market_open(time_t now)
     return false;
 }
 
+/* Caller must hold g_sched_mutex. Snapshots g_pool, drops g_sched_mutex across
+ * the DB query, re-acquires g_sched_mutex, and reports whether the scheduler was
+ * requested to stop while unlocked. */
+static bool
+scheduler_is_builtin_enabled_unlocked(const char* handler_name, bool* out_stopped)
+{
+    csilk_db_pool_t* pool = g_pool;
+    pthread_mutex_unlock(&g_sched_mutex);
+    bool enabled = mf_scheduler_repo_is_builtin_enabled(pool, handler_name);
+    pthread_mutex_lock(&g_sched_mutex);
+    if (!g_sched_running) {
+        if (out_stopped) {
+            *out_stopped = true;
+        }
+        return false;
+    }
+    if (out_stopped) {
+        *out_stopped = false;
+    }
+    return enabled;
+}
+
 static void*
 scheduler_loop(void* arg)
 {
@@ -217,27 +239,35 @@ scheduler_loop(void* arg)
         /* Check DCA plans once per day */
         if (g_pool && tm_now.tm_yday != last_dca_check_day) {
             last_dca_check_day = tm_now.tm_yday;
-            if (mf_scheduler_repo_is_builtin_enabled(g_pool, "dca_plan_trigger")) {
+            bool stopped = false;
+            if (scheduler_is_builtin_enabled_unlocked("dca_plan_trigger", &stopped)) {
+                csilk_db_pool_t* pool = g_pool;
                 pthread_mutex_unlock(&g_sched_mutex);
-                check_and_trigger_dca_plans(g_pool, &tm_now);
+                check_and_trigger_dca_plans(pool, &tm_now);
                 pthread_mutex_lock(&g_sched_mutex);
                 if (!g_sched_running) {
                     break;
                 }
+            } else if (stopped) {
+                break;
             }
         }
 
         /* AI 每日金融资讯分析（每个 tm_yday 触发一次，约在 08:00 后执行） */
         if (g_pool && tm_now.tm_yday != last_news_check_day && tm_now.tm_hour >= 8) {
             last_news_check_day = tm_now.tm_yday;
-            if (mf_scheduler_repo_is_builtin_enabled(g_pool, "ai_news_digest")) {
+            bool stopped = false;
+            if (scheduler_is_builtin_enabled_unlocked("ai_news_digest", &stopped)) {
+                csilk_db_pool_t* pool = g_pool;
                 pthread_mutex_unlock(&g_sched_mutex);
                 CSILK_LOG_I("Scheduler: triggering daily AI news analysis");
-                ai_news_scheduler_tick(g_pool);
+                ai_news_scheduler_tick(pool);
                 pthread_mutex_lock(&g_sched_mutex);
                 if (!g_sched_running) {
                     break;
                 }
+            } else if (stopped) {
+                break;
             }
         }
 
@@ -247,24 +277,33 @@ scheduler_loop(void* arg)
             int  indices_interval = any_open ? 60 : 900;
             if (now - last_indices_sync >= indices_interval) {
                 last_indices_sync = now;
-                if (mf_scheduler_repo_is_builtin_enabled(g_pool, "global_indices_sync")) {
+                bool stopped = false;
+                if (scheduler_is_builtin_enabled_unlocked("global_indices_sync", &stopped)) {
+                    csilk_db_pool_t* pool = g_pool;
                     pthread_mutex_unlock(&g_sched_mutex);
-                    quote_engine_sync_indices_to_db(g_pool);
+                    quote_engine_sync_indices_to_db(pool);
                     pthread_mutex_lock(&g_sched_mutex);
                     if (!g_sched_running) {
                         break;
                     }
+                } else if (stopped) {
+                    break;
                 }
             }
         }
 
         /* 2.5 MCP stdio 池巡检：回收空闲超过 TTL 的子进程（内部带 TTL<=0 短路），
          * 每 30s 心跳一次即可，代价可忽略 */
-        if (mf_scheduler_repo_is_builtin_enabled(g_pool, "mcp_pool_cleanup")) {
-            pthread_mutex_unlock(&g_sched_mutex);
-            mf_mcp_stdio_pool_evict_idle();
-            pthread_mutex_lock(&g_sched_mutex);
-            if (!g_sched_running) {
+        {
+            bool stopped = false;
+            if (scheduler_is_builtin_enabled_unlocked("mcp_pool_cleanup", &stopped)) {
+                pthread_mutex_unlock(&g_sched_mutex);
+                mf_mcp_stdio_pool_evict_idle();
+                pthread_mutex_lock(&g_sched_mutex);
+                if (!g_sched_running) {
+                    break;
+                }
+            } else if (stopped) {
                 break;
             }
         }
@@ -275,52 +314,64 @@ scheduler_loop(void* arg)
             int  fx_interval = 1800; /* 30 minutes */
             if ((last_fx_sync == 0 || is_weekday) && (now - last_fx_sync >= fx_interval)) {
                 last_fx_sync = now;
-                if (mf_scheduler_repo_is_builtin_enabled(g_pool, "forex_rates_sync")) {
+                bool stopped = false;
+                if (scheduler_is_builtin_enabled_unlocked("forex_rates_sync", &stopped)) {
                     pthread_mutex_unlock(&g_sched_mutex);
                     exchange_rate_refresh_all();
                     pthread_mutex_lock(&g_sched_mutex);
                     if (!g_sched_running) {
                         break;
                     }
+                } else if (stopped) {
+                    break;
                 }
             }
         }
 
-        if (g_config_auto_sync && strcmp(g_config_sync_mode, "manual") != 0 &&
-            mf_scheduler_repo_is_builtin_enabled(g_pool, "market_quote_sync")) {
-            if (strcmp(g_config_sync_mode, "interval") == 0) {
-                int interval_sec = g_config_interval_min > 0 ? (g_config_interval_min * 60) : 1800;
-                if (now - last_sync_time >= interval_sec) {
-                    should_sync = true;
-                    last_sync_time = now;
-                }
-            } else {
-                /* Default "trading_hours" smart mode */
-                int interval_sec = g_config_interval_min > 0 ? (g_config_interval_min * 60) : 900;
-                if (interval_sec < 300) {
-                    interval_sec = 300;
-                }
+        if (g_config_auto_sync && strcmp(g_config_sync_mode, "manual") != 0) {
+            bool stopped = false;
+            if (scheduler_is_builtin_enabled_unlocked("market_quote_sync", &stopped)) {
+                if (g_config_auto_sync && strcmp(g_config_sync_mode, "manual") != 0) {
+                    if (strcmp(g_config_sync_mode, "interval") == 0) {
+                        int interval_sec =
+                            g_config_interval_min > 0 ? (g_config_interval_min * 60) : 1800;
+                        if (now - last_sync_time >= interval_sec) {
+                            should_sync = true;
+                            last_sync_time = now;
+                        }
+                    } else {
+                        /* Default "trading_hours" smart mode */
+                        int interval_sec =
+                            g_config_interval_min > 0 ? (g_config_interval_min * 60) : 900;
+                        if (interval_sec < 300) {
+                            interval_sec = 300;
+                        }
 
-                /* Active during CN or US market sessions */
-                if ((is_cn_trading_hour(&tm_now) || is_us_trading_hour(&tm_now)) &&
-                    (now - last_sync_time >= interval_sec)) {
-                    should_sync = true;
-                    last_sync_time = now;
-                }
+                        /* Active during CN or US market sessions */
+                        if ((is_cn_trading_hour(&tm_now) || is_us_trading_hour(&tm_now)) &&
+                            (now - last_sync_time >= interval_sec)) {
+                            should_sync = true;
+                            last_sync_time = now;
+                        }
 
-                /* Nightly mutual fund settlement */
-                if (is_nightly_settlement(&tm_now) && (now - last_nightly_time >= 3600)) {
-                    should_sync = true;
-                    last_nightly_time = now;
-                    CSILK_LOG_I("Market scheduler triggering nightly fund settlement sync");
+                        /* Nightly mutual fund settlement */
+                        if (is_nightly_settlement(&tm_now) && (now - last_nightly_time >= 3600)) {
+                            should_sync = true;
+                            last_nightly_time = now;
+                            CSILK_LOG_I("Market scheduler triggering nightly fund settlement sync");
+                        }
+                    }
                 }
+            } else if (stopped) {
+                break;
             }
         }
 
         if (should_sync && g_pool) {
+            csilk_db_pool_t* pool = g_pool;
             pthread_mutex_unlock(&g_sched_mutex);
             int synced = 0, failed = 0;
-            market_usecase_do_sync_user(g_pool, 0, &synced, &failed);
+            market_usecase_do_sync_user(pool, 0, &synced, &failed);
             CSILK_LOG_I("Market scheduler completed sync: %d synced, %d failed", synced, failed);
             pthread_mutex_lock(&g_sched_mutex);
             if (!g_sched_running) {
@@ -349,13 +400,20 @@ market_scheduler_start(csilk_db_pool_t* pool)
         pthread_mutex_unlock(&g_sched_mutex);
         return 0;
     }
+    pthread_mutex_unlock(&g_sched_mutex);
+
+    /* Pre-warm exchange rates from database history into memory table */
+    exchange_rate_preload_from_db(pool);
+
+    pthread_mutex_lock(&g_sched_mutex);
+    if (g_sched_running) {
+        pthread_mutex_unlock(&g_sched_mutex);
+        return 0;
+    }
 
     quote_engine_reset_stop();
     g_pool = pool;
     g_sched_running = true;
-
-    /* Pre-warm exchange rates from database history into memory table */
-    exchange_rate_preload_from_db(pool);
 
     /* Re-bind the condvar to CLOCK_MONOTONIC before the worker thread starts,
      * so timedwait deadlines are immune to NTP wall-clock rollback. Done on the

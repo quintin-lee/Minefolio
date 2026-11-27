@@ -4,15 +4,21 @@
 
 #include "services/file_parser.h"
 #include "common/db.h"
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <poll.h>
+#include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <dirent.h>
 
 static const char*
 file_ext(const char* filename)
@@ -44,6 +50,9 @@ int
 file_parser_write_temp(
     const char* data, size_t len, const char* suffix, char* out_path, size_t out_path_len)
 {
+    if (!out_path || out_path_len == 0 || (!data && len > 0)) {
+        return -1;
+    }
     if (!is_valid_file_suffix(suffix)) {
         return -1;
     }
@@ -62,12 +71,25 @@ file_parser_write_temp(
     if (fd < 0) {
         return -1;
     }
-    ssize_t n = write(fd, data, len);
-    close(fd);
-    if (n != (ssize_t)len) {
-        unlink(out_path);
-        return -1;
+    size_t written = 0;
+    while (written < len) {
+        ssize_t n = write(fd, data + written, len - written);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            close(fd);
+            unlink(out_path);
+            return -1;
+        }
+        if (n == 0) {
+            close(fd);
+            unlink(out_path);
+            return -1;
+        }
+        written += (size_t)n;
     }
+    close(fd);
     return 0;
 }
 
@@ -102,14 +124,57 @@ parse_csv(const char* data, size_t len, char* out, size_t out_len)
     return 0;
 }
 
-static int
-run_tool_capture(const char* prog,
-                 char* const argv[],
-                 char*       out,
-                 size_t      out_len,
-                 size_t      max_lines,
-                 bool        merge_stderr)
+static void
+close_inherited_fds_child(void)
 {
+    DIR* dir = opendir("/proc/self/fd");
+    if (dir) {
+        int            dfd = dirfd(dir);
+        struct dirent* ent;
+        while ((ent = readdir(dir)) != NULL) {
+            if (ent->d_name[0] == '.') {
+                continue;
+            }
+            char* endp = NULL;
+            long  fd = strtol(ent->d_name, &endp, 10);
+            if (endp && *endp == '\0' && fd >= 3 && fd != dfd) {
+                close((int)fd);
+            }
+        }
+        closedir(dir);
+        return;
+    }
+
+    long max_fd = sysconf(_SC_OPEN_MAX);
+    if (max_fd < 0 || max_fd > 65536) {
+        max_fd = 65536;
+    }
+    for (int fd = 3; fd < (int)max_fd; fd++) {
+        close(fd);
+    }
+}
+
+static int64_t
+monotonic_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000LL + (int64_t)(ts.tv_nsec / 1000000LL);
+}
+
+int
+file_parser_run_tool_capture_timeout(const char* prog,
+                                     char* const argv[],
+                                     char*       out,
+                                     size_t      out_len,
+                                     size_t      max_lines,
+                                     bool        merge_stderr,
+                                     int         timeout_ms)
+{
+    if (!prog || !argv || !out || out_len == 0) {
+        return -1;
+    }
+
     int pipefd[2];
     if (pipe(pipefd) != 0) {
         return -1;
@@ -121,49 +186,138 @@ run_tool_capture(const char* prog,
         return -1;
     }
     if (pid == 0) {
+        signal(SIGPIPE, SIG_DFL);
         close(pipefd[0]);
-        dup2(pipefd[1], STDOUT_FILENO);
+        if (dup2(pipefd[1], STDOUT_FILENO) < 0) {
+            _exit(127);
+        }
         if (merge_stderr) {
-            dup2(pipefd[1], STDERR_FILENO);
+            if (dup2(pipefd[1], STDERR_FILENO) < 0) {
+                _exit(127);
+            }
         } else {
             int devnull = open("/dev/null", O_WRONLY);
             if (devnull >= 0) {
                 dup2(devnull, STDERR_FILENO);
-                close(devnull);
+                if (devnull > STDERR_FILENO) {
+                    close(devnull);
+                }
             }
         }
-        close(pipefd[1]);
+        if (pipefd[1] > STDERR_FILENO) {
+            close(pipefd[1]);
+        }
+        close_inherited_fds_child();
         execvp(prog, argv);
         _exit(127);
     }
 
     close(pipefd[1]);
-    FILE* fp = fdopen(pipefd[0], "r");
-    if (!fp) {
-        close(pipefd[0]);
-        int st = 0;
-        waitpid(pid, &st, 0);
-        return -1;
+    int flags = fcntl(pipefd[0], F_GETFL, 0);
+    if (flags >= 0) {
+        (void)fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
     }
 
-    size_t total = 0;
-    size_t lines = 0;
-    char   buf[4096];
-    while (total < out_len - 1 && (max_lines == 0 || lines < max_lines) &&
-           fgets(buf, sizeof(buf), fp)) {
-        size_t blen = strlen(buf);
-        if (total + blen >= out_len - 1) {
+    int     effective_timeout = timeout_ms > 0 ? timeout_ms : 15000;
+    int64_t deadline_ms = monotonic_ms() + (int64_t)effective_timeout;
+    size_t  total = 0;
+    size_t  lines = 0;
+    bool    timed_out = false;
+    bool    done = false;
+
+    while (!done && total < out_len - 1 && (max_lines == 0 || lines < max_lines)) {
+        int64_t now_ms = monotonic_ms();
+        int64_t rem_ms = deadline_ms - now_ms;
+        if (rem_ms <= 0) {
+            timed_out = true;
             break;
         }
-        memcpy(out + total, buf, blen);
-        total += blen;
-        lines++;
+        int poll_timeout = rem_ms > INT_MAX ? INT_MAX : (int)rem_ms;
+
+        struct pollfd pfd = {.fd = pipefd[0], .events = POLLIN, .revents = 0};
+        int           pr = poll(&pfd, 1, poll_timeout);
+        if (pr < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if (pr == 0) {
+            timed_out = true;
+            break;
+        }
+
+        if (pfd.revents & (POLLIN | POLLHUP)) {
+            for (;;) {
+                char    buf[4096];
+                ssize_t r = read(pipefd[0], buf, sizeof(buf));
+                if (r > 0) {
+                    for (ssize_t i = 0; i < r; i++) {
+                        if (total >= out_len - 1) {
+                            done = true;
+                            break;
+                        }
+                        out[total++] = buf[i];
+                        if (buf[i] == '\n') {
+                            lines++;
+                            if (max_lines > 0 && lines >= max_lines) {
+                                done = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (done) {
+                        break;
+                    }
+                } else if (r == 0) {
+                    done = true;
+                    break;
+                } else {
+                    if (errno == EINTR) {
+                        continue;
+                    }
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                        break;
+                    }
+                    done = true;
+                    break;
+                }
+            }
+        } else if (pfd.revents & (POLLERR | POLLNVAL)) {
+            break;
+        }
+    }
+
+    close(pipefd[0]);
+    if (timed_out) {
+        kill(pid, SIGKILL);
+    }
+
+    int st = 0;
+    while (waitpid(pid, &st, 0) < 0) {
+        if (errno != EINTR) {
+            break;
+        }
+    }
+
+    if (timed_out) {
+        out[0] = '\0';
+        return -1;
     }
     out[total] = '\0';
-    fclose(fp);
-    int st = 0;
-    waitpid(pid, &st, 0);
     return total > 0 ? 0 : -1;
+}
+
+static int
+run_tool_capture(const char* prog,
+                 char* const argv[],
+                 char*       out,
+                 size_t      out_len,
+                 size_t      max_lines,
+                 bool        merge_stderr)
+{
+    return file_parser_run_tool_capture_timeout(
+        prog, argv, out, out_len, max_lines, merge_stderr, 15000);
 }
 
 static int
