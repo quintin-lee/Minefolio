@@ -27,6 +27,13 @@ const { handleImMessage } = require('../index.js');
  * @param {object} [opts.log]  optional {info,warn} logger (defaults to console).
  * @returns {{ onEvent:(event:object)=>Promise<void>, platform:string }}
  */
+function redactLogText(text) {
+  if (/^\s*\/bind(?:\s|$)/i.test(text)) {
+    return '/bind [REDACTED]';
+  }
+  return text;
+}
+
 function createOneBotAdapter({ getBindToken, transport, log }) {
   const logger = log || { info: (...a) => console.log('[onebot]', ...a), warn: (...a) => console.warn('[onebot]', ...a) };
 
@@ -48,7 +55,7 @@ function createOneBotAdapter({ getBindToken, transport, log }) {
     }
     const bindToken = await getBindToken(imUserId);
     const reply = await handleImMessage('qq', imUserId, text, bindToken);
-    logger.info('qq', imUserId, '<-', text, '->', reply);
+    logger.info('qq', imUserId, '<-', redactLogText(text), '->', reply);
     await transport.sendPrivateMsg(imUserId, reply);
   }
 

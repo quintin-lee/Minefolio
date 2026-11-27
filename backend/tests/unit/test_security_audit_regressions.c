@@ -1109,6 +1109,34 @@ test_csrf_middleware_oauth_and_no_duplicate_cookie(void)
     csilk_app_free(srv.app);
 }
 
+static void
+test_db_dsn_redaction(void)
+{
+    printf("[10] Database DSN password redaction...\n");
+    char out[256];
+
+    db_redact_dsn("postgres://mf_user:s3cr3t@db.internal:5432/minefolio?sslmode=disable",
+                  out,
+                  sizeof(out));
+    assert(strstr(out, "s3cr3t") == NULL);
+    assert(strcmp(out, "postgres://mf_user:***@db.internal:5432/minefolio?sslmode=disable") == 0);
+
+    db_redact_dsn("host=localhost port=5432 user=postgres password=my_top_secret dbname=mf",
+                  out,
+                  sizeof(out));
+    assert(strstr(out, "my_top_secret") == NULL);
+    assert(strcmp(out, "host=localhost port=5432 user=postgres password=*** dbname=mf") == 0);
+
+    db_redact_dsn("host=localhost user=pg password='p@ss \\'with\\' spaces' dbname=mf",
+                  out,
+                  sizeof(out));
+    assert(strstr(out, "spaces") == NULL);
+    assert(strcmp(out, "host=localhost user=pg password=*** dbname=mf") == 0);
+
+    db_redact_dsn("./data/minefolio.db", out, sizeof(out));
+    assert(strcmp(out, "./data/minefolio.db") == 0);
+}
+
 int
 main(void)
 {
@@ -1116,6 +1144,7 @@ main(void)
     test_ssrf_and_mcp_url_hardening();
     test_ai_internal_only_gating();
     test_ledger_loss_and_trace_config_bounds();
+    test_db_dsn_redaction();
 
     csilk_db_pool_t* pool = setup_test_db();
     test_db_backed_regressions(pool);

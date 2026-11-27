@@ -104,6 +104,11 @@ csilk_db_pool_t* db_get_pool(void);
  */
 int db_is_postgres(void);
 
+/**
+ * @brief 对数据库连接串 (DSN) 中的明文密码进行脱敏（支持 URL 及 libpq key=value 格式）
+ */
+void db_redact_dsn(const char* dsn, char* out, size_t out_sz);
+
 /* =========================================================================
  * 事务作用域与保存点管理 (Transaction Scope & Savepoint Guard)
  * ========================================================================= */

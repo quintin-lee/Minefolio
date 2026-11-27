@@ -10,9 +10,11 @@
 #include "config.h"
 #include "csilk/csilk.h"
 #include "csilk/drivers/db/migration.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sqlite3.h>
@@ -54,6 +56,95 @@ static int g_is_postgres = 0;
  * @param[out] out_pool 接收连接池指针的地址
  * @return int 0 成功，-1 失败
  */
+void
+db_redact_dsn(const char* dsn, char* out, size_t out_sz)
+{
+    if (!out || out_sz == 0) {
+        return;
+    }
+    if (!dsn) {
+        out[0] = '\0';
+        return;
+    }
+
+    size_t wi = 0;
+    size_t i = 0;
+    size_t n = strlen(dsn);
+
+    /* URL 形式 (postgres://user:pass@host/db 或 postgresql://user:pass@host/db) */
+    const char* scheme = strstr(dsn, "://");
+    if (scheme) {
+        size_t auth_start = (size_t)(scheme - dsn) + 3;
+        size_t at_pos = auth_start;
+        while (at_pos < n && dsn[at_pos] != '@' && dsn[at_pos] != '/' && dsn[at_pos] != '?' &&
+               dsn[at_pos] != '#') {
+            at_pos++;
+        }
+        if (at_pos < n && dsn[at_pos] == '@') {
+            /* 取最前面的 ':' 作为 user:pass 分隔符 */
+            size_t colon = auth_start;
+            while (colon < at_pos && dsn[colon] != ':') {
+                colon++;
+            }
+            if (colon < at_pos) {
+                size_t prefix_len = colon + 1;
+                size_t copy_len = prefix_len < (out_sz - 1) ? prefix_len : (out_sz - 1);
+                memcpy(out + wi, dsn, copy_len);
+                wi += copy_len;
+                const char* mask = "***";
+                for (size_t k = 0; mask[k] && wi + 1 < out_sz; k++) {
+                    out[wi++] = mask[k];
+                }
+                i = at_pos;
+            }
+        }
+    }
+
+    /* 逐字符扫描 libpq key=value 或 URL query 中的 password=... */
+    while (i < n && wi + 1 < out_sz) {
+        bool at_boundary = (i == 0 || isspace((unsigned char)dsn[i - 1]) || dsn[i - 1] == '?' ||
+                            dsn[i - 1] == '&');
+        if (at_boundary && (n - i) >= 8 && strncasecmp(dsn + i, "password", 8) == 0) {
+            size_t j = i + 8;
+            while (j < n && (dsn[j] == ' ' || dsn[j] == '\t')) {
+                j++;
+            }
+            if (j < n && dsn[j] == '=') {
+                j++;
+                while (j < n && (dsn[j] == ' ' || dsn[j] == '\t')) {
+                    j++;
+                }
+                const char* rep = "password=***";
+                for (size_t k = 0; rep[k] && wi + 1 < out_sz; k++) {
+                    out[wi++] = rep[k];
+                }
+                if (j < n && dsn[j] == '\'') {
+                    j++;
+                    while (j < n) {
+                        if (dsn[j] == '\\' && j + 1 < n) {
+                            j += 2;
+                            continue;
+                        }
+                        if (dsn[j] == '\'') {
+                            j++;
+                            break;
+                        }
+                        j++;
+                    }
+                } else {
+                    while (j < n && !isspace((unsigned char)dsn[j]) && dsn[j] != '&') {
+                        j++;
+                    }
+                }
+                i = j;
+                continue;
+            }
+        }
+        out[wi++] = dsn[i++];
+    }
+    out[wi] = '\0';
+}
+
 int
 db_init(csilk_db_pool_t** out_pool)
 {
@@ -77,7 +168,9 @@ db_init(csilk_db_pool_t** out_pool)
                                      : "./data/minefolio.db");
 
     g_is_postgres = (strcmp(driver, "postgres") == 0);
-    CSILK_LOG_I("DB driver=%s dsn=%s (env-only, config/db.json not consulted)", driver, dsn);
+    char safe_dsn[512];
+    db_redact_dsn(dsn, safe_dsn, sizeof(safe_dsn));
+    CSILK_LOG_I("DB driver=%s dsn=%s (env-only, config/db.json not consulted)", driver, safe_dsn);
 
     if (!g_is_postgres) {
         /* Auto-create the data directory if the DSN is a file path */
@@ -102,8 +195,10 @@ db_init(csilk_db_pool_t** out_pool)
     }
     g_pool = csilk_db_pool_new_ex(driver, dsn, pool_conns);
     if (!g_pool) {
-        CSILK_LOG_E(
-            "Failed to create database pool driver=%s dsn=%s conns=%d", driver, dsn, pool_conns);
+        CSILK_LOG_E("Failed to create database pool driver=%s dsn=%s conns=%d",
+                    driver,
+                    safe_dsn,
+                    pool_conns);
         return -1;
     }
     CSILK_LOG_I("Database pool ready: driver=%s conns=%d", driver, pool_conns);

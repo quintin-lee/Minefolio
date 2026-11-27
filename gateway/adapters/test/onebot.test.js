@@ -106,3 +106,19 @@ test('non-message post_type is ignored', async () => {
   await adapter.onEvent({ post_type: 'meta_event' });
   assert.strictEqual(transport.sent.length, 0);
 });
+
+test('redacts /bind credentials before logging', async () => {
+  const transport = createMockTransport();
+  const logged = [];
+  const log = {
+    info: (...args) => logged.push(args.map(String).join(' ')),
+    warn: (...args) => logged.push(args.map(String).join(' ')),
+  };
+  const adapter = createOneBotAdapter({ getBindToken: async () => '', transport, log });
+  await adapter.onEvent(makePrivateEvent({ userId: '54321', text: '  /bind alice SuperSecretPass!99  ' }));
+  assert.strictEqual(transport.sent.length, 1);
+  assert.strictEqual(logged.length, 1);
+  assert.ok(!logged[0].includes('SuperSecretPass!99'), 'password must not appear in OneBot logs');
+  assert.ok(!logged[0].includes('alice'), '/bind arguments must be redacted from logs');
+  assert.ok(logged[0].includes('/bind [REDACTED]'));
+});
