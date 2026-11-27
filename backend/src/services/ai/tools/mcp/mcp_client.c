@@ -29,6 +29,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -639,6 +640,77 @@ drain_stderr_nonblocking(mf_mcp_client_t* c)
     return true;
 }
 
+static int64_t
+monotonic_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000LL + (int64_t)(ts.tv_nsec / 1000000LL);
+}
+
+static int
+stdio_write_all(
+    int fd, const char* data, size_t len, int64_t deadline_ms, char* out_err, size_t err_sz)
+{
+    size_t off = 0;
+    while (off < len) {
+        int64_t rem = deadline_ms - monotonic_ms();
+        if (rem <= 0) {
+            if (out_err && err_sz) {
+                snprintf(out_err, err_sz, "stdio write timed out");
+            }
+            return -1;
+        }
+        int           poll_ms = (rem > INT_MAX) ? INT_MAX : (int)rem;
+        struct pollfd pfd = {.fd = fd, .events = POLLOUT, .revents = 0};
+        int           prc = poll(&pfd, 1, poll_ms);
+        if (prc < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            if (out_err && err_sz) {
+                snprintf(out_err, err_sz, "stdio write poll failed: %s", strerror(errno));
+            }
+            return -1;
+        }
+        if (prc == 0) {
+            if (out_err && err_sz) {
+                snprintf(out_err, err_sz, "stdio write timed out");
+            }
+            return -1;
+        }
+        if (pfd.revents & (POLLERR | POLLNVAL)) {
+            if (out_err && err_sz) {
+                snprintf(
+                    out_err, err_sz, "stdio write failed: broken pipe (child process terminated)");
+            }
+            return -1;
+        }
+        size_t chunk = len - off;
+        if (chunk > 4096) {
+            chunk = 4096; /* <= PIPE_BUF so blocking pipe write never stalls after POLLOUT */
+        }
+        ssize_t w = write(fd, data + off, chunk);
+        if (w < 0) {
+            if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
+                continue;
+            }
+            if (out_err && err_sz) {
+                if (errno == EPIPE) {
+                    snprintf(out_err,
+                             err_sz,
+                             "stdio write failed: broken pipe (child process terminated)");
+                } else {
+                    snprintf(out_err, err_sz, "stdio write failed: %s", strerror(errno));
+                }
+            }
+            return -1;
+        }
+        off += (size_t)w;
+    }
+    return 0;
+}
+
 static char*
 stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t err_sz)
 {
@@ -682,6 +754,8 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
             return NULL;
         }
         fcntl(err_pipe[0], F_SETFL, O_NONBLOCK);
+        fcntl(in_pipe[1], F_SETFL, O_NONBLOCK);
+        fcntl(out_pipe[0], F_SETFL, O_NONBLOCK);
 
         pid_t pid = fork();
         if (pid < 0) {
@@ -792,36 +866,27 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
            pipe fd 是普通文件描述符而非 socket，无法设 SO_RCVTIMEO。 */
     }
 
-    /* 写请求帧（带换行） */
-    size_t frame_len = strlen(request_json) + 2;
-    char*  frame = malloc(frame_len);
+    int     timeout_ms = (c->server && c->server->timeout_ms > 0) ? c->server->timeout_ms : 30000;
+    int64_t deadline_ms = monotonic_ms() + (int64_t)timeout_ms;
+
+    /* 写请求帧（带换行），使用预计算长度和单调时钟预算 */
+    size_t req_len = strlen(request_json);
+    size_t frame_len = req_len + 1;
+    char*  frame = malloc(frame_len + 1);
     if (!frame) {
         snprintf(out_err, err_sz, "oom");
         return NULL;
     }
-    snprintf(frame, frame_len, "%s\n", request_json);
-    size_t off = 0;
-    while (off < strlen(frame)) {
-        ssize_t w = write(c->write_fd, frame + off, strlen(frame) - off);
-        if (w < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            free(frame);
-            if (errno == EPIPE) {
-                snprintf(
-                    out_err, err_sz, "stdio write failed: broken pipe (child process terminated)");
-            } else {
-                snprintf(out_err, err_sz, "stdio write failed: %s", strerror(errno));
-            }
-            return NULL;
-        }
-        off += (size_t)w;
+    memcpy(frame, request_json, req_len);
+    frame[req_len] = '\n';
+    frame[frame_len] = '\0';
+    if (stdio_write_all(c->write_fd, frame, frame_len, deadline_ms, out_err, err_sz) != 0) {
+        free(frame);
+        return NULL;
     }
     free(frame);
 
-    /* 读响应帧（4KB 块缓冲读取，memchr 快速内存扫描分帧，双 FD poll 控制） */
-    int timeout_ms = c->server->timeout_ms > 0 ? c->server->timeout_ms : 30000;
+    /* 读响应帧（4KB 块缓冲读取，memchr 快速内存扫描分帧，双 FD poll + 单调截止时间控制） */
     c->last_error[0] = '\0';
     char* resp = (char*)malloc(MCP_MAX_FRAME_SIZE + MCP_IO_BUFFER_SIZE + 1);
     if (!resp) {
@@ -858,12 +923,17 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
         /* 2. 缓冲区已空，执行双路 poll 并块读取 */
         if (c->framer.head == c->framer.tail) {
             c->framer.head = c->framer.tail = 0;
+            int64_t rem = deadline_ms - monotonic_ms();
+            if (rem <= 0) {
+                goto read_timeout;
+            }
+            int           remaining_ms = (rem > INT_MAX) ? INT_MAX : (int)rem;
             struct pollfd pfds[2] = {
                 {.fd = c->read_fd, .events = POLLIN, .revents = 0},
                 {.fd = c->err_fd,  .events = POLLIN, .revents = 0}
             };
             int nfds = (c->err_fd >= 0) ? 2 : 1;
-            int prc = poll(pfds, nfds, timeout_ms);
+            int prc = poll(pfds, nfds, remaining_ms);
             if (prc < 0) {
                 if (errno == EINTR) {
                     continue;
@@ -874,6 +944,7 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
                 return NULL;
             }
             if (prc == 0) {
+            read_timeout:
                 drain_stderr_nonblocking(c);
                 if (c->last_error[0] != '\0') {
                     /* 显式精度截断：last_error(1024B) 可能超出调用方 256B 的 out_err，
@@ -978,7 +1049,8 @@ mf_mcp_client_free(mf_mcp_client_t* c)
         int st = 0;
         int exited = 0;
         for (int w = 0; w < 50; w++) {
-            if (waitpid(c->child_pid, &st, WNOHANG) > 0) {
+            pid_t r = waitpid(c->child_pid, &st, WNOHANG);
+            if (r > 0 || (r == -1 && errno == ECHILD)) {
                 exited = 1;
                 break;
             }
@@ -988,7 +1060,10 @@ mf_mcp_client_free(mf_mcp_client_t* c)
             if (kill(-c->child_pid, SIGKILL) != 0) {
                 (void)kill(c->child_pid, SIGKILL);
             }
-            waitpid(c->child_pid, &st, 0);
+            pid_t wr;
+            do {
+                wr = waitpid(c->child_pid, &st, 0);
+            } while (wr == -1 && errno == EINTR);
         }
         c->child_pid = 0;
     }
@@ -1089,21 +1164,17 @@ mf_mcp_client_initialize(mf_mcp_client_t* c, char* out_err, size_t err_sz)
                     free(nresp);
                 }
             } else if (c->write_fd >= 0) {
-                size_t nframe_len = strlen(notif) + 2;
-                char*  nframe = malloc(nframe_len);
+                int timeout_ms =
+                    (c->server && c->server->timeout_ms > 0) ? c->server->timeout_ms : 30000;
+                int64_t deadline_ms = monotonic_ms() + (int64_t)timeout_ms;
+                size_t  notif_len = strlen(notif);
+                size_t  nframe_len = notif_len + 1;
+                char*   nframe = malloc(nframe_len + 1);
                 if (nframe) {
-                    snprintf(nframe, nframe_len, "%s\n", notif);
-                    size_t noff = 0;
-                    while (noff < strlen(nframe)) {
-                        ssize_t nw = write(c->write_fd, nframe + noff, strlen(nframe) - noff);
-                        if (nw < 0) {
-                            if (errno == EINTR) {
-                                continue;
-                            }
-                            break;
-                        }
-                        noff += (size_t)nw;
-                    }
+                    memcpy(nframe, notif, notif_len);
+                    nframe[notif_len] = '\n';
+                    nframe[nframe_len] = '\0';
+                    (void)stdio_write_all(c->write_fd, nframe, nframe_len, deadline_ms, NULL, 0);
                     free(nframe);
                 }
             }
