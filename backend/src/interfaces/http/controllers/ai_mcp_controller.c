@@ -431,16 +431,21 @@ _Thread_local static bool   g_script_overflow = false;
 static void
 script_part_handler(csilk_multipart_part_t* part)
 {
+    if (!part || g_script_overflow) {
+        return;
+    }
     if (!g_script_filename && part->filename[0]) {
         g_script_filename = strdup(part->filename);
     }
     if (part->data && part->data_len > 0) {
-        size_t need = g_script_data_len + part->data_len;
-        if (need > 5 * 1024 * 1024) {
+        static const size_t MAX_SCRIPT_BYTES = 5U * 1024U * 1024U;
+        if (part->data_len > MAX_SCRIPT_BYTES ||
+            g_script_data_len > MAX_SCRIPT_BYTES - part->data_len) {
             /* 拒收而非静默丢块：否则文件被截断落盘却返回成功 */
             g_script_overflow = true;
             return;
         }
+        size_t need = g_script_data_len + part->data_len;
         if (need > g_script_data_cap) {
             size_t cap = g_script_data_cap ? g_script_data_cap : 16384;
             while (cap < need) {
@@ -525,7 +530,7 @@ void
 api_ai_mcp_scripts_upload(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
+    if (user_id <= 0) {
         return;
     }
     if (!require_instance_admin(c, user_id)) {
@@ -585,13 +590,22 @@ api_ai_mcp_scripts_upload(csilk_ctx_t* c)
     snprintf(user_dir, sizeof(user_dir), "./data/mcp_scripts/%lld", (long long)user_id);
     mkdir(user_dir, 0755);
 
-    char abs_dir[1024];
-    if (!realpath(user_dir, abs_dir)) {
-        snprintf(abs_dir, sizeof(abs_dir), "%s", user_dir);
-    }
+    char*       abs_dir_alloc = realpath(user_dir, NULL);
+    const char* abs_dir = abs_dir_alloc ? abs_dir_alloc : user_dir;
 
-    char full_path[1280];
-    snprintf(full_path, sizeof(full_path), "%s/%s", abs_dir, raw_name);
+    char full_path[4096];
+    int  fp_len = snprintf(full_path, sizeof(full_path), "%s/%s", abs_dir, raw_name);
+    free(abs_dir_alloc);
+    if (fp_len < 0 || (size_t)fp_len >= sizeof(full_path)) {
+        free(g_script_filename);
+        free(g_script_data);
+        g_script_filename = NULL;
+        g_script_data = NULL;
+        g_script_data_len = 0;
+        g_script_data_cap = 0;
+        respond_error(c, 500, "脚本路径过长");
+        return;
+    }
 
     FILE* fp = fopen(full_path, "wb");
     if (!fp) {
@@ -604,12 +618,26 @@ api_ai_mcp_scripts_upload(csilk_ctx_t* c)
         respond_error(c, 500, "保存脚本文件失败");
         return;
     }
-    fwrite(g_script_data, 1, g_script_data_len, fp);
-    fclose(fp);
+    size_t written = fwrite(g_script_data, 1, g_script_data_len, fp);
+    int    close_rc = fclose(fp);
+    if (written != g_script_data_len || close_rc != 0) {
+        unlink(full_path);
+        free(g_script_filename);
+        free(g_script_data);
+        g_script_filename = NULL;
+        g_script_data = NULL;
+        g_script_data_len = 0;
+        g_script_data_cap = 0;
+        respond_error(c, 500, "保存脚本文件失败");
+        return;
+    }
     chmod(full_path, 0755);
 
-    char cmd[1400];
-    snprintf(cmd, sizeof(cmd), "%s %s", interp, full_path);
+    char cmd[4200];
+    int  cmd_len = snprintf(cmd, sizeof(cmd), "%s %s", interp, full_path);
+    if (cmd_len < 0 || (size_t)cmd_len >= sizeof(cmd)) {
+        cmd[sizeof(cmd) - 1] = '\0';
+    }
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "filename", raw_name);
@@ -631,7 +659,7 @@ void
 api_ai_mcp_scripts_list(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
+    if (user_id <= 0) {
         return;
     }
     if (!require_instance_admin(c, user_id)) {
@@ -648,10 +676,8 @@ api_ai_mcp_scripts_list(csilk_ctx_t* c)
         return;
     }
 
-    char abs_dir[1024];
-    if (!realpath(user_dir, abs_dir)) {
-        snprintf(abs_dir, sizeof(abs_dir), "%s", user_dir);
-    }
+    char*       abs_dir_alloc = realpath(user_dir, NULL);
+    const char* abs_dir = abs_dir_alloc ? abs_dir_alloc : user_dir;
 
     struct dirent* ent;
     while ((ent = readdir(dir)) != NULL) {
@@ -663,15 +689,18 @@ api_ai_mcp_scripts_list(csilk_ctx_t* c)
             continue;
         }
 
-        char full_path[1280];
-        snprintf(full_path, sizeof(full_path), "%s/%s", abs_dir, ent->d_name);
+        char full_path[4096];
+        int  fp_len = snprintf(full_path, sizeof(full_path), "%s/%s", abs_dir, ent->d_name);
+        if (fp_len < 0 || (size_t)fp_len >= sizeof(full_path)) {
+            continue;
+        }
 
         struct stat st;
         if (stat(full_path, &st) != 0) {
             continue;
         }
 
-        char cmd[1400];
+        char cmd[4200];
         snprintf(cmd, sizeof(cmd), "%s %s", interp, full_path);
 
         csilk_json_t* item = csilk_json_object();
@@ -682,6 +711,7 @@ api_ai_mcp_scripts_list(csilk_ctx_t* c)
         csilk_json_add_number(item, "updated_at", (double)st.st_mtime);
         csilk_json_array_append(arr, item);
     }
+    free(abs_dir_alloc);
     closedir(dir);
 
     respond_ok(c, arr);
@@ -691,7 +721,7 @@ void
 api_ai_mcp_scripts_delete(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
+    if (user_id <= 0) {
         return;
     }
     if (!require_instance_admin(c, user_id)) {
