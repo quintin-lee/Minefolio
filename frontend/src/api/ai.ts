@@ -160,8 +160,8 @@ export async function listSessions(params?: { page?: number; page_size?: number 
  * @param provider 初始指定的提供商标识 (可选)
  * @returns 创建成功后的会话信息
  */
-export async function createSession(model?: string, provider?: string) {
-  return http.post<AiSession>('/ai/sessions', { model, provider })
+export async function createSession(model?: string, provider?: string): Promise<{ id: number } | AiSession> {
+  return http.post<{ id: number } | AiSession>('/ai/sessions', { model, provider })
 }
 
 /**
@@ -183,8 +183,8 @@ export async function getSession(id: number) {
  * @param data.model 新的模型名称
  * @returns 更新结果
  */
-export async function updateSession(id: number, data: { title?: string; model?: string }) {
-  return http.put<AiSession>(`/ai/sessions/${id}`, data)
+export async function updateSession(id: number, data: { title?: string; model?: string }): Promise<void> {
+  return http.put<void>(`/ai/sessions/${id}`, data)
 }
 
 /**
@@ -275,27 +275,33 @@ function getStreamHeaders(): Record<string, string> {
 /**
  * 校验 SSE 响应头与状态：拦截 HTTP 401 以及网关/后端在 HTTP 200 下返回 JSON `{ code: 1001 }` 的鉴权失效场景
  */
-async function assertStreamResponseOk(resp: Response): Promise<ReadableStream<Uint8Array>> {
+export async function assertStreamResponseOk(resp: Response): Promise<ReadableStream<Uint8Array>> {
   if (resp.status === 401) {
     handleAuthError()
     throw new Error('HTTP 401: Unauthorized')
   }
   const contentType = resp.headers?.get('content-type') || ''
-  if (contentType.includes('application/json')) {
-    let body: { code?: number; message?: string } | null = null
+  if (contentType.includes('application/json') || (!resp.ok && typeof resp.json === 'function')) {
+    let body: { code?: number; message?: string; error?: string } | null = null
     try {
-      body = (await resp.json()) as { code?: number; message?: string }
+      body = (await resp.json()) as { code?: number; message?: string; error?: string }
     } catch {
       body = null
     }
     if (body && typeof body.code === 'number') {
       if (body.code === 1001) {
         handleAuthError()
-        throw new Error(body.message || 'HTTP 401: Unauthorized')
+        throw new Error(body.message || body.error || 'HTTP 401: Unauthorized')
       }
       if (body.code !== 0) {
-        throw new Error(body.message || `API Error (${body.code})`)
+        throw new Error(body.message || body.error || `API Error (${body.code})`)
       }
+    }
+    if (body?.error) {
+      throw new Error(body.error)
+    }
+    if (!resp.ok) {
+      throw new Error(body?.message || `HTTP ${resp.status}`)
     }
   }
   if (!resp.ok || !resp.body) {
@@ -540,8 +546,10 @@ export async function getWorkflows(): Promise<WorkflowDef[]> {
  * 工作流流式执行返回的数据分块 (SSE Chunk)
  */
 export interface WorkflowStreamChunk {
-  /** 分块事件类型 (工作流开始/步骤开始/进度更新/步骤完成/增量输出/执行完毕/错误) */
-  type: 'workflow_start' | 'step_start' | 'step_progress' | 'step_complete' | 'delta' | 'workflow_complete' | 'error'
+  /** 分块事件类型 (工作流开始/步骤开始/进度更新/步骤完成/增量输出/执行完毕/错误/服务端消息 ID 回传) */
+  type: 'workflow_start' | 'step_start' | 'step_progress' | 'step_complete' | 'delta' | 'workflow_complete' | 'error' | 'user_message_id' | 'assistant_message_id'
+  /** 服务端消息 ID (当 type 为 'user_message_id' 或 'assistant_message_id' 时) */
+  id?: number | string
   /** 工作流唯一标识 ID */
   workflow_id?: string
   /** 工作流标题或步骤标题 */
@@ -619,6 +627,7 @@ export async function* runWorkflowStream(
         const parsed = JSON.parse(dataStr) as Record<string, unknown>
         return {
           type: (currentEvent || 'delta') as WorkflowStreamChunk['type'],
+          id: typeof parsed.id === 'number' || typeof parsed.id === 'string' ? parsed.id : undefined,
           workflow_id: typeof parsed.workflow_id === 'string' ? parsed.workflow_id : undefined,
           title: typeof parsed.title === 'string' ? parsed.title : undefined,
           total_steps: typeof parsed.total_steps === 'number' ? parsed.total_steps : undefined,

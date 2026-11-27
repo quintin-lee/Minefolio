@@ -11,7 +11,7 @@ import {
   getMessages, chatStream, getModels, getSettings, getWorkflows, runWorkflowStream,
 } from '@/api/ai'
 import type {
-  AiMessage, AiSession, AiModelOption, AiSettings, ToolCallInfo, ChatStreamChunk,
+  AiMessage, AiSession, AiModelOption, AiSettings, ToolCallInfo, ChatStreamChunk, WorkflowStreamChunk,
 } from '@/api/ai'
 import type { WorkflowDef, WorkflowRunState, WorkflowStepState } from '@/types'
 import { SmoothStreamWriter } from '@/utils/typewriter'
@@ -685,7 +685,7 @@ export const useChatStore = defineStore('chat', () => {
    * `server_id` 字段，编辑重发时据此向服务端截断历史。
    * @param chunk SSE 数据分块
    */
-  function adoptServerMessageId(chunk: ChatStreamChunk) {
+  function adoptServerMessageId(chunk: ChatStreamChunk | WorkflowStreamChunk) {
     if (chunk.type !== 'user_message_id' && chunk.type !== 'assistant_message_id') return
     const targetRole = chunk.type === 'user_message_id' ? 'user' : 'assistant'
     const serverId = Number(chunk.id)
@@ -908,7 +908,9 @@ export const useChatStore = defineStore('chat', () => {
         },
         signal
       )) {
-        if (chunk.type === 'workflow_start') {
+        if (chunk.type === 'user_message_id' || chunk.type === 'assistant_message_id') {
+          adoptServerMessageId(chunk)
+        } else if (chunk.type === 'workflow_start') {
           if (chunk.title) wfState.title = chunk.title
           if (chunk.total_steps) wfState.total_steps = chunk.total_steps
         } else if (chunk.type === 'step_start' && typeof chunk.step_index === 'number') {
@@ -1086,7 +1088,9 @@ export const useChatStore = defineStore('chat', () => {
         },
         signal
       )) {
-        if (chunk.type === 'workflow_start') {
+        if (chunk.type === 'user_message_id' || chunk.type === 'assistant_message_id') {
+          adoptServerMessageId(chunk)
+        } else if (chunk.type === 'workflow_start') {
           if (chunk.title) wfState.title = chunk.title
           if (chunk.total_steps) wfState.total_steps = chunk.total_steps
         } else if (chunk.type === 'step_start' && typeof chunk.step_index === 'number') {

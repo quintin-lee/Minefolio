@@ -168,6 +168,37 @@ export function getCookie(name: string): string | null {
   return match && match[1] ? decodeURIComponent(match[1]) : null
 }
 
+function isBlobLike(data: unknown): data is Blob {
+  return (
+    (typeof Blob !== 'undefined' && data instanceof Blob) ||
+    Object.prototype.toString.call(data) === '[object Blob]'
+  )
+}
+
+async function readBlobText(blob: Blob): Promise<string> {
+  if (typeof blob.text === 'function') {
+    return blob.text()
+  }
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read blob'))
+    reader.readAsText(blob)
+  })
+}
+
+async function parseBlobErrorBody(data: unknown): Promise<ApiEnvelope | undefined> {
+  if (isBlobLike(data) && typeof data.type === 'string' && data.type.includes('application/json')) {
+    try {
+      const text = await readBlobText(data)
+      return JSON.parse(text) as ApiEnvelope
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
 /**
  * 创建并配置预置拦截器的 Axios 实例
  * @returns AxiosInstance
@@ -209,8 +240,9 @@ function createHttp(): AxiosInstance {
 
   // 响应拦截器：统一处理业务异常与鉴权失败；信封解包由 http.get/post/put/delete 包装函数完成
   instance.interceptors.response.use(
-    (res: AxiosResponse) => {
-      const body = res.data as ApiEnvelope | undefined
+    async (res: AxiosResponse) => {
+      const parsedBlob = await parseBlobErrorBody(res.data)
+      const body = (parsedBlob ?? res.data) as ApiEnvelope | undefined
       if (body && typeof body === 'object' && typeof body.code === 'number' && body.code !== 0) {
         if (body.code === 1001) {
           handleAuthError()
@@ -221,8 +253,12 @@ function createHttp(): AxiosInstance {
       }
       return res
     },
-    (err) => {
+    async (err) => {
       if (err.response) {
+        const parsedBlob = await parseBlobErrorBody(err.response.data)
+        if (parsedBlob) {
+          err.response.data = parsedBlob
+        }
         const code = err.response.data?.code
         if (code === 1001 || err.response.status === 401) {
           handleAuthError()
