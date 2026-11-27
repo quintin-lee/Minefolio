@@ -25,10 +25,14 @@ export function loadViewCache<T>(key: string): ViewCache<T> {
 
 /** 写入/覆盖缓存并持久化 */
 export function saveViewCache<T>(key: string, data: T): void {
-  run(
-    `INSERT INTO view_cache (key, payload, updated_at) VALUES (?, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
-    [key, JSON.stringify(data), nowIso()]
-  )
-  persist()
+  try {
+    run(
+      `INSERT INTO view_cache (key, payload, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
+      [key, JSON.stringify(data), nowIso()]
+    )
+    persist()
+  } catch {
+    // localDb 未初始化或写入失败时静默降级
+  }
 }

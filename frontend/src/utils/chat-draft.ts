@@ -17,16 +17,24 @@ export function loadDraft(scopeKey: string): string {
 
 /** 保存（upsert）草稿并持久化 */
 export function saveDraft(scopeKey: string, content: string): void {
-  run(
-    `INSERT INTO chat_drafts (scope_key, content, updated_at) VALUES (?, ?, ?)
-     ON CONFLICT(scope_key) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at`,
-    [scopeKey, content, nowIso()]
-  )
-  persist()
+  try {
+    run(
+      `INSERT INTO chat_drafts (scope_key, content, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(scope_key) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at`,
+      [scopeKey, content, nowIso()]
+    )
+    persist()
+  } catch {
+    // localDb 未初始化或写入失败时静默降级，避免阻断输入/卸载流程
+  }
 }
 
 /** 删除草稿并持久化 */
 export function clearDraft(scopeKey: string): void {
-  run('DELETE FROM chat_drafts WHERE scope_key = ?', [scopeKey])
-  persist()
+  try {
+    run('DELETE FROM chat_drafts WHERE scope_key = ?', [scopeKey])
+    persist()
+  } catch {
+    // localDb 未初始化时静默降级
+  }
 }

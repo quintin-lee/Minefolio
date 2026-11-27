@@ -102,12 +102,17 @@ onMounted(async () => {
   loadError.value = false
 
   // 本地优先：先用投资类资产派生持仓，避免首屏空白
-  const local = deriveLocalHoldings()
-  const hadLocalHoldings = local.report.holdings.length > 0
-  report.value = local.report
-  summary.value = local.report.summary
-  holdings.value = local.report.holdings
-  approximate.value = true
+  let hadLocalHoldings = false
+  try {
+    const local = deriveLocalHoldings()
+    hadLocalHoldings = local.report.holdings.length > 0
+    report.value = local.report
+    summary.value = local.report.summary
+    holdings.value = local.report.holdings
+    approximate.value = true
+  } catch (e) {
+    console.warn('[HoldingsMobile] deriveLocalHoldings failed, falling back to remote:', e)
+  }
 
   const ratesCache = loadViewCache<Record<string, number>>('exchange_rates')
   if (ratesCache.data) {

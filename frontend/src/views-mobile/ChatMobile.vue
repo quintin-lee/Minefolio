@@ -90,7 +90,11 @@ function flushDraft() {
     clearTimeout(draftTimer)
     draftTimer = null
   }
-  saveDraft(currentScopeKey.value, inputText.value)
+  try {
+    saveDraft(currentScopeKey.value, inputText.value)
+  } catch {
+    // localDb 不可用时静默降级
+  }
 }
 
 // 输入防抖 300ms 写本地草稿；切换会话前先 flush，避免写入错误 scope
@@ -175,7 +179,11 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('online', handleOnline)
   window.removeEventListener('offline', handleOffline)
-  flushDraft()
+  try {
+    flushDraft()
+  } catch {
+    // 确保草稿持久化异常不阻断中止流式响应
+  }
   chat.abortCurrentStream()
 })
 </script>
