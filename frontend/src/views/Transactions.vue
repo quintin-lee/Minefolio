@@ -21,23 +21,23 @@
     <!-- 顶部汇总统计卡片 -->
     <el-row :gutter="16" class="summary-cards">
       <el-col :xs="24" :sm="12" :lg="6">
-        <div class="summary-card-with-bar bar-cyan">
-          <SummaryCard label="本月交易总额" :value="formatCurrency(monthlyTotalVolume)" extraClass="font-mono text-primary" />
+        <div class="summary-card-with-bar" :class="monthlyTotalVolume > 0 ? 'bar-cyan' : 'bar-neutral'">
+          <SummaryCard label="本月交易总额" :value="formatCurrency(monthlyTotalVolume)" :type="monthlyTotalVolume > 0 ? 'highlight' : 'neutral'" extraClass="font-mono" />
         </div>
       </el-col>
       <el-col :xs="24" :sm="12" :lg="6">
-        <div class="summary-card-with-bar bar-red">
-          <SummaryCard label="卖出/存入/收益" :value="'+' + formatCurrency(monthlyInflows)" type="income" extraClass="font-mono" />
+        <div class="summary-card-with-bar" :class="monthlyInflows > 0 ? 'bar-income' : 'bar-neutral'">
+          <SummaryCard label="卖出/存入/收益" :value="monthlyInflows > 0 ? '+' + formatCurrency(monthlyInflows) : formatCurrency(0)" :type="monthlyInflows > 0 ? 'income' : 'neutral'" extraClass="font-mono" />
         </div>
       </el-col>
       <el-col :xs="24" :sm="12" :lg="6">
-        <div class="summary-card-with-bar bar-green">
-          <SummaryCard label="买入/取出/支出" :value="'-' + formatCurrency(monthlyOutflows)" type="expense" extraClass="font-mono" />
+        <div class="summary-card-with-bar" :class="monthlyOutflows > 0 ? 'bar-expense' : 'bar-neutral'">
+          <SummaryCard label="买入/取出/支出" :value="monthlyOutflows > 0 ? '-' + formatCurrency(monthlyOutflows) : formatCurrency(0)" :type="monthlyOutflows > 0 ? 'expense' : 'neutral'" extraClass="font-mono" />
         </div>
       </el-col>
       <el-col :xs="24" :sm="12" :lg="6">
-        <div class="summary-card-with-bar bar-amber">
-          <SummaryCard label="本月交易笔数" :value="monthlyCount + ' 笔'" type="highlight" extraClass="font-mono" />
+        <div class="summary-card-with-bar" :class="monthlyCount > 0 ? 'bar-amber' : 'bar-neutral'">
+          <SummaryCard label="本月交易笔数" :value="monthlyCount + ' 笔'" :type="monthlyCount > 0 ? 'highlight' : 'neutral'" extraClass="font-mono" />
         </div>
       </el-col>
     </el-row>
@@ -135,18 +135,18 @@
               <span v-else class="muted-text">—</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="showFeeCol" label="手续费" width="100" align="right">
+          <el-table-column v-if="showFeeCol && !isCompactTable" label="手续费" width="100" align="right">
             <template #default="{ row }">
               <span v-if="row.fee && row.fee > 0" class="mono-amount expense-text">{{ formatCurrency(row.fee, row.currency) }}</span>
               <span v-else class="muted-text">—</span>
             </template>
           </el-table-column>
-          <el-table-column prop="currency" label="币种" width="90" align="center">
+          <el-table-column v-if="!isCompactTable" prop="currency" label="币种" width="90" align="center">
             <template #default="{ row }">
               <el-tag size="small" type="info" effect="plain">{{ row.currency || 'CNY' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="note" label="备注" min-width="160" show-overflow-tooltip>
+          <el-table-column v-if="!isCompactTable" prop="note" label="备注" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">
               <span>{{ row.note || '-' }}</span>
             </template>
@@ -399,7 +399,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download, Upload, UploadFilled, SuccessFilled, Edit, Delete } from '@element-plus/icons-vue'
 import { transactionsApi } from '@/api/transactions'
@@ -451,16 +451,16 @@ interface TransactionTypeOption {
 
 // 单源类型注册表：与后端 TX_TYPES 保持同序同步
 const TRANSACTION_TYPES: TransactionTypeOption[] = [
-  { value: 'deposit', label: '存入', direction: 'in', isTrading: false, tagType: 'danger' },
-  { value: 'withdrawal', label: '取出', direction: 'out', isTrading: false, tagType: 'success' },
+  { value: 'deposit', label: '存入', direction: 'in', isTrading: false, tagType: 'success' },
+  { value: 'withdrawal', label: '取出', direction: 'out', isTrading: false, tagType: 'danger' },
   { value: 'buy', label: '买入', direction: 'out', isTrading: true, tagType: 'primary' },
   { value: 'sell', label: '卖出', direction: 'in', isTrading: true, tagType: 'warning' },
-  { value: 'transfer_in', label: '转入', direction: 'in', isTrading: false, tagType: 'danger' },
-  { value: 'transfer_out', label: '转出', direction: 'out', isTrading: false, tagType: 'success' },
+  { value: 'transfer_in', label: '转入', direction: 'in', isTrading: false, tagType: 'success' },
+  { value: 'transfer_out', label: '转出', direction: 'out', isTrading: false, tagType: 'danger' },
   { value: 'fee', label: '手续费', direction: 'out', isTrading: false, tagType: 'info' },
-  { value: 'income', label: '收益', direction: 'in', isTrading: false, tagType: 'danger' },
-  { value: 'loss', label: '亏损', direction: 'out', isTrading: false, tagType: 'success' },
-  { value: 'interest', label: '利息', direction: 'in', isTrading: false, tagType: 'danger' },
+  { value: 'income', label: '收益', direction: 'in', isTrading: false, tagType: 'success' },
+  { value: 'loss', label: '亏损', direction: 'out', isTrading: false, tagType: 'danger' },
+  { value: 'interest', label: '利息', direction: 'in', isTrading: false, tagType: 'success' },
 ]
 
 const transactionTypes = TRANSACTION_TYPES.map(({ value, label }) => ({ value, label }))
@@ -559,6 +559,17 @@ const showFeeCol = computed(() => {
     (t) => (t.fee !== undefined && t.fee !== null && t.fee > 0) || ['buy', 'sell', 'fee'].includes(t.transaction_type)
   )
 })
+
+const COMPACT_TABLE_QUERY = '(max-width: 1200px)'
+const isCompactTable = ref(
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(COMPACT_TABLE_QUERY).matches
+    : false,
+)
+let compactMediaQuery: MediaQueryList | null = null
+const handleCompactTableChange = (e: MediaQueryListEvent) => {
+  isCompactTable.value = e.matches
+}
 
 const INVESTMENT_ASSET_TYPES = new Set(['stock', 'fund', 'bond', 'crypto'])
 
@@ -926,12 +937,22 @@ function handleBatchExport() {
 }
 
 onMounted(async () => {
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    compactMediaQuery = window.matchMedia(COMPACT_TABLE_QUERY)
+    isCompactTable.value = compactMediaQuery.matches
+    compactMediaQuery.addEventListener?.('change', handleCompactTableChange)
+  }
   try {
     await Promise.all([loadAssets(), loadCategories()])
     loadData()
   } catch (err) {
     console.error('[Transactions] onMounted failed:', err)
   }
+})
+
+onUnmounted(() => {
+  compactMediaQuery?.removeEventListener?.('change', handleCompactTableChange)
+  compactMediaQuery = null
 })
 
 // ── Import / Export ──────────────────────────────────────────────────────────
@@ -1043,9 +1064,10 @@ async function handleImport() {
   border-radius: 2px 0 0 2px;
 }
 .bar-cyan::before { background: var(--mf-primary); box-shadow: 0 0 8px var(--mf-primary-light); }
-.bar-green::before { background: #10b981; box-shadow: 0 0 8px rgba(16,185,129,0.5); }
-.bar-red::before   { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.5); }
-.bar-amber::before { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.5); }
+.bar-income::before { background: var(--mf-income); box-shadow: 0 0 8px var(--mf-income-light); }
+.bar-expense::before { background: var(--mf-expense); box-shadow: 0 0 8px var(--mf-expense-light); }
+.bar-amber::before { background: var(--mf-warning); box-shadow: 0 0 8px var(--mf-warning-light); }
+.bar-neutral::before { background: var(--mf-border); }
 
 .action-icon-btn {
   background: var(--mf-surface) !important;
@@ -1067,20 +1089,6 @@ async function handleImport() {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-.income-text {
-  color: var(--mf-gain) !important;
-  font-weight: 600;
-}
-.expense-text {
-  color: var(--mf-loss) !important;
-  font-weight: 600;
-}
-[data-theme="dark"] .income-text {
-  text-shadow: 0 0 8px rgba(244, 63, 94, 0.3);
-}
-[data-theme="dark"] .expense-text {
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
-}
 .text-primary { color: var(--mf-primary); }
 
 .main-panel {
@@ -1188,14 +1196,24 @@ async function handleImport() {
   font-variant-numeric: tabular-nums;
 }
 
-.stream-table :deep(.el-table__fixed-right),
-.stream-table :deep(.el-table__fixed-right-patch) {
-  background: var(--mf-surface-card) !important;
-  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
+.stream-table :deep(th.el-table-fixed-column--right) {
+  background-color: var(--mf-table-sticky-header-bg) !important;
+  z-index: 3 !important;
 }
 
-.stream-table :deep(.el-table__fixed-right .el-table__cell) {
-  background: var(--mf-surface-card) !important;
+.stream-table :deep(td.el-table-fixed-column--right) {
+  background-color: var(--mf-table-sticky-bg) !important;
+  z-index: 2 !important;
+}
+
+.stream-table :deep(.el-table__row:hover > td.el-table-fixed-column--right) {
+  background-color: var(--mf-table-sticky-hover-bg) !important;
+}
+
+.stream-table.is-scrolling-left :deep(.el-table-fixed-column--right.is-first-column),
+.stream-table.is-scrolling-middle :deep(.el-table-fixed-column--right.is-first-column) {
+  box-shadow: -8px 0 16px -6px rgba(0, 0, 0, 0.35);
+  border-left: 1px solid var(--mf-border-subtle);
 }
 
 .price-tag { color: var(--mf-primary); }

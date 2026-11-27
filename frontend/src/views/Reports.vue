@@ -26,7 +26,7 @@
 
     <el-tabs class="premium-tabs" type="card">
       <el-tab-pane label="收支分析">
-        <div v-if="!monthly" class="mf-empty-state">
+        <div v-if="!hasExpenseData" class="mf-empty-state">
           <div class="mf-empty-circle"></div>
           <p>暂无收支数据，完成第一笔交易后这里会出现图表</p>
         </div>
@@ -44,22 +44,26 @@
                   <div class="metric-cards">
                     <div class="metric-card">
                       <div class="metric-label">总收入</div>
-                      <div class="metric-value income-text">{{ formatCurrency(monthly?.total_income ?? 0) }}</div>
+                      <div class="metric-value" :class="positiveAmountClass(monthly?.total_income, 'income-text')">{{ formatCurrency(monthly?.total_income ?? 0) }}</div>
                     </div>
                     <div class="metric-card">
                       <div class="metric-label">总支出</div>
-                      <div class="metric-value expense-text">{{ formatCurrency(monthly?.total_expense ?? 0) }}</div>
+                      <div class="metric-value" :class="positiveAmountClass(monthly?.total_expense, 'expense-text')">{{ formatCurrency(monthly?.total_expense ?? 0) }}</div>
                     </div>
                     <div class="metric-card highlight">
                       <div class="metric-label">结余</div>
-                      <div class="metric-value" :class="(monthly?.balance ?? 0) >= 0 ? 'income-text' : 'expense-text'">
+                      <div class="metric-value" :class="amountClass(monthly?.balance)">
                         {{ formatCurrency(monthly?.balance ?? 0) }}
                       </div>
                     </div>
                   </div>
                 
                   <div class="chart-container">
-                    <ExpenseCategoryPie :data="monthly?.by_category ?? []" />
+                    <ExpenseCategoryPie v-if="hasMonthlyExpenseCategories" :data="monthly?.by_category ?? []" />
+                    <div v-else class="mf-empty-state mf-empty-sm">
+                      <div class="mf-empty-circle"></div>
+                      <p>本月暂无支出分类数据</p>
+                    </div>
                   </div>
                 </div>
               </el-col>
@@ -71,7 +75,11 @@
                     <h3>收支趋势（近6月）</h3>
                   </div>
                   <div class="chart-container">
-                    <ExpenseTrendBar :data="trend" />
+                    <ExpenseTrendBar v-if="trend?.labels?.length" :data="trend" />
+                    <div v-else class="mf-empty-state mf-empty-sm">
+                      <div class="mf-empty-circle"></div>
+                      <p>近 6 个月暂无收支趋势数据</p>
+                    </div>
                   </div>
                 </div>
               </el-col>
@@ -127,41 +135,41 @@
                   <div class="perf-grid">
                     <div class="perf-item">
                       <div class="perf-label">总交易笔数</div>
-                      <div class="perf-value">{{ perf?.total_trades ?? 0 }}</div>
+                      <div class="perf-value" :class="(perf?.total_trades ?? 0) > 0 ? '' : 'zero-text'">{{ perf?.total_trades ?? 0 }}</div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">总收益</div>
-                      <div class="perf-value gain-text">{{ formatCurrency(perf?.total_gain ?? 0) }}</div>
+                      <div class="perf-value" :class="positiveAmountClass(perf?.total_gain, 'gain-text')">{{ formatCurrency(perf?.total_gain ?? 0) }}</div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">总亏损</div>
-                      <div class="perf-value loss-text">{{ formatCurrency(perf?.total_loss ?? 0) }}</div>
+                      <div class="perf-value" :class="positiveAmountClass(perf?.total_loss, 'loss-text')">{{ formatCurrency(perf?.total_loss ?? 0) }}</div>
                     </div>
                     <div class="perf-item highlight">
                       <div class="perf-label">净收益</div>
-                      <div class="perf-value" :class="(perf?.net_gain ?? 0) >= 0 ? 'gain-text' : 'loss-text'">
+                      <div class="perf-value" :class="amountClass(perf?.net_gain, 'gain-text', 'loss-text')">
                         {{ formatCurrency(perf?.net_gain ?? 0) }}
                       </div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">已实现盈亏</div>
-                      <div class="perf-value" :class="((perf?.realized_pnl ?? 0) >= 0 ? 'gain-text' : 'loss-text')">
+                      <div class="perf-value" :class="amountClass(perf?.realized_pnl, 'gain-text', 'loss-text')">
                         {{ formatCurrency(perf?.realized_pnl ?? 0) }}
                       </div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">浮动盈亏</div>
-                      <div class="perf-value" :class="((perf?.floating_pnl ?? 0) >= 0 ? 'gain-text' : 'loss-text')">
+                      <div class="perf-value" :class="amountClass(perf?.floating_pnl, 'gain-text', 'loss-text')">
                         {{ formatCurrency(perf?.floating_pnl ?? 0) }}
                       </div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">持仓市值</div>
-                      <div class="perf-value">{{ formatCurrency(perf?.total_market_value ?? 0) }}</div>
+                      <div class="perf-value" :class="positiveAmountClass(perf?.total_market_value, 'asset-text')">{{ formatCurrency(perf?.total_market_value ?? 0) }}</div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">持仓成本</div>
-                      <div class="perf-value">{{ formatCurrency(perf?.total_cost_basis_remaining ?? 0) }}</div>
+                      <div class="perf-value" :class="(perf?.total_cost_basis_remaining ?? 0) > 0 ? '' : 'zero-text'">{{ formatCurrency(perf?.total_cost_basis_remaining ?? 0) }}</div>
                     </div>
                   </div>
                 </div>
@@ -172,7 +180,7 @@
       </el-tab-pane>
 
       <el-tab-pane label="资产分析">
-        <div v-if="!assetBreakdown" class="mf-empty-state">
+        <div v-if="!hasAssetData" class="mf-empty-state">
           <div class="mf-empty-circle"></div>
           <p>暂无资产数据，先添加资产账户</p>
         </div>
@@ -193,7 +201,11 @@
                     </div>
                   </div>
                   <div class="chart-container">
-                    <AssetTrendLine :data="assetTrend" />
+                    <AssetTrendLine v-if="assetTrend?.labels?.length" :data="assetTrend" />
+                    <div v-else class="mf-empty-state mf-empty-sm">
+                      <div class="mf-empty-circle"></div>
+                      <p>暂无净资产趋势数据</p>
+                    </div>
                   </div>
                 </div>
               </el-col>
@@ -208,22 +220,26 @@
                   <div class="asset-summary-list">
                     <div class="summary-item">
                       <span class="label">总资产</span>
-                      <span class="value">{{ formatCurrency(assetBreakdown?.total_assets ?? 0) }}</span>
+                      <span class="value" :class="positiveAmountClass(assetBreakdown?.total_assets, 'asset-text')">{{ formatCurrency(assetBreakdown?.total_assets ?? 0) }}</span>
                     </div>
                     <div class="summary-item">
                       <span class="label">总负债</span>
-                      <span class="value expense-text">{{ formatCurrency(assetBreakdown?.total_liabilities ?? 0) }}</span>
+                      <span class="value" :class="positiveAmountClass(Math.abs(assetBreakdown?.total_liabilities ?? 0), 'liability-text')">{{ formatCurrency(assetBreakdown?.total_liabilities ?? 0) }}</span>
                     </div>
                     <div class="summary-item total">
                       <span class="label">净资产</span>
-                      <span class="value income-text">{{ formatCurrency(assetBreakdown?.net_worth ?? 0) }}</span>
+                      <span class="value" :class="amountClass(assetBreakdown?.net_worth, 'asset-text', 'expense-text')">{{ formatCurrency(assetBreakdown?.net_worth ?? 0) }}</span>
                     </div>
                   </div>
                 
                   <el-divider border-style="dashed" style="margin: 12px 0" />
                 
                   <div class="chart-container">
-                    <AssetBreakdownPie :data="assetBreakdown?.assets ?? []" />
+                    <AssetBreakdownPie v-if="assetPieData.length > 0" :data="assetPieData" />
+                    <div v-else class="mf-empty-state mf-empty-sm">
+                      <div class="mf-empty-circle"></div>
+                      <p>暂无资产分布明细</p>
+                    </div>
                   </div>
                 </div>
               </el-col>
@@ -234,11 +250,11 @@
 
       <!-- 外汇与汇兑损益 -->
       <el-tab-pane label="外汇与汇兑损益">
-        <div v-if="!fxPnlData || fxPnlData.assets.length === 0" class="mf-empty-state">
+        <div v-if="!hasFxData" class="mf-empty-state">
           <div class="mf-empty-circle"></div>
           <p>暂无外币资产，添加非 CNY 币种（如 USD / HKD / EUR）的资产后查看汇兑损益</p>
         </div>
-        <template v-else>
+        <template v-else-if="fxPnlData">
           <div class="tab-layout">
             <!-- 汇兑指标卡片 -->
             <div class="metric-cards fx-metrics">
@@ -252,20 +268,20 @@
               </div>
               <div class="metric-card">
                 <div class="metric-label">资产自身价格盈亏</div>
-                <div class="metric-value" :class="fxPnlData.total_asset_pnl_base >= 0 ? 'gain-text' : 'loss-text'">
-                  {{ fxPnlData.total_asset_pnl_base >= 0 ? '+' : '' }}{{ formatCurrency(fxPnlData.total_asset_pnl_base) }}
+                <div class="metric-value" :class="amountClass(fxPnlData.total_asset_pnl_base, 'gain-text', 'loss-text')">
+                  {{ fxPnlData.total_asset_pnl_base > 0 ? '+' : '' }}{{ formatCurrency(fxPnlData.total_asset_pnl_base) }}
                 </div>
               </div>
               <div class="metric-card highlight">
                 <div class="metric-label">纯汇率波动损益 (FX PnL)</div>
-                <div class="metric-value" :class="fxPnlData.total_fx_pnl_base >= 0 ? 'gain-text' : 'loss-text'">
-                  {{ fxPnlData.total_fx_pnl_base >= 0 ? '+' : '' }}{{ formatCurrency(fxPnlData.total_fx_pnl_base) }}
+                <div class="metric-value" :class="amountClass(fxPnlData.total_fx_pnl_base, 'gain-text', 'loss-text')">
+                  {{ fxPnlData.total_fx_pnl_base > 0 ? '+' : '' }}{{ formatCurrency(fxPnlData.total_fx_pnl_base) }}
                 </div>
               </div>
               <div class="metric-card">
                 <div class="metric-label">综合总盈亏 (CNY)</div>
-                <div class="metric-value" :class="fxPnlData.total_combined_pnl_base >= 0 ? 'gain-text' : 'loss-text'">
-                  {{ fxPnlData.total_combined_pnl_base >= 0 ? '+' : '' }}{{ formatCurrency(fxPnlData.total_combined_pnl_base) }}
+                <div class="metric-value" :class="amountClass(fxPnlData.total_combined_pnl_base, 'gain-text', 'loss-text')">
+                  {{ fxPnlData.total_combined_pnl_base > 0 ? '+' : '' }}{{ formatCurrency(fxPnlData.total_combined_pnl_base) }}
                 </div>
               </div>
             </div>
@@ -292,22 +308,22 @@
                 </el-table-column>
                 <el-table-column prop="asset_pnl_base" label="资产标的盈亏 (¥)" width="130" align="right">
                   <template #default="{ row }">
-                    <span :class="row.asset_pnl_base >= 0 ? 'gain-text' : 'loss-text'">
-                      {{ row.asset_pnl_base >= 0 ? '+' : '' }}{{ Number(row.asset_pnl_base).toFixed(2) }}
+                    <span :class="amountClass(row.asset_pnl_base, 'gain-text', 'loss-text')">
+                      {{ row.asset_pnl_base > 0 ? '+' : '' }}{{ Number(row.asset_pnl_base).toFixed(2) }}
                     </span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="fx_pnl_base" label="汇率波动损益 (¥)" width="130" align="right">
                   <template #default="{ row }">
-                    <span :class="row.fx_pnl_base >= 0 ? 'gain-text' : 'loss-text'">
-                      {{ row.fx_pnl_base >= 0 ? '+' : '' }}{{ Number(row.fx_pnl_base).toFixed(2) }}
+                    <span :class="amountClass(row.fx_pnl_base, 'gain-text', 'loss-text')">
+                      {{ row.fx_pnl_base > 0 ? '+' : '' }}{{ Number(row.fx_pnl_base).toFixed(2) }}
                     </span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="combined_pnl_base" label="综合总回报 (¥)" width="130" align="right">
                   <template #default="{ row }">
-                    <span :class="row.combined_pnl_base >= 0 ? 'gain-text' : 'loss-text'">
-                      {{ row.combined_pnl_base >= 0 ? '+' : '' }}{{ Number(row.combined_pnl_base).toFixed(2) }}
+                    <span :class="amountClass(row.combined_pnl_base, 'gain-text', 'loss-text')">
+                      {{ row.combined_pnl_base > 0 ? '+' : '' }}{{ Number(row.combined_pnl_base).toFixed(2) }}
                     </span>
                   </template>
                 </el-table-column>
@@ -329,7 +345,7 @@ import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ExpenseTrendBar from '@/components/ExpenseTrendBar.vue'
 import AssetTrendLine from '@/components/AssetTrendLine.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
-import { formatCurrency, localThisMonth } from '@/utils/format'
+import { formatCurrency, localThisMonth, amountClass, positiveAmountClass } from '@/utils/format'
 import type { FxPnlReport } from '@/types'
 
 const loading = ref(true)
@@ -342,6 +358,55 @@ const assetBreakdown = ref<any>(null)
 const tagBreakdown = ref<any>(null)
 const perf = ref<any>(null)
 const fxPnlData = ref<FxPnlReport | null>(null)
+
+const hasMonthlyExpenseCategories = computed(() => {
+  const cats = monthly.value?.by_category
+  if (!Array.isArray(cats) || cats.length === 0) return false
+  return cats.some((c: any) => {
+    const t = c?.expense_type ?? c?.type
+    return (!t || t === 'expense') && Number(c?.amount || 0) > 0
+  })
+})
+
+const hasExpenseData = computed(() => {
+  const m = monthly.value
+  const hasMonthly = Boolean(
+    m && (
+      Number(m.total_income || 0) !== 0 ||
+      Number(m.total_expense || 0) !== 0 ||
+      (m.by_category?.length ?? 0) > 0 ||
+      (m.daily_breakdown?.length ?? 0) > 0
+    )
+  )
+  const hasTrend = Boolean(trend.value?.labels?.length)
+  const hasTags = Boolean(tagBreakdown.value?.items?.length)
+  const hasPerf = Boolean(perf.value && Number(perf.value.total_trades || 0) > 0)
+  return hasMonthly || hasTrend || hasTags || hasPerf
+})
+
+const hasAssetData = computed(() => {
+  const ab = assetBreakdown.value
+  return Boolean(
+    ab && (
+      Number(ab.total_assets || 0) !== 0 ||
+      Number(ab.total_liabilities || 0) !== 0 ||
+      Number(ab.net_worth || 0) !== 0 ||
+      (ab.assets?.length ?? 0) > 0 ||
+      (ab.liabilities?.length ?? 0) > 0
+    )
+  )
+})
+
+const assetPieData = computed(() => {
+  const rows = assetBreakdown.value?.assets ?? []
+  return rows.map((a: any) => ({
+    category_name: a.category_name ?? a.name ?? '未分类',
+    value: Number(a.value) || 0,
+    pct: Number(a.pct) || 0,
+  }))
+})
+
+const hasFxData = computed(() => Boolean(fxPnlData.value?.assets?.length))
 
 let loadAllReqSeq = 0
 let trendReqSeq = 0
@@ -571,21 +636,6 @@ onMounted(loadAll)
   font-size: 16px;
   font-weight: 700;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
-}
-
-.income-text {
-  color: var(--mf-gain) !important;
-  font-weight: 600;
-}
-.expense-text {
-  color: var(--mf-loss) !important;
-  font-weight: 600;
-}
-[data-theme="dark"] .income-text {
-  text-shadow: 0 0 8px rgba(244, 63, 94, 0.3);
-}
-[data-theme="dark"] .expense-text {
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
 }
 
 .chart-container {
