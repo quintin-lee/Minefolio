@@ -153,4 +153,81 @@ describe('frontend layout optimization', () => {
     const chatCss = readSrc('src/styles/chat-page.css')
     expect(chatCss).toMatch(/\.panel-overlay-backdrop\s*\{[^}]*var\(--mf-z-floating,\s*120\)/s)
   })
+
+  it('constrains Login/Setup auth cards and adds xs breakpoints to dialog grids and CashflowCalendar', () => {
+    expect(readSrc('src/views/Login.vue')).toContain('width: min(420px, calc(100vw - 32px));')
+    expect(readSrc('src/views/Setup.vue')).toContain('width: min(440px, calc(100vw - 32px));')
+
+    expect(readSrc('src/views/Transactions.vue')).toContain(':xs="24" :sm="8"')
+    expect(readSrc('src/components/DcaPlanDialog.vue')).toContain(':xs="24" :sm="12"')
+    expect(readSrc('src/components/CashflowScheduleDialog.vue')).toContain(':xs="24" :sm="12"')
+
+    const calendar = readSrc('src/components/CashflowCalendar.vue')
+    expect(calendar).toContain(':xs="24" :sm="8"')
+    expect(calendar).toContain('class="calendar-agenda-list"')
+    expect(calendar).toMatch(/@media\s*\(max-width:\s*640px\)\s*\{[\s\S]*?\.calendar-agenda-list\s*\{/s)
+  })
+
+  it('clamps fixed drawer sizes, removes Scheduler duplicate padding, and standardizes breakpoints & narrow headers', () => {
+    for (const file of [
+      'src/components/WorkflowBar.vue',
+      'src/components/market/IndexDetailDrawer.vue',
+      'src/components/mcp/McpToolsDrawer.vue',
+      'src/components/skills/SkillDialog.vue',
+      'src/views/Plans.vue',
+    ]) {
+      expect(readSrc(file)).toMatch(/size="min\(\d+px, 92vw\)"/)
+    }
+
+    const scheduler = readSrc('src/views/Scheduler.vue')
+    expect(scheduler).not.toMatch(/\.scheduler-page\s*\{[^}]*padding:\s*24px;/s)
+
+    for (const file of [
+      'src/views/Mcp.vue',
+      'src/views/Skills.vue',
+      'src/views/NewsPulse.vue',
+      'src/views/Scheduler.vue',
+    ]) {
+      expect(readSrc(file)).toMatch(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.page-subtitle\s*\{\s*display:\s*none;\s*\}/s)
+    }
+
+    for (const file of [
+      'src/views/Categories.vue',
+      'src/views/DailyExpenses.vue',
+      'src/views/Reports.vue',
+    ]) {
+      const src = readSrc(file)
+      expect(src).not.toContain('991px')
+      expect(src).not.toContain('1199px')
+    }
+  })
+
+  it('adds table overflow tooltips, container-driven chart heights, and sticky narrow filters', () => {
+    for (const file of [
+      'src/views/Transactions.vue',
+      'src/components/TransactionTable.vue',
+      'src/views/AuditLogs.vue',
+    ]) {
+      expect(readSrc(file)).toContain('show-overflow-tooltip')
+    }
+
+    for (const file of [
+      'src/components/MonthlyChart.vue',
+      'src/components/NetWorthChart.vue',
+      'src/components/YearlyChart.vue',
+      'src/components/PriceHistoryChart.vue',
+    ]) {
+      const src = readSrc(file)
+      expect(src).toContain('minHeight?: string')
+      expect(src).toContain('height: 100%;')
+    }
+
+    for (const file of [
+      'src/views/Transactions.vue',
+      'src/views/DailyExpenses.vue',
+      'src/views/AuditLogs.vue',
+    ]) {
+      expect(readSrc(file)).toMatch(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.filter-panel\s*\{[^}]*position:\s*sticky;/s)
+    }
+  })
 })

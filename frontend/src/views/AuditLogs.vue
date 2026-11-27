@@ -282,6 +282,14 @@ onMounted(async () => {
     overflow: visible;
   }
 
+  .filter-panel {
+    position: sticky;
+    top: 0;
+    z-index: var(--mf-z-header, 20);
+    background: var(--mf-surface);
+    backdrop-filter: blur(12px);
+  }
+
   .table-container {
     flex: none;
     overflow: visible;

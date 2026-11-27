@@ -966,6 +966,13 @@ async function handleImport() {
 }
 
 @media (max-width: 768px) {
+  .filter-panel {
+    position: sticky;
+    top: 0;
+    z-index: var(--mf-z-header, 20);
+    background: var(--mf-surface);
+    backdrop-filter: blur(12px);
+  }
   .page-header {
     flex-direction: column;
     align-items: flex-start;
