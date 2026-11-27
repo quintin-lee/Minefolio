@@ -21,16 +21,23 @@
 #include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/context.h"
 #include "services/ai/tools/mcp/mcp_client.h"
+#include "middlewares/csrf_middleware.h"
 #include "csilk/csilk.h"
 #include <arpa/inet.h>
 #include <assert.h>
+#include <errno.h>
 #include <math.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <pthread.h>
+#include <signal.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 static const char* TEST_DB_PATH = "/tmp/test_mf_sec_audit_reg.db";
@@ -705,6 +712,403 @@ test_config_get_str_oob_regression(void)
     unlink(cfg_path);
 }
 
+static long
+csrf_mono_elapsed_ms(struct timespec t0, struct timespec t1)
+{
+    return (t1.tv_sec - t0.tv_sec) * 1000L + (t1.tv_nsec - t0.tv_nsec) / 1000000L;
+}
+
+static void
+csrf_test_ok_handler(csilk_ctx_t* c)
+{
+    csilk_string(c, CSILK_STATUS_OK, "ok");
+}
+
+static int
+csrf_pick_loopback_port(void)
+{
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    assert(s >= 0);
+    int opt = 1;
+    (void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in sin;
+    memset(&sin, 0, sizeof(sin));
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    sin.sin_port = 0;
+    assert(bind(s, (struct sockaddr*)&sin, sizeof(sin)) == 0);
+
+    socklen_t len = sizeof(sin);
+    assert(getsockname(s, (struct sockaddr*)&sin, &len) == 0);
+    int port = ntohs(sin.sin_port);
+    close(s);
+    assert(port > 0);
+    return port;
+}
+
+static int
+csrf_connect_loopback(int port)
+{
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) {
+        return -1;
+    }
+    struct sockaddr_in sin;
+    memset(&sin, 0, sizeof(sin));
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    sin.sin_port = htons((uint16_t)port);
+    if (connect(s, (struct sockaddr*)&sin, sizeof(sin)) != 0) {
+        close(s);
+        return -1;
+    }
+    return s;
+}
+
+static int
+csrf_send_all(int sock, const char* data, size_t len)
+{
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t n = send(sock, data + sent, len - sent, MSG_NOSIGNAL);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -1;
+        }
+        if (n == 0) {
+            return -1;
+        }
+        sent += (size_t)n;
+    }
+    return 0;
+}
+
+static const char*
+csrf_strcasestr_span(const char* hay, size_t hay_len, const char* needle)
+{
+    size_t nlen = strlen(needle);
+    if (nlen == 0 || hay_len < nlen) {
+        return NULL;
+    }
+    for (size_t i = 0; i <= hay_len - nlen; ++i) {
+        if (strncasecmp(hay + i, needle, nlen) == 0) {
+            return hay + i;
+        }
+    }
+    return NULL;
+}
+
+static bool
+csrf_http_response_complete(const char* buf, size_t len)
+{
+    const char* hdr_end = NULL;
+    for (size_t i = 0; i + 4 <= len; ++i) {
+        if (memcmp(buf + i, "\r\n\r\n", 4) == 0) {
+            hdr_end = buf + i;
+            break;
+        }
+    }
+    if (!hdr_end) {
+        return false;
+    }
+    size_t      hdr_len = (size_t)(hdr_end - buf);
+    size_t      body_start = hdr_len + 4;
+    const char* cl = csrf_strcasestr_span(buf, hdr_len, "Content-Length:");
+    if (cl) {
+        const char* p = cl + strlen("Content-Length:");
+        while (*p == ' ' || *p == '\t') {
+            p++;
+        }
+        unsigned long clen = strtoul(p, NULL, 10);
+        return len >= body_start + (size_t)clen;
+    }
+    return false;
+}
+
+static ssize_t
+csrf_read_http_response(int sock, char* buf, size_t size, int timeout_ms)
+{
+    size_t          total = 0;
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+    while (total < size - 1) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        long rem = (long)timeout_ms - csrf_mono_elapsed_ms(start, now);
+        if (rem <= 0) {
+            break;
+        }
+        struct pollfd pfd = {.fd = sock, .events = POLLIN, .revents = 0};
+        int           pr = poll(&pfd, 1, (int)rem);
+        if (pr <= 0) {
+            if (pr < 0 && errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        ssize_t n = recv(sock, buf + total, size - 1 - total, 0);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if (n == 0) {
+            break;
+        }
+        total += (size_t)n;
+        buf[total] = '\0';
+        if (csrf_http_response_complete(buf, total)) {
+            break;
+        }
+    }
+    buf[total] = '\0';
+    return (ssize_t)total;
+}
+
+typedef struct {
+    csilk_app_t*    app;
+    csilk_server_t* srv;
+    int             port;
+    pthread_t       thread;
+    atomic_int      exited;
+} csrf_test_srv_t;
+
+static void*
+csrf_test_srv_runner(void* arg)
+{
+    csrf_test_srv_t* h = (csrf_test_srv_t*)arg;
+    (void)csilk_app_run(h->app, h->port);
+    atomic_store_explicit(&h->exited, 1, memory_order_release);
+    return NULL;
+}
+
+static void
+csrf_send_http(int port, const char* raw_req, char* resp, size_t resp_sz)
+{
+    int fd = csrf_connect_loopback(port);
+    assert(fd >= 0);
+    assert(csrf_send_all(fd, raw_req, strlen(raw_req)) == 0);
+    ssize_t n = csrf_read_http_response(fd, resp, resp_sz, 2000);
+    close(fd);
+    assert(n > 0);
+}
+
+static int
+csrf_count_set_cookie(const char* resp, const char** out_line_start, size_t* out_line_len)
+{
+    const char* hdr_end = strstr(resp, "\r\n\r\n");
+    size_t      hdr_len = hdr_end ? (size_t)(hdr_end - resp) : strlen(resp);
+    int         count = 0;
+    const char* pos = resp;
+    const char* end = resp + hdr_len;
+
+    if (out_line_start) {
+        *out_line_start = NULL;
+    }
+    if (out_line_len) {
+        *out_line_len = 0;
+    }
+
+    while (pos < end) {
+        const char* nl = strstr(pos, "\r\n");
+        size_t      llen = nl ? (size_t)(nl - pos) : (size_t)(end - pos);
+        if (llen >= strlen("Set-Cookie:") && strncasecmp(pos, "Set-Cookie:", 11) == 0 &&
+            csrf_strcasestr_span(pos, llen, "csrf_token=") != NULL) {
+            if (count == 0) {
+                if (out_line_start) {
+                    *out_line_start = pos;
+                }
+                if (out_line_len) {
+                    *out_line_len = llen;
+                }
+            }
+            count++;
+        }
+        if (!nl) {
+            break;
+        }
+        pos = nl + 2;
+    }
+    return count;
+}
+
+static void
+test_csrf_middleware_oauth_and_no_duplicate_cookie(void)
+{
+    printf("[8] CSRF OAuth callback / IM bind-auth exclusion & single Set-Cookie regression...\n");
+    signal(SIGPIPE, SIG_IGN);
+    unsetenv("MINEFOLIO_COOKIE_SECURE");
+
+    csrf_test_srv_t srv = {0};
+    atomic_init(&srv.exited, 0);
+    srv.port = csrf_pick_loopback_port();
+    srv.app = csilk_app_new(NULL);
+    assert(srv.app != NULL);
+
+    csilk_config_t* cfg = csilk_app_config(srv.app);
+    assert(cfg != NULL);
+    csilk_server_config_t scfg = cfg->server;
+    scfg.worker_threads = 1;
+    scfg.idle_timeout_ms = 10000;
+    csilk_app_set_server_config(srv.app, scfg);
+    free(cfg);
+
+    csilk_app_get(srv.app, "/healthz", csrf_test_ok_handler);
+    csilk_app_use_group(srv.app, "/api", csrf_middleware_wrapper);
+    csilk_app_get(srv.app, "/api/ping", csrf_test_ok_handler);
+    csilk_app_get(srv.app, "/api/system/status", csrf_test_ok_handler);
+    csilk_app_post(srv.app, "/api/auth/oauth/callback", csrf_test_ok_handler);
+    csilk_app_post(srv.app, "/api/im/:platform/bind-auth", csrf_test_ok_handler);
+    csilk_app_post(srv.app, "/api/im/slack/other", csrf_test_ok_handler);
+    csilk_app_post(srv.app, "/api/protected", csrf_test_ok_handler);
+
+    srv.srv = csilk_app_server(srv.app);
+    assert(srv.srv != NULL);
+    assert(pthread_create(&srv.thread, NULL, csrf_test_srv_runner, &srv) == 0);
+
+    bool ready = false;
+    for (int i = 0; i < 200; i++) {
+        if (atomic_load_explicit(&srv.exited, memory_order_acquire) != 0) {
+            break;
+        }
+        int fd = csrf_connect_loopback(srv.port);
+        if (fd >= 0) {
+            const char* req = "GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+            char        resp[1024] = {0};
+            if (csrf_send_all(fd, req, strlen(req)) == 0 &&
+                csrf_read_http_response(fd, resp, sizeof(resp), 500) > 0 &&
+                strstr(resp, "HTTP/1.1 200") != NULL) {
+                close(fd);
+                ready = true;
+                break;
+            }
+            close(fd);
+        }
+        struct timespec ts = {0, 15000000L};
+        nanosleep(&ts, NULL);
+    }
+    assert(ready);
+
+    char resp[4096];
+    char seeded_token[64] = {0};
+
+    /* 1. Safe unauthenticated GET without HTTPS: must emit exactly ONE Set-Cookie: csrf_token (no Secure=1 duplicate) */
+    {
+        const char* req = "GET /api/ping HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+        csrf_send_http(srv.port, req, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+
+        const char* line = NULL;
+        size_t      llen = 0;
+        int         cnt = csrf_count_set_cookie(resp, &line, &llen);
+        assert(cnt == 1);
+        assert(line != NULL && llen > 0);
+        assert(csrf_strcasestr_span(line, llen, "Secure") == NULL);
+
+        const char* tv = csrf_strcasestr_span(line, llen, "csrf_token=");
+        assert(tv != NULL);
+        tv += strlen("csrf_token=");
+        size_t ti = 0;
+        while (ti + 1 < sizeof(seeded_token) && (size_t)(tv - line) + ti < llen &&
+               tv[ti] != ';' && tv[ti] != '\r' && tv[ti] != '\n') {
+            seeded_token[ti] = tv[ti];
+            ti++;
+        }
+        seeded_token[ti] = '\0';
+        assert(strlen(seeded_token) == 32);
+    }
+
+    /* 2. Safe unauthenticated GET with X-Forwarded-Proto: https: must emit exactly ONE Set-Cookie with Secure */
+    {
+        const char* req = "GET /api/system/status HTTP/1.1\r\nHost: localhost\r\n"
+                          "X-Forwarded-Proto: https\r\nConnection: close\r\n\r\n";
+        csrf_send_http(srv.port, req, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+
+        const char* line = NULL;
+        size_t      llen = 0;
+        int         cnt = csrf_count_set_cookie(resp, &line, &llen);
+        assert(cnt == 1);
+        assert(csrf_strcasestr_span(line, llen, "Secure") != NULL);
+    }
+
+    /* 3. POST /api/auth/oauth/callback without CSRF token (no cookie, and with stale cookie): both excluded */
+    {
+        const char* req1 =
+            "POST /api/auth/oauth/callback HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\n"
+            "Connection: close\r\n\r\n{}";
+        csrf_send_http(srv.port, req1, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+        assert(csrf_count_set_cookie(resp, NULL, NULL) == 1);
+
+        const char* req2 =
+            "POST /api/auth/oauth/callback HTTP/1.1\r\nHost: localhost\r\n"
+            "Cookie: csrf_token=existing_cookie_val\r\nContent-Length: 2\r\n"
+            "Connection: close\r\n\r\n{}";
+        csrf_send_http(srv.port, req2, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+        assert(csrf_count_set_cookie(resp, NULL, NULL) == 0);
+    }
+
+    /* 4. POST /api/im/slack/bind-auth without CSRF token (no cookie, and with stale cookie): both excluded */
+    {
+        const char* req1 =
+            "POST /api/im/slack/bind-auth HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\n"
+            "Connection: close\r\n\r\n{}";
+        csrf_send_http(srv.port, req1, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+        assert(csrf_count_set_cookie(resp, NULL, NULL) == 1);
+
+        const char* req2 =
+            "POST /api/im/slack/bind-auth HTTP/1.1\r\nHost: localhost\r\n"
+            "Cookie: csrf_token=existing_cookie_val\r\nContent-Length: 2\r\n"
+            "Connection: close\r\n\r\n{}";
+        csrf_send_http(srv.port, req2, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+        assert(csrf_count_set_cookie(resp, NULL, NULL) == 0);
+    }
+
+    /* 5. Non-excluded POST without CSRF token must return 403 and emit ZERO Set-Cookie headers */
+    {
+        const char* req1 =
+            "POST /api/im/slack/other HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\n"
+            "Connection: close\r\n\r\n{}";
+        csrf_send_http(srv.port, req1, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 403") != NULL);
+        assert(csrf_count_set_cookie(resp, NULL, NULL) == 0);
+
+        const char* req2 =
+            "POST /api/protected HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\n"
+            "Connection: close\r\n\r\n{}";
+        csrf_send_http(srv.port, req2, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 403") != NULL);
+        assert(csrf_count_set_cookie(resp, NULL, NULL) == 0);
+    }
+
+    /* 6. Non-excluded POST with matching cookie + X-CSRF-Token passes 200 */
+    {
+        char req[512];
+        snprintf(req,
+                 sizeof(req),
+                 "POST /api/protected HTTP/1.1\r\nHost: localhost\r\n"
+                 "Cookie: csrf_token=%s\r\nX-CSRF-Token: %s\r\nContent-Length: 2\r\n"
+                 "Connection: close\r\n\r\n{}",
+                 seeded_token,
+                 seeded_token);
+        csrf_send_http(srv.port, req, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+    }
+
+    csilk_server_stop(srv.srv);
+    pthread_join(srv.thread, NULL);
+    csilk_app_free(srv.app);
+}
+
 int
 main(void)
 {
@@ -718,6 +1122,7 @@ main(void)
     test_secret_path_traversal_and_mcp_crlf();
     test_receipt_base64_padding();
     test_config_get_str_oob_regression();
+    test_csrf_middleware_oauth_and_no_duplicate_cookie();
 
     cleanup_db_files();
     printf("=== All Security & Audit Regression Tests Passed ===\n");
