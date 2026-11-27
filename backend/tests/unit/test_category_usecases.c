@@ -1,4 +1,5 @@
 #include "application/category/usecases.h"
+#include "application/account/usecases.h"
 #include "domain/auth/repository.h"
 #include "infrastructure/repositories/category_repo_impl.h"
 #include "common/db.h"
@@ -6,10 +7,12 @@
 #include "config/secret.h"
 #include "csilk/csilk.h"
 #include <assert.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 static const char* TEST_DB_PATH = "/tmp/test_mf_category_usecases.db";
@@ -440,6 +443,72 @@ int main(void) {
     assert(category_usecase_list(pool, user_id, ledger_id, NULL, &after_reseed) == 0 && after_reseed);
     csilk_json_free(after_reseed);
 
+    // 14. Regression test: concurrent lock-order between s_category_seed_mutex and g_tx_mutex
+    {
+        enum { LOCK_ORDER_ITERS = 50 };
+        typedef struct {
+            csilk_db_pool_t*  pool;
+            int64_t           user_id;
+            int64_t           ledger_ids[LOCK_ORDER_ITERS];
+            pthread_barrier_t barrier;
+        } lock_order_ctx_t;
+
+        extern void* test_lock_order_thread_a(void* p);
+        extern void* test_lock_order_thread_b(void* p);
+
+        lock_order_ctx_t ctx = {0};
+        ctx.pool = pool;
+        ctx.user_id = user_id;
+        assert(pthread_barrier_init(&ctx.barrier, NULL, 2) == 0);
+
+        char uid_buf[32];
+        snprintf(uid_buf, sizeof(uid_buf), "%lld", (long long)user_id);
+        for (int i = 0; i < LOCK_ORDER_ITERS; i++) {
+            char lname[64];
+            snprintf(lname, sizeof(lname), "cat_lock_order_ledger_%d", i);
+            assert(csilk_db_exec_param(
+                       pool,
+                       "INSERT INTO ledgers (owner_id, name, is_default) VALUES (?, ?, 0);",
+                       (const char*[]){uid_buf, lname, NULL}) == 0);
+            csilk_json_t* lr = csilk_db_query_param_json(
+                pool,
+                "SELECT id FROM ledgers WHERE name=? ORDER BY id DESC LIMIT 1;",
+                (const char*[]){lname, NULL});
+            assert(lr && csilk_json_array_size(lr) == 1);
+            ctx.ledger_ids[i] = db_get_int(csilk_json_array_get(lr, 0), "id");
+            csilk_json_free(lr);
+            assert(ctx.ledger_ids[i] > 0);
+
+            char lid_buf[32];
+            snprintf(lid_buf, sizeof(lid_buf), "%lld", (long long)ctx.ledger_ids[i]);
+            assert(csilk_db_exec_param(
+                       pool,
+                       "INSERT OR IGNORE INTO ledger_members (ledger_id, user_id, role) VALUES (?, ?, 'owner');",
+                       (const char*[]){lid_buf, uid_buf, NULL}) == 0);
+        }
+
+        pthread_t ta, tb;
+        assert(pthread_create(&ta, NULL, test_lock_order_thread_a, &ctx) == 0);
+        assert(pthread_create(&tb, NULL, test_lock_order_thread_b, &ctx) == 0);
+
+        struct timespec deadline;
+        clock_gettime(CLOCK_REALTIME, &deadline);
+        deadline.tv_sec += 5;
+
+        int jrc_a = pthread_timedjoin_np(ta, NULL, &deadline);
+        if (jrc_a != 0) {
+            fprintf(stderr, "DEADLOCK DETECTED: lock_order_thread_a timed out (rc=%d)\n", jrc_a);
+            abort();
+        }
+        int jrc_b = pthread_timedjoin_np(tb, NULL, &deadline);
+        if (jrc_b != 0) {
+            fprintf(stderr, "DEADLOCK DETECTED: lock_order_thread_b timed out (rc=%d)\n", jrc_b);
+            abort();
+        }
+        pthread_barrier_destroy(&ctx.barrier);
+        printf("  [OK] concurrent seed lock-order regression test (50 iterations) passed without deadlock\n");
+    }
+
     printf("=== Category Usecases & Repository Tests Passed ===\n");
     return 0;
 }
@@ -451,5 +520,37 @@ void* test_seed_worker_fn(void* p) {
         int64_t          ledger_id;
     }* arg = p;
     category_usecase_seed_defaults(arg->pool, arg->user_id, arg->ledger_id);
+    return NULL;
+}
+
+void* test_lock_order_thread_a(void* p) {
+    struct {
+        csilk_db_pool_t*  pool;
+        int64_t           user_id;
+        int64_t           ledger_ids[50];
+        pthread_barrier_t barrier;
+    }* ctx = p;
+    for (int i = 0; i < 50; i++) {
+        pthread_barrier_wait(&ctx->barrier);
+        category_usecase_seed_defaults(ctx->pool, ctx->user_id, ctx->ledger_ids[i]);
+    }
+    return NULL;
+}
+
+void* test_lock_order_thread_b(void* p) {
+    struct {
+        csilk_db_pool_t*  pool;
+        int64_t           user_id;
+        int64_t           ledger_ids[50];
+        pthread_barrier_t barrier;
+    }* ctx = p;
+    for (int i = 0; i < 50; i++) {
+        pthread_barrier_wait(&ctx->barrier);
+        db_tx_scope_t scope = {0};
+        assert(db_tx_scope_begin(ctx->pool, "test_cat_lock_order", &scope) == 0);
+        category_usecase_seed_defaults(ctx->pool, ctx->user_id, ctx->ledger_ids[i]);
+        account_usecase_seed_default(ctx->pool, ctx->user_id, ctx->ledger_ids[i]);
+        assert(db_tx_scope_commit(ctx->pool, &scope) == 0);
+    }
     return NULL;
 }
