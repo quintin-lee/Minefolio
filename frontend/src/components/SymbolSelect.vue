@@ -35,7 +35,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import { marketApi } from '@/api/market'
 import type { MarketSearchItem } from '@/types'
 
@@ -51,7 +51,17 @@ const emit = defineEmits<{
 const innerValue = ref(props.modelValue || '')
 const options = ref<MarketSearchItem[]>([])
 const loading = ref(false)
-let debounceTimer: any = null
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let searchSeq = 0
+let isUnmounted = false
+
+onUnmounted(() => {
+  isUnmounted = true
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+})
 
 watch(() => props.modelValue, (v) => {
   innerValue.value = v || ''
@@ -65,22 +75,34 @@ function getSourceTagType(source: string): 'primary' | 'success' | 'warning' | '
 }
 
 function searchSymbols(query: string) {
-  if (!query || query.trim().length === 0) {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+  const seq = ++searchSeq
+  const trimmed = query?.trim() || ''
+  if (!trimmed) {
     options.value = []
+    loading.value = false
     return
   }
 
-  if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(async () => {
+    debounceTimer = null
+    if (isUnmounted || seq !== searchSeq) return
     loading.value = true
     try {
-      const res = await marketApi.search(query.trim())
+      const res = await marketApi.search(trimmed)
+      if (isUnmounted || seq !== searchSeq) return
       options.value = res || []
     } catch (e) {
+      if (isUnmounted || seq !== searchSeq) return
       console.error('[SymbolSelect] Search failed:', e)
       options.value = []
     } finally {
-      loading.value = false
+      if (!isUnmounted && seq === searchSeq) {
+        loading.value = false
+      }
     }
   }, 300)
 }

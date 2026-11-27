@@ -52,21 +52,28 @@ const chartRef = ref<HTMLElement | null>(null)
 const displaySettings = useDisplaySettingsStore()
 let chart: ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
+let loadSeq = 0
+let isUnmounted = false
 const loading = ref(false)
 const daysLimit = ref(90)
 const historyData = ref<PriceHistoryItem[]>([])
 
 async function loadHistory() {
   if (!props.assetId) return
+  const seq = ++loadSeq
   loading.value = true
   try {
     const res = await marketApi.getHistory(props.assetId, daysLimit.value)
+    if (isUnmounted || seq !== loadSeq) return
     historyData.value = res || []
     renderChart()
   } catch (err) {
+    if (isUnmounted || seq !== loadSeq) return
     console.error('[PriceHistoryChart] load failed:', err)
   } finally {
-    loading.value = false
+    if (!isUnmounted && seq === loadSeq) {
+      loading.value = false
+    }
   }
 }
 
@@ -189,6 +196,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  isUnmounted = true
   window.removeEventListener('resize', handleResize)
   resizeObserver?.disconnect()
   resizeObserver = null

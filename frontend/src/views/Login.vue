@@ -281,6 +281,7 @@ let ctx: CanvasRenderingContext2D | null = null
 let particles: Particle[] = []
 let rafId = 0
 let resizeTimer = 0
+let isUnmounted = false
 let dpr = 1
 const mouse = { x: -9999, y: -9999 }
 
@@ -308,6 +309,7 @@ function initCanvas() {
 }
 
 function drawFrame() {
+  if (isUnmounted) return
   const canvas = canvasRef.value
   if (!ctx || !canvas) return
   ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -363,7 +365,7 @@ function drawFrame() {
 }
 
 function startAnimation() {
-  if (rafId) return
+  if (isUnmounted || rafId) return
   rafId = requestAnimationFrame(drawFrame)
 }
 
@@ -373,13 +375,16 @@ function stopAnimation() {
 }
 
 function onVisibilityChange() {
+  if (isUnmounted) return
   if (document.hidden) stopAnimation()
   else startAnimation()
 }
 
 function onResize() {
+  if (isUnmounted) return
   window.clearTimeout(resizeTimer)
   resizeTimer = window.setTimeout(() => {
+    if (isUnmounted) return
     initCanvas()
   }, 200)
 }
@@ -392,15 +397,19 @@ function onPointerMove(e: PointerEvent) {
 onMounted(async () => {
   // 状态指示灯: 初始化 → 在线
   statusTimer = window.setTimeout(() => {
+    if (isUnmounted) return
     statusText.value = 'SYSTEM ONLINE'
   }, 900)
 
   try {
     const res = await authApi.getOAuthProviders()
+    if (isUnmounted) return
     if (res && res.providers) {
       oauthProviders.value = res.providers
     }
   } catch {}
+
+  if (isUnmounted) return
 
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
   if (reducedMotion) return
@@ -413,6 +422,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  isUnmounted = true
   window.clearTimeout(statusTimer)
   window.clearTimeout(resizeTimer)
   stopAnimation()

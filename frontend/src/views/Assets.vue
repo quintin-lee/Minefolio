@@ -237,7 +237,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAsyncTaskProgress } from '@/composables/useAsyncTaskProgress'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -653,12 +653,22 @@ async function handleDelete(asset: any) {
 
 const route = useRoute()
 const highlightedTarget = ref<string | null>(null)
+let isUnmounted = false
+const deepLinkTimers: ReturnType<typeof setTimeout>[] = []
+
+function clearDeepLinkTimers() {
+  while (deepLinkTimers.length) {
+    const id = deepLinkTimers.pop()
+    if (id !== undefined) clearTimeout(id)
+  }
+}
 
 async function handleDeepLinkTarget() {
   const assetId = route.query.asset_id ? Number(route.query.asset_id) : null
   const accountId = route.query.account_id ? Number(route.query.account_id) : null
 
   if (!assetId && !accountId) return
+  clearDeepLinkTimers()
 
   if (assetId) {
     for (const g of groupedAccounts.value) {
@@ -669,17 +679,20 @@ async function handleDeepLinkTarget() {
     }
     highlightedTarget.value = `asset-${assetId}`
     await nextTick()
-    setTimeout(() => {
+    if (isUnmounted) return
+    deepLinkTimers.push(setTimeout(() => {
+      if (isUnmounted) return
       const el = document.getElementById(`asset-row-${assetId}`)
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
-    }, 100)
-    setTimeout(() => {
+    }, 100))
+    deepLinkTimers.push(setTimeout(() => {
+      if (isUnmounted) return
       if (highlightedTarget.value === `asset-${assetId}`) {
         highlightedTarget.value = null
       }
-    }, 2400)
+    }, 2400))
     return
   }
 
@@ -688,17 +701,20 @@ async function handleDeepLinkTarget() {
     collapsedGroups.value.delete(key)
     highlightedTarget.value = key
     await nextTick()
-    setTimeout(() => {
+    if (isUnmounted) return
+    deepLinkTimers.push(setTimeout(() => {
+      if (isUnmounted) return
       const el = document.getElementById(`account-group-${key}`)
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
-    }, 100)
-    setTimeout(() => {
+    }, 100))
+    deepLinkTimers.push(setTimeout(() => {
+      if (isUnmounted) return
       if (highlightedTarget.value === key) {
         highlightedTarget.value = null
       }
-    }, 2400)
+    }, 2400))
   }
 }
 
@@ -712,11 +728,18 @@ watch(
 onMounted(async () => {
   try {
     await loadAccounts()
+    if (isUnmounted) return
     await Promise.allSettled([loadAssets(), loadSummary(), loadCategories(), loadRates()])
+    if (isUnmounted) return
     handleDeepLinkTarget()
   } catch (err) {
     console.error('[Assets] onMounted failed:', err)
   }
+})
+
+onUnmounted(() => {
+  isUnmounted = true
+  clearDeepLinkTimers()
 })
 </script>
 
