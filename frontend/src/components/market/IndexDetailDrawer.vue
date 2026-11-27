@@ -2,7 +2,7 @@
   <el-drawer
     v-model="marketStore.isDrawerOpen"
     :title="drawerTitle"
-    size="520px"
+    size="min(520px, 92vw)"
     destroy-on-close
     class="index-detail-drawer"
   >

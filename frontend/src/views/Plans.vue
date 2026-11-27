@@ -199,7 +199,7 @@
     <CashflowScheduleDialog ref="scheduleDialogRef" :assets="allAssets" @success="onScheduleSaved" />
 
     <!-- 现金流计划管理抽屉 -->
-    <el-drawer v-model="scheduleDrawerVisible" title="被动现金流计划规则" size="620px">
+    <el-drawer v-model="scheduleDrawerVisible" title="被动现金流计划规则" size="min(620px, 92vw)">
       <div class="drawer-header-actions">
         <el-button type="primary" size="small" @click="openScheduleDialog()">
           <el-icon><Plus /></el-icon> 新增计划规则

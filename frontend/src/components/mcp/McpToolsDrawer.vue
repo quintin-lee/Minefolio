@@ -2,7 +2,7 @@
   <el-drawer
     v-model="visible"
     :title="server ? `MCP 工具清单 — ${server.name}` : 'MCP 工具清单'"
-    size="520px"
+    size="min(520px, 92vw)"
     destroy-on-close
   >
     <div v-loading="loading" class="tools-drawer-content">

@@ -2,7 +2,7 @@
   <el-drawer
     v-model="visible"
     :title="isEdit ? `编辑技能: ${form.name}` : '新建 AI 专属技能'"
-    size="680px"
+    size="min(680px, 92vw)"
     destroy-on-close
     :close-on-click-modal="false"
     class="skill-drawer"

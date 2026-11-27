@@ -32,7 +32,7 @@
     <el-drawer
       v-model="drawerVisible"
       title="智能财务分析工作流库"
-      size="440px"
+      size="min(440px, 92vw)"
       direction="rtl"
       append-to-body
       class="workflow-library-drawer"
