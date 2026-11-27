@@ -479,8 +479,11 @@ export class SyncEngine {
           // 业务冲突：1004 响应不含记录数据，remote_payload 留空
           this.markConflict(item.id)
         } else if (VALIDATION_CODES.has(code) || status === 400 || status === 422) {
-          // 校验/权限类永久失败：放弃队列项，记录错误供设置页提示
+          // 校验/权限类永久失败：放弃队列项，记录错误供设置页提示；create 失败一并清理本地占位行
           const message = String(e?.response?.data?.message || e?.message || '离线数据同步失败')
+          if (operation === 'create') {
+            run(`DELETE FROM ${item.table_name} WHERE id = ?`, [recordId])
+          }
           run('DELETE FROM sync_queue WHERE id = ?', [item.id])
           this.pushErrors.push({ queueId: item.id, table: item.table_name, message })
           persist()
@@ -545,7 +548,7 @@ export class SyncEngine {
             query('SELECT DISTINCT record_id FROM sync_queue WHERE table_name = ? AND synced = 0', [table])
           ).map((r) => Number(r.record_id)))
           const pushedIds = pushedInCycle?.get(table) ?? new Set<number>()
-          const hasLedgerId = ['assets', 'accounts', 'account_permissions', 'transactions', 'daily_expenses'].includes(table)
+          const hasLedgerId = ['categories', 'assets', 'accounts', 'account_permissions', 'transactions', 'daily_expenses'].includes(table)
           const activeLedgerId = Number(localStorage.getItem('minefolio_active_ledger_id') || 0)
           let localRows: any[] = []
           if (hasLedgerId) {
@@ -618,6 +621,25 @@ export class SyncEngine {
       this.loadQueue()
       await this.syncNow()
     } else {
+      const row = rowsFrom(query(
+        'SELECT table_name, record_id, operation, remote_payload FROM sync_queue WHERE id = ?',
+        [queueId]
+      ))[0]
+      if (row) {
+        const tableName = String(row.table_name)
+        const recordId = Number(row.record_id)
+        const operation = String(row.operation) as SyncOperation
+        const remotePayload = parseRemotePayload(row.remote_payload)
+        if (this.registeredTables.has(tableName)) {
+          if (operation === 'create') {
+            run(`DELETE FROM ${tableName} WHERE id = ?`, [recordId])
+          } else if (remotePayload) {
+            this.upsertLocal(tableName, { ...remotePayload, id: remotePayload.id ?? recordId })
+          } else if (operation === 'delete') {
+            run(`UPDATE ${tableName} SET __deleted = 0 WHERE id = ?`, [recordId])
+          }
+        }
+      }
       run('DELETE FROM sync_queue WHERE id = ?', [queueId])
       persist()
       this.loadQueue()

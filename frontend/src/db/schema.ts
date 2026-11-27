@@ -13,6 +13,7 @@ export const LOCAL_SCHEMA = `
 CREATE TABLE IF NOT EXISTS categories (
   id         INTEGER PRIMARY KEY,
   user_id    INTEGER DEFAULT 0,
+  ledger_id  INTEGER DEFAULT 0,
   name       TEXT NOT NULL,
   parent_id  INTEGER,
   type       TEXT NOT NULL DEFAULT 'asset',
@@ -167,7 +168,7 @@ CREATE TABLE IF NOT EXISTS view_cache (
 
 /** 各本地同步表允许持久化到 SQLite 的字段白名单 (不含移动端内部控制列 __deleted) */
 export const TABLE_COLUMNS: Record<string, string[]> = {
-  categories: ['id', 'user_id', 'name', 'parent_id', 'type', 'asset_type', 'currency', 'icon', 'sort_order', 'created_at', 'updated_at'],
+  categories: ['id', 'user_id', 'ledger_id', 'name', 'parent_id', 'type', 'asset_type', 'currency', 'icon', 'sort_order', 'created_at', 'updated_at'],
   assets: ['id', 'user_id', 'ledger_id', 'category_id', 'name', 'account_no', 'account_id', 'current_value', 'quantity', 'cost_basis', 'net_value', 'currency', 'note', 'created_at', 'updated_at'],
   accounts: ['id', 'user_id', 'ledger_id', 'name', 'institution', 'account_no', 'currency', 'icon', 'note', 'sort_order', 'archived', 'created_at', 'updated_at'],
   account_permissions: ['id', 'ledger_id', 'account_id', 'user_id', 'permission_level', 'mask_balance', 'mask_account_no', 'created_at', 'updated_at'],
