@@ -1,4 +1,6 @@
 #include <assert.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +29,26 @@ get_migrations_path(void)
         return "backend/sql/migrations";
     }
     return "../sql/migrations";
+}
+
+typedef struct {
+    atomic_bool* stop_flag;
+    int64_t      start_seq;
+} event_race_arg_t;
+
+static void*
+event_race_publisher_thread(void* arg)
+{
+    event_race_arg_t* ctx = (event_race_arg_t*)arg;
+    int64_t           seq = ctx->start_seq;
+    while (!atomic_load(ctx->stop_flag)) {
+        char mkt[32];
+        snprintf(mkt, sizeof(mkt), "MKT_%lld", (long long)seq);
+        scheduler_event_publish_price_spike(seq, "NVDA", (seq % 10 == 0) ? 8.2 : 1.0);
+        scheduler_event_publish_market_closed(mkt);
+        seq++;
+    }
+    return NULL;
 }
 
 int
@@ -352,6 +374,30 @@ main(void)
     scheduler_engine_stop();
     assert(scheduler_engine_is_running() == false);
     assert(scheduler_engine_get_ai_jobs_running() == 0);
+
+    /* 6. Test Concurrent Event Publish During Engine Stop (Shutdown Race) */
+    for (int cycle = 0; cycle < 5; cycle++) {
+        assert(scheduler_engine_start(pool) == 0);
+
+        atomic_bool      stop_flag = false;
+        event_race_arg_t arg0 = {.stop_flag = &stop_flag, .start_seq = 10000 + cycle * 100000};
+        event_race_arg_t arg1 = {.stop_flag = &stop_flag, .start_seq = 5000000 + cycle * 100000};
+        pthread_t        t0;
+        pthread_t        t1;
+        assert(pthread_create(&t0, NULL, event_race_publisher_thread, &arg0) == 0);
+        assert(pthread_create(&t1, NULL, event_race_publisher_thread, &arg1) == 0);
+
+        usleep(5000);
+        scheduler_engine_stop();
+        usleep(2000);
+
+        atomic_store(&stop_flag, true);
+        pthread_join(t0, NULL);
+        pthread_join(t1, NULL);
+
+        assert(scheduler_engine_is_running() == false);
+        assert(scheduler_engine_get_ai_jobs_running() == 0);
+    }
 
     csilk_db_pool_free(pool);
     printf("=== Scheduler Engine Unit Tests Passed! ===\n");

@@ -41,6 +41,11 @@
 #include "services/ai_service.h"
 #include "dtos/request.h"
 #include "config/secret.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -55,17 +60,80 @@ metrics_middleware_wrapper(csilk_ctx_t* c)
 }
 
 static csilk_app_t* g_app = NULL;
+static int          g_sig_pipe[2] = {-1, -1};
+static atomic_bool  g_watcher_stop = false;
 
 static void
 handle_shutdown_signal(int sig)
 {
-    (void)sig;
-    if (g_app) {
-        csilk_server_t* server = csilk_app_server(g_app);
-        if (server) {
-            csilk_server_stop(server);
+    int           saved_errno = errno;
+    unsigned char b = (unsigned char)sig;
+    if (g_sig_pipe[1] >= 0) {
+        ssize_t n = write(g_sig_pipe[1], &b, 1);
+        (void)n;
+    }
+    errno = saved_errno;
+}
+
+static int
+create_sig_pipe(void)
+{
+    if (pipe(g_sig_pipe) != 0) {
+        return -1;
+    }
+    for (int i = 0; i < 2; i++) {
+        int flags = fcntl(g_sig_pipe[i], F_GETFL, 0);
+        if (flags == -1 || fcntl(g_sig_pipe[i], F_SETFL, flags | O_NONBLOCK) == -1) {
+            close(g_sig_pipe[0]);
+            close(g_sig_pipe[1]);
+            g_sig_pipe[0] = -1;
+            g_sig_pipe[1] = -1;
+            return -1;
+        }
+        int fd_flags = fcntl(g_sig_pipe[i], F_GETFD, 0);
+        if (fd_flags != -1) {
+            (void)fcntl(g_sig_pipe[i], F_SETFD, fd_flags | FD_CLOEXEC);
         }
     }
+    return 0;
+}
+
+static void*
+shutdown_watcher_thread(void* arg)
+{
+    (void)arg;
+    while (!atomic_load(&g_watcher_stop)) {
+        struct pollfd pfd = {.fd = g_sig_pipe[0], .events = POLLIN, .revents = 0};
+        int           rc = poll(&pfd, 1, -1);
+        if (rc < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if (rc > 0 && (pfd.revents & POLLIN)) {
+            char    buf[64];
+            ssize_t r;
+            bool    got_byte = false;
+            while ((r = read(g_sig_pipe[0], buf, sizeof(buf))) > 0) {
+                got_byte = true;
+            }
+            if (atomic_load(&g_watcher_stop)) {
+                break;
+            }
+            if (got_byte && g_app) {
+                csilk_server_t* server = csilk_app_server(g_app);
+                if (server) {
+                    csilk_server_stop(server);
+                }
+                break;
+            }
+        }
+        if (pfd.revents & (POLLHUP | POLLERR | POLLNVAL)) {
+            break;
+        }
+    }
+    return NULL;
 }
 
 int
@@ -242,6 +310,23 @@ main(int argc, char** argv)
     scheduler_engine_start(pool);
 
     g_app = app;
+    pthread_t watcher_thread;
+    bool      watcher_started = false;
+    atomic_store(&g_watcher_stop, false);
+    if (create_sig_pipe() == 0) {
+        if (pthread_create(&watcher_thread, NULL, shutdown_watcher_thread, NULL) == 0) {
+            watcher_started = true;
+        } else {
+            CSILK_LOG_W("Failed to start shutdown watcher thread");
+            close(g_sig_pipe[0]);
+            close(g_sig_pipe[1]);
+            g_sig_pipe[0] = -1;
+            g_sig_pipe[1] = -1;
+        }
+    } else {
+        CSILK_LOG_W("Failed to create shutdown signal pipe");
+    }
+
     signal(SIGTERM, handle_shutdown_signal);
     signal(SIGINT, handle_shutdown_signal);
 
@@ -252,18 +337,39 @@ main(int argc, char** argv)
     printf("Starting Minefolio server on :%d\n", port);
     csilk_app_run(app, port);
 
-    scheduler_engine_stop();
+    atomic_store(&g_watcher_stop, true);
     market_scheduler_stop();
+    scheduler_engine_stop();
     task_controller_shutdown();
     {
         extern void ai_news_shutdown(void);
         ai_news_shutdown();
     }
+
+    signal(SIGTERM, SIG_DFL);
+    signal(SIGINT, SIG_DFL);
+    if (g_sig_pipe[1] >= 0) {
+        unsigned char wake = 0;
+        ssize_t       n = write(g_sig_pipe[1], &wake, 1);
+        (void)n;
+    }
+    if (watcher_started) {
+        pthread_join(watcher_thread, NULL);
+    }
+    if (g_sig_pipe[0] >= 0) {
+        close(g_sig_pipe[0]);
+        g_sig_pipe[0] = -1;
+    }
+    if (g_sig_pipe[1] >= 0) {
+        close(g_sig_pipe[1]);
+        g_sig_pipe[1] = -1;
+    }
+    g_app = NULL;
+
     csilk_app_free(app);
     ai_shutdown();
     db_wal_checkpoint(pool);
     csilk_db_pool_free(pool);
     curl_global_cleanup();
-    g_app = NULL;
     return 0;
 }
