@@ -747,8 +747,20 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
                 return -1;
             }
 
-            int64_t ledger_id = (int64_t)db_get_num(it, "ledger_id");
-            int64_t chk_lid = acct_lid > 0 ? acct_lid : ledger_id;
+            int64_t arg_lid = (int64_t)db_get_num(it, "ledger_id");
+            if (arg_lid > 0 && acct_lid > 0 && arg_lid != acct_lid) {
+                db_tx_scope_rollback(pool, &scope);
+                csilk_json_free(results_arr);
+                if (out_code) {
+                    *out_code = 1004;
+                }
+                if (err_buf && err_len > 0) {
+                    snprintf(err_buf, err_len, "动作 #%zu 账本与资产所属账本不一致", i + 1);
+                }
+                return -1;
+            }
+            int64_t ledger_id = (acct_lid > 0) ? acct_lid : arg_lid;
+            int64_t chk_lid = ledger_id;
             if (chk_lid <= 0) {
                 chk_lid = ledger_get_default(pool, user_id);
             }
@@ -766,9 +778,6 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
                     }
                     return -1;
                 }
-            }
-            if (ledger_id <= 0 && acct_lid > 0) {
-                ledger_id = acct_lid;
             }
 
             int64_t de_id = mf_ai_repo_daily_expense_insert(pool,
@@ -835,8 +844,25 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
                 return -1;
             }
 
-            const char*           cur = csilk_json_get_string(it, "currency");
-            int64_t               ledger_id = (int64_t)db_get_num(it, "ledger_id");
+            const char* cur = csilk_json_get_string(it, "currency");
+            int64_t     arg_lid = (int64_t)db_get_num(it, "ledger_id");
+            int64_t     from_lid = 0, to_lid = 0;
+            if (asset_get_ledger_and_account(pool, from_id, &from_lid, NULL) == 0 &&
+                asset_get_ledger_and_account(pool, to_id, &to_lid, NULL) == 0) {
+                if (arg_lid > 0 &&
+                    ((from_lid > 0 && arg_lid != from_lid) || (to_lid > 0 && arg_lid != to_lid))) {
+                    db_tx_scope_rollback(pool, &scope);
+                    csilk_json_free(results_arr);
+                    if (out_code) {
+                        *out_code = 1004;
+                    }
+                    if (err_buf && err_len > 0) {
+                        snprintf(err_buf, err_len, "动作 #%zu 账本与划转资产所属账本不一致", i + 1);
+                    }
+                    return -1;
+                }
+            }
+            int64_t ledger_id = (from_lid > 0) ? from_lid : ((to_lid > 0) ? to_lid : arg_lid);
             create_transfer_cmd_t tcmd = {
                 .user_id = user_id,
                 .from_asset_id = from_id,

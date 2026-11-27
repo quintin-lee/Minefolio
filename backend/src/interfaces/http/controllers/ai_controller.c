@@ -290,13 +290,17 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
 
     /* 透传 confirm 参数（剔除 action_type / draft_token / session_id）并强制回填
        draft_token，防止模型伪造参数或篡改会话上下文绕过令牌绑定 */
-    int64_t session_id = (int64_t)csilk_json_get_number(body, "session_id");
+    int64_t     session_id = (int64_t)csilk_json_get_number(body, "session_id");
+    const char* lid_header = csilk_get_header(c, "X-Ledger-Id");
+    const char* lid_query = csilk_get_query(c, "ledger_id");
+    int64_t     body_lid = db_get_int(body, "ledger_id");
+    bool        has_explicit_ledger =
+        (lid_header && lid_header[0]) || (lid_query && lid_query[0]) || (body_lid > 0);
     int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
     if (ledger_id < 0) {
         csilk_json_free(body);
         return;
     }
-    int64_t body_lid = db_get_int(body, "ledger_id");
     if (body_lid > 0) {
         char role[32] = {0};
         if (!ledger_get_user_role(pool, body_lid, user_id, role, sizeof(role)) ||
@@ -317,6 +321,9 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
     }
     if (ledger_id > 0) {
         csilk_json_add_int(ctx->metadata, "ledger_id", ledger_id);
+        if (has_explicit_ledger) {
+            csilk_json_add_bool(ctx->metadata, "ledger_id_explicit", true);
+        }
     }
     size_t bsize = csilk_json_object_size(body);
     for (size_t i = 0; i < bsize; i++) {

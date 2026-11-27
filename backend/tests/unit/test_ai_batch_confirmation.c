@@ -758,6 +758,62 @@ main(int argc, char** argv)
             assert(get_asset_balance(pool, sh_owner, asset_ro) == 1000.0);
             assert(get_asset_balance(pool, sh_owner, asset_rw) == 500.0);
             printf("  ✅ Shared-ledger editor with viewer perm rejected (1004) with atomic rollback in batch\n");
+
+            /* 14c: Positive operator batch confirm on shared ledger (with explicit mismatch check too) */
+            csilk_json_free(csilk_db_query_param_json(
+                pool,
+                "INSERT INTO accounts (id, user_id, ledger_id, name, institution) VALUES (22, 2002, 2, 'OperAcct2', 'bank_card')",
+                (const char*[]){NULL}));
+            csilk_json_free(csilk_db_query_param_json(
+                pool,
+                "INSERT INTO assets (id, user_id, category_id, account_id, name, current_value, currency, ledger_id) VALUES "
+                "(203, 2002, 20, 22, 'AssetRW2', 300.0, 'CNY', 2)",
+                (const char*[]){NULL}));
+            assert(account_permission_usecase_set(pool, sh_owner, sh_lid, 22, sh_editor, "operator", 0, 0, &ares) == 0);
+
+            csilk_json_t* ok_batch = csilk_json_array();
+            csilk_json_t* ob1 = csilk_json_object();
+            csilk_json_add_string(ob1, "action_type", "daily_expense");
+            csilk_json_add_number(ob1, "amount", 50.0);
+            csilk_json_add_string(ob1, "type", "expense");
+            csilk_json_add_number(ob1, "category_id", 20.0);
+            csilk_json_add_number(ob1, "asset_id", (double)asset_rw);
+            csilk_json_add_string(ob1, "date", "2026-11-20");
+            csilk_json_array_append(ok_batch, ob1);
+
+            csilk_json_t* ob2 = csilk_json_object();
+            csilk_json_add_string(ob2, "action_type", "transfer");
+            csilk_json_add_number(ob2, "amount", 100.0);
+            csilk_json_add_number(ob2, "from_asset_id", (double)asset_rw);
+            csilk_json_add_number(ob2, "to_asset_id", 203.0);
+            csilk_json_add_string(ob2, "date", "2026-11-20");
+            csilk_json_array_append(ok_batch, ob2);
+
+            char* ok_bt = ai_confirmation_create_batch_token(sh_editor, 13, ok_batch, AI_RISK_HIGH, 300);
+            csilk_json_t* ok_bout = NULL;
+            int ok_bcode = 0;
+            char ok_berr[256] = {0};
+            assert(ai_batch_actions_execute_for_session(
+                       pool, sh_editor, 13, ok_batch, ok_bt, &ok_bout, &ok_bcode, ok_berr, sizeof(ok_berr)) == 0);
+            assert(ok_bcode == 0);
+            csilk_json_free(ok_bout);
+            free(ok_bt);
+            csilk_json_free(ok_batch);
+
+            assert(get_asset_balance(pool, sh_owner, asset_rw) == 350.0);
+            assert(get_asset_balance(pool, sh_owner, 203) == 400.0);
+            csilk_json_t* b_de_row = csilk_db_query_param_json(
+                pool, "SELECT ledger_id FROM daily_expenses WHERE user_id=2003 ORDER BY id DESC LIMIT 1", (const char*[]){NULL});
+            assert(b_de_row != NULL && csilk_json_array_size(b_de_row) == 1);
+            assert(db_get_int(csilk_json_array_get(b_de_row, 0), "ledger_id") == sh_lid);
+            csilk_json_free(b_de_row);
+            csilk_json_t* b_tf_row = csilk_db_query_param_json(
+                pool, "SELECT ledger_id FROM transfers WHERE user_id=2003 ORDER BY id DESC LIMIT 1", (const char*[]){NULL});
+            assert(b_tf_row != NULL && csilk_json_array_size(b_tf_row) == 1);
+            assert(db_get_int(csilk_json_array_get(b_tf_row, 0), "ledger_id") == sh_lid);
+            csilk_json_free(b_tf_row);
+            printf("  ✅ Shared-ledger operator batch confirm updated balances & stamped ledger_id=%lld\n",
+                   (long long)sh_lid);
         }
 
         free(token);

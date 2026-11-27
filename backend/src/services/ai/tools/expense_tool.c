@@ -288,20 +288,25 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
         return strdup(err_buf);
     }
 
-    int64_t ledger_id = 0;
-    if (args) {
-        ledger_id = db_get_int(args, "ledger_id");
-    }
-    if (ledger_id <= 0 && ctx && ctx->metadata) {
-        ledger_id = db_get_int(ctx->metadata, "ledger_id");
-    }
+    int64_t arg_lid = args ? db_get_int(args, "ledger_id") : 0;
+    int64_t meta_lid = (ctx && ctx->metadata) ? db_get_int(ctx->metadata, "ledger_id") : 0;
+    bool    meta_explicit =
+        (ctx && ctx->metadata) ? csilk_json_get_bool(ctx->metadata, "ledger_id_explicit") : false;
+    int64_t explicit_lid = arg_lid > 0 ? arg_lid : (meta_explicit ? meta_lid : 0);
+    int64_t ledger_id = arg_lid > 0 ? arg_lid : meta_lid;
 
     if (asset_id > 0) {
         int64_t acct_lid = 0, acct_id = 0;
         if (asset_get_ledger_and_account(ctx->pool, asset_id, &acct_lid, &acct_id) != 0) {
             return strdup("{\"error\":\"asset not found\",\"code\":1003}");
         }
-        int64_t chk_lid = acct_lid > 0 ? acct_lid : ledger_id;
+        if (explicit_lid > 0 && acct_lid > 0 && explicit_lid != acct_lid) {
+            return strdup("{\"error\":\"Forbidden: 账本与资产所属账本不一致\",\"code\":1004}");
+        }
+        if (acct_lid > 0) {
+            ledger_id = acct_lid;
+        }
+        int64_t chk_lid = ledger_id;
         if (chk_lid <= 0) {
             chk_lid = ledger_get_default(ctx->pool, ctx->user_id);
         }
@@ -311,9 +316,6 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
             if (perm_chk != 0) {
                 return strdup("{\"error\":\"Forbidden: 关联账户无记账权限\",\"code\":1004}");
             }
-        }
-        if (ledger_id <= 0 && acct_lid > 0) {
-            ledger_id = acct_lid;
         }
     } else if (ledger_id > 0) {
         int perm_chk = account_usecase_check_permission(

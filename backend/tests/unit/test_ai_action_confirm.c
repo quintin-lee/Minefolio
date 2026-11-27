@@ -746,6 +746,140 @@ main(int argc, char** argv)
 
         ai_tool_context_free(ed_ctx);
         printf("  ✅ Shared-ledger editor with viewer permission rejected (1004) by expense & transfer confirm\n");
+
+        /* 9c. Positive operator confirm on shared ledger even when metadata["ledger_id"] defaults to editor's personal ledger */
+        int64_t personal_lid = 3;
+        int64_t acct_rw2 = 22;
+        int64_t asset_rw2 = 203;
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO ledgers (id, owner_id, name, is_default) VALUES (3, 903, 'CarolPersonal', 1)",
+            (const char*[]){NULL}));
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO accounts (id, user_id, ledger_id, name, institution) VALUES "
+            "(22, 902, 2, '备用可写卡', 'bank_card')",
+            (const char*[]){NULL}));
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO assets (id, user_id, category_id, account_id, name, current_value, currency, ledger_id) VALUES "
+            "(203, 902, 20, 22, '备用可写资产', 500.0, 'CNY', 2)",
+            (const char*[]){NULL}));
+        assert(account_permission_usecase_set(pool, owner_id, sh_lid, acct_rw2, editor_id, "operator", 0, 0, &ares) == 0);
+
+        ai_tool_context_t* ed_def_ctx = ai_tool_context_create(pool, editor_id, 10, "trace_op_default");
+        assert(ed_def_ctx != NULL);
+        /* Simulate ctx_ledger_id fallback to editor's personal default ledger (not explicit) */
+        csilk_json_add_int(ed_def_ctx->metadata, "ledger_id", personal_lid);
+
+        /* Positive expense on operator asset_rw -> succeeds, updates balance, stamps sh_lid (2, not 3) */
+        csilk_json_t* ok_ea = csilk_json_object();
+        csilk_json_add_number(ok_ea, "amount", 60.0);
+        csilk_json_add_string(ok_ea, "type", "expense");
+        csilk_json_add_string(ok_ea, "date", "2026-11-20");
+        csilk_json_add_number(ok_ea, "category_id", 20.0);
+        csilk_json_add_number(ok_ea, "asset_id", (double)asset_rw);
+        csilk_json_add_string(ok_ea, "note", "Shared op expense");
+        char* ok_et = ai_confirmation_create_bound_token(
+            editor_id, 10, "confirm_proposed_expense", ok_ea, AI_RISK_HIGH, 300);
+        assert(ok_et != NULL);
+        csilk_json_add_string(ok_ea, "draft_token", ok_et);
+
+        char* ok_er = ai_tool_dispatch_parsed(ed_def_ctx, "confirm_proposed_expense", ok_ea);
+        assert(ok_er != NULL);
+        csilk_json_t* ok_ep = csilk_json_parse(ok_er);
+        assert(ok_ep != NULL && csilk_json_get_bool(ok_ep, "success"));
+        int64_t ok_de_id = db_get_int(ok_ep, "id");
+        assert(ok_de_id > 0);
+        csilk_json_free(ok_ep);
+        free(ok_er);
+        free(ok_et);
+        csilk_json_free(ok_ea);
+
+        arw_row = asset_get_raw(pool, owner_id, asset_rw);
+        assert(db_get_num(csilk_json_array_get(arw_row, 0), "current_value") == 940.0);
+        csilk_json_free(arw_row);
+
+        char de_id_s[32];
+        snprintf(de_id_s, sizeof(de_id_s), "%lld", (long long)ok_de_id);
+        csilk_json_t* de_chk = csilk_db_query_param_json(
+            pool, "SELECT ledger_id FROM daily_expenses WHERE id=?", (const char*[]){de_id_s, NULL});
+        assert(de_chk != NULL && csilk_json_array_size(de_chk) == 1);
+        assert(db_get_int(csilk_json_array_get(de_chk, 0), "ledger_id") == sh_lid);
+        csilk_json_free(de_chk);
+
+        /* Positive transfer between operator assets asset_rw -> asset_rw2 with omitted/default metadata ledger_id */
+        csilk_json_t* ok_ta = csilk_json_object();
+        csilk_json_add_number(ok_ta, "amount", 150.0);
+        csilk_json_add_number(ok_ta, "from_asset_id", (double)asset_rw);
+        csilk_json_add_number(ok_ta, "to_asset_id", (double)asset_rw2);
+        csilk_json_add_string(ok_ta, "date", "2026-11-20");
+        csilk_json_add_string(ok_ta, "note", "Shared op transfer");
+        char* ok_tt = ai_confirmation_create_bound_token(
+            editor_id, 10, "confirm_proposed_transfer", ok_ta, AI_RISK_HIGH, 300);
+        assert(ok_tt != NULL);
+        csilk_json_add_string(ok_ta, "draft_token", ok_tt);
+
+        char* ok_tr = ai_tool_dispatch_parsed(ed_def_ctx, "confirm_proposed_transfer", ok_ta);
+        assert(ok_tr != NULL);
+        csilk_json_t* ok_tp = csilk_json_parse(ok_tr);
+        assert(ok_tp != NULL && csilk_json_get_bool(ok_tp, "success"));
+        int64_t ok_tf_id = db_get_int(ok_tp, "id");
+        assert(ok_tf_id > 0);
+        csilk_json_free(ok_tp);
+        free(ok_tr);
+        free(ok_tt);
+        csilk_json_free(ok_ta);
+
+        arw_row = asset_get_raw(pool, owner_id, asset_rw);
+        csilk_json_t* arw2_row = asset_get_raw(pool, owner_id, asset_rw2);
+        assert(db_get_num(csilk_json_array_get(arw_row, 0), "current_value") == 790.0);
+        assert(db_get_num(csilk_json_array_get(arw2_row, 0), "current_value") == 650.0);
+        csilk_json_free(arw_row);
+        csilk_json_free(arw2_row);
+
+        char tf_id_s[32];
+        snprintf(tf_id_s, sizeof(tf_id_s), "%lld", (long long)ok_tf_id);
+        csilk_json_t* tf_chk = csilk_db_query_param_json(
+            pool, "SELECT ledger_id, from_tx_id, to_tx_id FROM transfers WHERE id=?", (const char*[]){tf_id_s, NULL});
+        assert(tf_chk != NULL && csilk_json_array_size(tf_chk) == 1);
+        assert(db_get_int(csilk_json_array_get(tf_chk, 0), "ledger_id") == sh_lid);
+        int64_t ok_ftx = db_get_int(csilk_json_array_get(tf_chk, 0), "from_tx_id");
+        int64_t ok_ttx = db_get_int(csilk_json_array_get(tf_chk, 0), "to_tx_id");
+        csilk_json_free(tf_chk);
+
+        char ftx_buf[32], ttx_buf[32];
+        snprintf(ftx_buf, sizeof(ftx_buf), "%lld", (long long)ok_ftx);
+        snprintf(ttx_buf, sizeof(ttx_buf), "%lld", (long long)ok_ttx);
+        csilk_json_t* tx_chk = csilk_db_query_param_json(
+            pool, "SELECT ledger_id FROM transactions WHERE id IN (?, ?)", (const char*[]){ftx_buf, ttx_buf, NULL});
+        assert(tx_chk != NULL && csilk_json_array_size(tx_chk) == 2);
+        assert(db_get_int(csilk_json_array_get(tx_chk, 0), "ledger_id") == sh_lid);
+        assert(db_get_int(csilk_json_array_get(tx_chk, 1), "ledger_id") == sh_lid);
+        csilk_json_free(tx_chk);
+
+        /* Explicit cross-ledger mismatch (ledger_id_explicit=true with personal_lid) -> rejected 1004 */
+        csilk_json_add_bool(ed_def_ctx->metadata, "ledger_id_explicit", true);
+        csilk_json_t* mis_ea = csilk_json_object();
+        csilk_json_add_number(mis_ea, "amount", 10.0);
+        csilk_json_add_string(mis_ea, "type", "expense");
+        csilk_json_add_string(mis_ea, "date", "2026-11-20");
+        csilk_json_add_number(mis_ea, "category_id", 20.0);
+        csilk_json_add_number(mis_ea, "asset_id", (double)asset_rw);
+        char* mis_et = ai_confirmation_create_bound_token(
+            editor_id, 10, "confirm_proposed_expense", mis_ea, AI_RISK_HIGH, 300);
+        csilk_json_add_string(mis_ea, "draft_token", mis_et);
+        char* mis_er = ai_tool_dispatch_parsed(ed_def_ctx, "confirm_proposed_expense", mis_ea);
+        csilk_json_t* mis_ep = csilk_json_parse(mis_er);
+        assert(mis_ep != NULL && !csilk_json_get_bool(mis_ep, "success") && db_get_int(mis_ep, "code") == 1004);
+        csilk_json_free(mis_ep);
+        free(mis_er);
+        free(mis_et);
+        csilk_json_free(mis_ea);
+
+        ai_tool_context_free(ed_def_ctx);
+        printf("  ✅ Shared-ledger operator expense & transfer confirm updated balances & stamped ledger_id=%lld (ignoring default fallback)\n",
+               (long long)sh_lid);
     }
 
     if (saved_draft_token) {

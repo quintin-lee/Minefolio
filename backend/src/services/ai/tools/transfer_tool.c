@@ -3,6 +3,7 @@
 #include "services/ai/policy/confirmation.h"
 #include "application/transfer/usecases.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
 #include "common/balance.h"
 #include "common/db.h"
 #include "core/ledger/ledger_engine.h"
@@ -199,13 +200,22 @@ exec_confirm_proposed_transfer(const ai_tool_t*         tool,
         date = date_buf;
     }
 
-    int64_t ledger_id = 0;
-    if (args) {
-        ledger_id = db_get_int(args, "ledger_id");
+    int64_t arg_lid = args ? db_get_int(args, "ledger_id") : 0;
+    int64_t meta_lid = (ctx && ctx->metadata) ? db_get_int(ctx->metadata, "ledger_id") : 0;
+    bool    meta_explicit =
+        (ctx && ctx->metadata) ? csilk_json_get_bool(ctx->metadata, "ledger_id_explicit") : false;
+    int64_t explicit_lid = arg_lid > 0 ? arg_lid : (meta_explicit ? meta_lid : 0);
+
+    int64_t from_lid = 0, to_lid = 0;
+    if (asset_get_ledger_and_account(ctx->pool, from_id, &from_lid, NULL) == 0 &&
+        asset_get_ledger_and_account(ctx->pool, to_id, &to_lid, NULL) == 0) {
+        if (explicit_lid > 0 && ((from_lid > 0 && explicit_lid != from_lid) ||
+                                 (to_lid > 0 && explicit_lid != to_lid))) {
+            return strdup("{\"error\":\"Forbidden: 不支持跨账本划转\",\"code\":1004}");
+        }
     }
-    if (ledger_id <= 0 && ctx && ctx->metadata) {
-        ledger_id = db_get_int(ctx->metadata, "ledger_id");
-    }
+    int64_t ledger_id =
+        (from_lid > 0) ? from_lid : ((to_lid > 0) ? to_lid : (arg_lid > 0 ? arg_lid : meta_lid));
 
     create_transfer_cmd_t cmd = {
         .user_id = ctx->user_id,
