@@ -26,17 +26,22 @@ step_bc_collect(csilk_db_pool_t*    pool,
 
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* p_uid[] = {uid_str, NULL};
+    const char* p_uid[] = {uid_str, uid_str, uid_str, uid_str, uid_str, NULL};
 
     csilk_json_t* bills = csilk_json_array();
     double        total_monthly_bill = 0.0;
     int           bill_count = 0;
 
-    csilk_json_t* res =
-        csilk_db_query_param_json(pool,
-                                  "SELECT id, name, expected_amount, flow_type, start_date, note "
-                                  "FROM cashflow_schedules WHERE user_id=? AND status='active'",
-                                  p_uid);
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "SELECT cs.id, cs.name, cs.expected_amount, cs.flow_type, cs.start_date, cs.note "
+        "FROM cashflow_schedules cs "
+        "LEFT JOIN assets sa ON cs.source_asset_id = sa.id "
+        "LEFT JOIN assets ta ON cs.target_asset_id = ta.id "
+        "WHERE cs.user_id=? AND cs.status='active' "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("sa") " "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("ta"),
+        p_uid);
     if (res && csilk_json_is_array(res)) {
         size_t n = csilk_json_array_size(res);
         for (size_t i = 0; i < n; i++) {
@@ -368,7 +373,7 @@ step_bc_report(csilk_db_pool_t*    pool,
                     strcat(cats, ",");
                 }
                 csilk_json_t* v = csilk_json_array_get(daily, (int)i);
-                double        amt = db_get_num(v, "");
+                double        amt = csilk_json_as_double(v, 0.0);
                 snprintf(tmp, sizeof(tmp), "%.0f", amt);
                 strcat(vals, tmp);
                 if (i + 1 < n && i + 1 < 30) {

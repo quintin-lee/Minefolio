@@ -684,6 +684,28 @@ main(void)
         printf("[Test 10] PASS: Agent skills tools (use_skill, list_skills, L2/L3) verified\n");
     }
 
+    /* Test 11: get_market_pulse numeric days & ledger_id parsing */
+    {
+        char uid_s[32];
+        snprintf(uid_s, sizeof(uid_s), "%lld", (long long)ctx->user_id);
+        assert(csilk_db_exec_param(
+                   ctx->pool,
+                   "INSERT INTO ai_news_reports (user_id, ledger_id, report_date, title, analysis, status) VALUES "
+                   "(?, 20, '2026-10-01', 'T1', 'A1', 'done'), "
+                   "(?, 20, '2026-10-02', 'T2', 'A2', 'done'), "
+                   "(?, 20, '2026-10-03', 'T3', 'A3', 'done'), "
+                   "(?, 99, '2026-10-04', 'T4', 'OtherLedger', 'done')",
+                   (const char*[]){uid_s, uid_s, uid_s, uid_s, NULL}) == 0);
+        char* pulse = ai_tool_dispatch(ctx, "get_market_pulse", "{\"days\":3,\"ledger_id\":20}");
+        assert(pulse != NULL);
+        csilk_json_t* parr = csilk_json_parse(pulse);
+        assert(parr && csilk_json_is_array(parr) && csilk_json_array_size(parr) == 3);
+        assert(strstr(pulse, "OtherLedger") == NULL);
+        csilk_json_free(parr);
+        free(pulse);
+        printf("[Test 11] PASS: get_market_pulse numeric days & ledger_id verified\n");
+    }
+
     ai_tool_context_free(ctx);
     unlink(db_file);
 

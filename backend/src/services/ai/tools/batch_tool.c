@@ -780,13 +780,34 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
                 }
             }
 
+            const char* item_cur = csilk_json_get_string(it, "currency");
+            char        eff_cur[16] = "CNY";
+            {
+                char aid_s[32];
+                snprintf(aid_s, sizeof(aid_s), "%lld", (long long)asset_id);
+                csilk_json_t* ac_rows = csilk_db_query_param_json(
+                    pool, "SELECT currency FROM assets WHERE id=?", (const char*[]){aid_s, NULL});
+                const char* db_cur =
+                    (ac_rows && csilk_json_array_size(ac_rows) > 0)
+                        ? csilk_json_get_string(csilk_json_array_get(ac_rows, 0), "currency")
+                        : NULL;
+                if (db_cur && db_cur[0]) {
+                    snprintf(eff_cur, sizeof(eff_cur), "%s", db_cur);
+                } else if (item_cur && item_cur[0]) {
+                    snprintf(eff_cur, sizeof(eff_cur), "%s", item_cur);
+                }
+                if (ac_rows) {
+                    csilk_json_free(ac_rows);
+                }
+            }
+
             int64_t de_id = mf_ai_repo_daily_expense_insert(pool,
                                                             user_id,
                                                             ledger_id,
                                                             dt,
                                                             type,
                                                             amount,
-                                                            "CNY",
+                                                            eff_cur,
                                                             category_id,
                                                             asset_id,
                                                             note ? note : "");
@@ -804,7 +825,7 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
 
             int     is_inc = (strcmp(type, "income") == 0);
             money_t amt_m;
-            money_from_double(amount, CURRENCY_CNY, &amt_m);
+            money_from_double(amount, currency_from_str(eff_cur), &amt_m);
             if (ledger_apply_expense_dated(pool,
                                            user_id,
                                            asset_id,
@@ -908,7 +929,17 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
         }
     }
 
-    db_tx_scope_commit(pool, &scope);
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        csilk_json_free(results_arr);
+        if (out_code) {
+            *out_code = 500;
+        }
+        if (err_buf && err_len > 0) {
+            snprintf(err_buf, err_len, "提交批量动作事务失败");
+        }
+        return -1;
+    }
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "executed_count", (double)cnt);

@@ -26,30 +26,18 @@ exec_get_market_pulse(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
 
     /* 参数：date 优先，否则按 days 取最近 N 天 */
     const char* date_str = args ? csilk_json_get_string(args, "date") : NULL;
-    long        days = 1;
-    if (args) {
-        const char* d_str = csilk_json_get_string(args, "days");
-        if (d_str && d_str[0]) {
-            days = atol(d_str);
-        }
-    }
+    int64_t     days = args ? db_get_int(args, "days") : 0;
     if (days < 1) {
         days = 1;
     }
-    if (days > 14) {
-        days = 14;
+    if (days > 90) {
+        days = 90;
     }
 
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)ctx->user_id);
 
-    int64_t ledger_id = 0;
-    if (args) {
-        const char* lid_str = csilk_json_get_string(args, "ledger_id");
-        if (lid_str && lid_str[0]) {
-            ledger_id = atoll(lid_str);
-        }
-    }
+    int64_t ledger_id = args ? db_get_int(args, "ledger_id") : 0;
     if (ledger_id <= 0 && ctx->metadata) {
         ledger_id = db_get_int(ctx->metadata, "ledger_id");
     }
@@ -73,8 +61,8 @@ exec_get_market_pulse(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
                  "SELECT report_date, title, analysis, status, error_msg, model_used, "
                  "       created_at FROM ai_news_reports "
                  "WHERE user_id=? AND (? <= 0 OR ledger_id=?) AND status IN ('done','error') "
-                 "ORDER BY report_date DESC LIMIT %ld",
-                 days);
+                 "ORDER BY report_date DESC LIMIT %lld",
+                 (long long)days);
         result = csilk_db_query_param_json(
             ctx->pool, sql, (const char*[]){uid_str, lid_str, lid_str, NULL});
     }
