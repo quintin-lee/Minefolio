@@ -232,4 +232,31 @@ describe('SyncEngine conflict discard, validation cleanup, and ledger scoping', 
     ])
     expect(rowsFrom(query('SELECT id FROM daily_expenses WHERE id = ?', [localId])).length).toBe(0)
   })
+
+  it('marks dependent queued items as conflict when a create fails instead of cascading drops', async () => {
+    const tempAssetId = -9001
+    const tempExpenseId = -9002
+    const engine = SyncEngine.getInstance()
+    engine.enqueue('assets', tempAssetId, 'create', {
+      name: 'Temp Wallet',
+      category_id: 1,
+      currency: 'CNY',
+    })
+    engine.enqueue('daily_expenses', tempExpenseId, 'create', {
+      ...COMPLETE_EXPENSE,
+      asset_id: tempAssetId,
+    })
+
+    httpMock.post.mockRejectedValueOnce({
+      response: { data: { code: 1002, message: '资产参数错误' } },
+    })
+
+    await engine.pushLocal()
+
+    // Root invalid create is removed, while dependent expense is flagged as conflict rather than pushed with tempAssetId
+    expect(httpMock.post).toHaveBeenCalledTimes(1)
+    expect(engine.getConflicts().length).toBe(1)
+    expect(engine.getConflicts()[0].table_name).toBe('daily_expenses')
+    expect(engine.getConflicts()[0].record_id).toBe(tempExpenseId)
+  })
 })

@@ -408,6 +408,40 @@ export class SyncEngine {
     persist()
   }
 
+  private markDependentQueueConflicts(failedTable: string, failedTempId: number, afterQueueId: number): void {
+    const fkCols = [
+      'account_id',
+      'asset_id',
+      'category_id',
+      'ledger_id',
+      'from_asset_id',
+      'to_asset_id',
+      'linked_asset_id',
+    ]
+    const candidates = rowsFrom(
+      query('SELECT id, table_name, record_id, payload, conflict FROM sync_queue WHERE id > ? AND conflict = 0', [
+        afterQueueId,
+      ])
+    )
+    for (const cand of candidates) {
+      const candId = Number(cand.id)
+      const sameRecord = String(cand.table_name) === failedTable && Number(cand.record_id) === failedTempId
+      let fkMatch = false
+      if (!sameRecord) {
+        const p = parsePayload(String(cand.payload || '{}'))
+        for (const col of fkCols) {
+          if (Number(p[col]) === failedTempId) {
+            fkMatch = true
+            break
+          }
+        }
+      }
+      if (sameRecord || fkMatch) {
+        this.markConflict(candId)
+      }
+    }
+  }
+
   async pushLocal(): Promise<Map<string, Set<number>>> {
     const epoch = this.syncEpoch
     const pushedInCycle = new Map<string, Set<number>>()
@@ -485,10 +519,14 @@ export class SyncEngine {
         ) {
           // 业务冲突：1004 响应不含记录数据，remote_payload 留空
           this.markConflict(item.id)
+          if (operation === 'create') {
+            this.markDependentQueueConflicts(item.table_name, recordId, item.id)
+          }
         } else if (VALIDATION_CODES.has(code) || status === 400 || status === 422) {
-          // 校验/权限类永久失败：放弃队列项，记录错误供设置页提示；create 失败一并清理本地占位行
+          // 校验/权限类永久失败：放弃队列项，记录错误供设置页提示；create 失败一并清理本地占位行，并将依赖该临时 ID 的后续项标为冲突以防级联丢失
           const message = String(e?.response?.data?.message || e?.message || '离线数据同步失败')
           if (operation === 'create') {
+            this.markDependentQueueConflicts(item.table_name, recordId, item.id)
             run(`DELETE FROM ${item.table_name} WHERE id = ?`, [recordId])
           }
           run('DELETE FROM sync_queue WHERE id = ?', [item.id])
@@ -514,6 +552,7 @@ export class SyncEngine {
         let page = 1
         const pageSize = 500
         const seenIds = new Set<number>()
+        const seenLedgerIds = new Set<number>([0])
         let completedAllPages = false
         while (true) {
           const params: Record<string, any> = { page, page_size: pageSize }
@@ -526,6 +565,9 @@ export class SyncEngine {
           const remoteRows = table === 'categories' ? flattenCategoryTree(rawRows) : rawRows
           for (const remote of remoteRows) {
             if (remote?.id !== undefined && remote?.id !== null) seenIds.add(Number(remote.id))
+            if (remote?.ledger_id !== undefined && remote?.ledger_id !== null) {
+              seenLedgerIds.add(Number(remote.ledger_id))
+            }
             const localRow = rowsFrom(query(`SELECT * FROM ${table} WHERE id = ?`, [remote.id]))[0]
             const localUpdated = parseSyncTimestamp(localRow?.updated_at)
             const remoteUpdated = parseSyncTimestamp(remote.updated_at)
@@ -569,8 +611,11 @@ export class SyncEngine {
                 [activeLedgerId]
               ))
             } else {
+              const lids = Array.from(seenLedgerIds)
+              const placeholders = lids.map(() => '?').join(', ')
               localRows = rowsFrom(query(
-                `SELECT id FROM ${table} WHERE __deleted = 0 AND (ledger_id = 0 OR ledger_id IS NULL)`
+                `SELECT id FROM ${table} WHERE __deleted = 0 AND (ledger_id IN (${placeholders}) OR ledger_id IS NULL)`,
+                lids
               ))
             }
           } else {

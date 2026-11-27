@@ -155,4 +155,24 @@ describe('SyncEngine.pullRemote', () => {
     const remainingIds = rowsFrom(query('SELECT id FROM daily_expenses')).map((r) => Number(r.id))
     expect(remainingIds).toEqual([11])
   })
+
+  it('prunes deleted rows across fetched ledgers even when activeLedgerId is 0', async () => {
+    run(
+      `INSERT INTO daily_expenses (${EXPENSE_COLS}, ledger_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [20, 1, 1, 'expense', 10, 'CNY', '2026-11-26', '2026-11-26T10:00:00Z', 1]
+    )
+    run(
+      `INSERT INTO daily_expenses (${EXPENSE_COLS}, ledger_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [21, 1, 1, 'expense', 20, 'CNY', '2026-11-26', '2026-11-26T10:00:00Z', 1]
+    )
+    ;(dailyExpensesApi.list as any).mockResolvedValueOnce({
+      list: [{ ...remoteRow(20, 10, '2026-11-26T10:00:00Z'), ledger_id: 1 }],
+      total: 1,
+    })
+
+    await SyncEngine.getInstance().pullRemote()
+
+    const remainingIds = rowsFrom(query('SELECT id FROM daily_expenses')).map((r) => Number(r.id))
+    expect(remainingIds).toEqual([20])
+  })
 })
