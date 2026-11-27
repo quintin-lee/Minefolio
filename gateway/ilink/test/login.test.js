@@ -77,7 +77,7 @@ describe('ilink/login', () => {
         getQrcodeStatus: async ({ baseUrl }) => {
           usedBaseUrls.push(baseUrl || 'default');
           if (usedBaseUrls.length === 1) {
-            return { status: 'scaned_but_redirect', redirect_host: 'hk.ilink.test' };
+            return { status: 'scaned_but_redirect', redirect_host: 'hk.ilink.weixin.qq.com' };
           }
           return {
             status: 'confirmed',
@@ -90,7 +90,7 @@ describe('ilink/login', () => {
 
       const res1 = await runLogin({ client: clientRedirect, state });
       assert.strictEqual(res1.ok, true);
-      assert.deepStrictEqual(usedBaseUrls, ['default', 'https://hk.ilink.test']);
+      assert.deepStrictEqual(usedBaseUrls, ['default', 'https://hk.ilink.weixin.qq.com']);
 
       const expiredStatuses = [];
       const clientExpired = {
