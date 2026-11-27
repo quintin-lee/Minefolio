@@ -678,7 +678,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .scheduler-page {
-  padding: 24px;
+  padding: 4px 0 24px 0;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -1139,7 +1139,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 768px) {
   .scheduler-page {
-    padding: 16px;
+    padding: 0 0 16px 0;
   }
   .page-header {
     flex-direction: column;
