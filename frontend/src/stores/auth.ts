@@ -9,6 +9,7 @@ import { authApi, type User } from '@/api/auth'
 import { systemApi } from '@/api/system'
 import { encryptPassword, clearCryptoKeyCache } from '@/utils/crypto'
 import { clearSwrCache } from '@/utils/swr-cache'
+import { clearChatMarkdownCaches } from '@/utils/chat-md-cache'
 
 // RSA-OAEP 密码加密统一由 utils/crypto.ts 提供 (公钥拉取 + 加密实现已去重)
 
@@ -244,6 +245,7 @@ export const useAuthStore = defineStore('auth', () => {
       } catch {}
     }
     clearCryptoKeyCache()
+    clearChatMarkdownCaches()
     try {
       // 动态 import 各 store：避免把聊天/账本/分类/同步模块静态打入首屏包
       const [{ useChatStore }, { useLedgerStore }, { useCategoryStore }, { useMarketStore }, { resetFinancialEntities }, syncMod] = await Promise.all([

@@ -9,7 +9,6 @@
 #include "application/account/usecases.h"
 #include "application/skill/usecases.h"
 #include "config/key_manager.h"
-#include "middlewares/jwt_middleware.h"
 #include "common/config.h"
 #include "common/jwt.h"
 #include "csilk/core/totp.h"
@@ -28,6 +27,8 @@
 #include <openssl/ecdsa.h>
 #include <openssl/evp.h>
 #include <openssl/param_build.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +36,23 @@
 #include <time.h>
 
 #define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
+
+static _Atomic(mf_auth_jwt_invalidator_fn) g_jwt_invalidator = NULL;
+
+void
+auth_usecase_set_jwt_invalidator(mf_auth_jwt_invalidator_fn fn)
+{
+    atomic_store_explicit(&g_jwt_invalidator, fn, memory_order_release);
+}
+
+static void
+invalidate_user_jwt(int64_t user_id)
+{
+    mf_auth_jwt_invalidator_fn fn = atomic_load_explicit(&g_jwt_invalidator, memory_order_acquire);
+    if (fn) {
+        fn(user_id);
+    }
+}
 
 /* 规范化两步验证码（提取干净的 lowercase 字符集以及纯数字流）：
    支持处理全角数字 (０-９)、全角英文字母 (ａ-ｚ/Ａ-Ｚ)、各类破折号 (—, –, −, －)、
@@ -618,7 +636,7 @@ auth_usecase_change_password(void*                        pool,
         goto cleanup;
     }
 
-    jwt_middleware_invalidate_user(cmd->user_id);
+    invalidate_user_jwt(cmd->user_id);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "密码修改成功");
     rc = 0;
@@ -2558,7 +2576,7 @@ auth_usecase_admin_update_user(void*                          pool,
     }
 
     if ((changed_disabled && next_disabled) || changed_role) {
-        jwt_middleware_invalidate_user(cmd->target_user_id);
+        invalidate_user_jwt(cmd->target_user_id);
     }
 
     if (out_data) {
@@ -2637,7 +2655,7 @@ auth_usecase_admin_reset_password(void*                             pool,
         goto cleanup;
     }
 
-    jwt_middleware_invalidate_user(cmd->target_user_id);
+    invalidate_user_jwt(cmd->target_user_id);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "密码重置成功");
     rc = 0;
@@ -2683,7 +2701,7 @@ auth_usecase_admin_disable_2fa(void* pool, int64_t target_user_id, auth_usecase_
         return -1;
     }
 
-    jwt_middleware_invalidate_user(target_user_id);
+    invalidate_user_jwt(target_user_id);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "已关闭该用户的两步验证");
     return 0;
@@ -2751,7 +2769,7 @@ auth_usecase_admin_delete_user(void*                  pool,
         return -1;
     }
 
-    jwt_middleware_invalidate_user(target_user_id);
+    invalidate_user_jwt(target_user_id);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "用户已删除");
     return 0;

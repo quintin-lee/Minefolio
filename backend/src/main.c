@@ -39,6 +39,7 @@
 #include "core/ledger/ledger_engine.h"
 #include "core/scheduler/scheduler_engine.h"
 #include "application/scheduler/usecases.h"
+#include "application/auth/usecases.h"
 #include "services/ai_service.h"
 #include "dtos/request.h"
 #include "config/secret.h"
@@ -250,6 +251,7 @@ main(int argc, char** argv)
     csilk_app_options(app, "/mcp", cors_preflight_handler);
 
     // JWT middleware (rejects if JWT_SECRET is not set)
+    auth_usecase_set_jwt_invalidator(jwt_middleware_invalidate_user);
     csilk_app_use_group(app, "/api", jwt_middleware_wrapper);
     // /mcp is a separate group (no /api prefix) — run JWT middleware on it too so
     // ctx_user_id() works inside the MCP server handler.

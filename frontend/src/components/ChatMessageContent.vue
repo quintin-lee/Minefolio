@@ -260,8 +260,7 @@
 </template>
 
 <script lang="ts">
-const sharedMdCache = new Map<string, string>()
-const linkedMdCache = new Map<string, string>()
+import { sharedMdCache, linkedMdCache } from '@/utils/chat-md-cache'
 </script>
 
 <script setup lang="ts">

@@ -147,7 +147,10 @@ system_backup_download(csilk_ctx_t* c)
     uint8_t buf[16384];
     size_t  n;
     while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) {
-        csilk_response_write(c, buf, n);
+        if (csilk_response_write(c, buf, n) < 0) {
+            CSILK_LOG_W("system_backup_download: client write interrupted (%s)", filename);
+            break;
+        }
     }
     fclose(fp);
     csilk_response_end(c);

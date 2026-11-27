@@ -577,7 +577,8 @@ tx_list(csilk_db_pool_t* pool,
                                                                       "la") "%s "
                                                                             "ORDER BY "
                                                                             "t.transaction_date "
-                                                                            "DESC LIMIT ? OFFSET ?",
+                                                                            "DESC, t.id DESC "
+                                                                            "LIMIT ? OFFSET ?",
         where_scope,
         cond_sql);
     params[pidx++] = limit;

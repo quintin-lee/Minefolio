@@ -4,6 +4,16 @@
 #include "application/auth/commands.h"
 #include "application/auth/dtos.h"
 
+/**
+ * @brief JWT 用户态失效回调函数指针（由上层/入口装配注入，避免 application 层反向依赖 middlewares）
+ */
+typedef void (*mf_auth_jwt_invalidator_fn)(int64_t user_id);
+
+/**
+ * @brief 注册 JWT 用户缓存失效回调
+ */
+void auth_usecase_set_jwt_invalidator(mf_auth_jwt_invalidator_fn fn);
+
 int auth_usecase_register(void*                      pool,
                           const register_user_cmd_t* cmd,
                           csilk_ctx_t*               c,

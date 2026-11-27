@@ -107,6 +107,12 @@ report_asset_trend(void* pool, const report_query_t* q, report_result_t* out_res
     size_t              num_assets = asset_rows ? csilk_json_array_size(asset_rows) : 0;
     asset_trend_item_t* assets =
         num_assets > 0 ? (asset_trend_item_t*)calloc(num_assets, sizeof(asset_trend_item_t)) : NULL;
+    if (num_assets > 0 && !assets) {
+        csilk_json_free(asset_rows);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "内存分配失败");
+        return;
+    }
     for (size_t i = 0; i < num_assets; i++) {
         csilk_json_t* r = csilk_json_array_get(asset_rows, i);
         assets[i].id = db_get_int(r, "id");
@@ -160,6 +166,15 @@ report_asset_trend(void* pool, const report_query_t* q, report_result_t* out_res
     size_t             num_logs = log_rows ? csilk_json_array_size(log_rows) : 0;
     asset_trend_log_t* logs =
         num_logs > 0 ? (asset_trend_log_t*)calloc(num_logs, sizeof(asset_trend_log_t)) : NULL;
+    if (num_logs > 0 && !logs) {
+        if (assets) {
+            free(assets);
+        }
+        csilk_json_free(log_rows);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "内存分配失败");
+        return;
+    }
     for (size_t i = 0; i < num_logs; i++) {
         csilk_json_t* r = csilk_json_array_get(log_rows, i);
         logs[i].asset_id = db_get_int(r, "asset_id");
