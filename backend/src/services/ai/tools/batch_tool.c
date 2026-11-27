@@ -2,10 +2,14 @@
 #include "services/ai/tools/registry.h"
 #include "services/ai/tools/schema.h"
 #include "services/ai/policy/confirmation.h"
+#include "application/account/usecases.h"
+#include "application/transfer/usecases.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
 #include "core/ledger/ledger_engine.h"
 #include "common/balance.h"
 #include "common/db.h"
+#include "common/ledger_utils.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -730,7 +734,43 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
                 return -1;
             }
 
+            int64_t acct_lid = 0, acct_id = 0;
+            if (asset_get_ledger_and_account(pool, asset_id, &acct_lid, &acct_id) != 0) {
+                db_tx_scope_rollback(pool, &scope);
+                csilk_json_free(results_arr);
+                if (out_code) {
+                    *out_code = 1003;
+                }
+                if (err_buf && err_len > 0) {
+                    snprintf(err_buf, err_len, "动作 #%zu 资产不存在", i + 1);
+                }
+                return -1;
+            }
+
             int64_t ledger_id = (int64_t)db_get_num(it, "ledger_id");
+            int64_t chk_lid = acct_lid > 0 ? acct_lid : ledger_id;
+            if (chk_lid <= 0) {
+                chk_lid = ledger_get_default(pool, user_id);
+            }
+            if (acct_id > 0 || chk_lid > 0) {
+                int perm_chk = account_usecase_check_permission(
+                    pool, chk_lid, user_id, acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+                if (perm_chk != 0) {
+                    db_tx_scope_rollback(pool, &scope);
+                    csilk_json_free(results_arr);
+                    if (out_code) {
+                        *out_code = 1004;
+                    }
+                    if (err_buf && err_len > 0) {
+                        snprintf(err_buf, err_len, "动作 #%zu 关联账户无记账权限", i + 1);
+                    }
+                    return -1;
+                }
+            }
+            if (ledger_id <= 0 && acct_lid > 0) {
+                ledger_id = acct_lid;
+            }
+
             int64_t de_id = mf_ai_repo_daily_expense_insert(pool,
                                                             user_id,
                                                             ledger_id,
@@ -756,9 +796,14 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
             int     is_inc = (strcmp(type, "income") == 0);
             money_t amt_m;
             money_from_double(amount, CURRENCY_CNY, &amt_m);
-            if (ledger_apply_expense(
-                    pool, user_id, asset_id, amt_m, is_inc, de_id, note ? note : "AI 批量记账") !=
-                0) {
+            if (ledger_apply_expense_dated(pool,
+                                           user_id,
+                                           asset_id,
+                                           amt_m,
+                                           is_inc,
+                                           de_id,
+                                           note ? note : "AI 批量记账",
+                                           dt) != 0) {
                 db_tx_scope_rollback(pool, &scope);
                 csilk_json_free(results_arr);
                 if (out_code) {
@@ -790,43 +835,38 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
                 return -1;
             }
 
-            int64_t transfer_id = mf_ai_repo_transfer_insert(
-                pool, user_id, from_id, to_id, amount, "CNY", dt, note ? note : "");
-            if (transfer_id <= 0) {
+            const char*           cur = csilk_json_get_string(it, "currency");
+            int64_t               ledger_id = (int64_t)db_get_num(it, "ledger_id");
+            create_transfer_cmd_t tcmd = {
+                .user_id = user_id,
+                .from_asset_id = from_id,
+                .to_asset_id = to_id,
+                .amount = amount,
+                .currency = (cur && cur[0]) ? cur : "CNY",
+                .transfer_date = dt,
+                .note = (note && note[0]) ? note : "AI 批量转账",
+                .ledger_id = ledger_id,
+            };
+            transfer_usecase_result_t tres = {0};
+            if (transfer_usecase_create(pool, &tcmd, &tres) != 0 || tres.code != 0) {
                 db_tx_scope_rollback(pool, &scope);
                 csilk_json_free(results_arr);
                 if (out_code) {
-                    *out_code = 500;
+                    *out_code = tres.code ? tres.code : 500;
                 }
                 if (err_buf && err_len > 0) {
-                    snprintf(err_buf, err_len, "动作 #%zu 写入转账失败", i + 1);
-                }
-                return -1;
-            }
-
-            money_t amt_m;
-            money_from_double(amount, CURRENCY_CNY, &amt_m);
-            if (ledger_apply_transfer(pool,
-                                      user_id,
-                                      from_id,
-                                      to_id,
-                                      amt_m,
-                                      transfer_id,
-                                      note ? note : "AI 批量转账") != 0) {
-                db_tx_scope_rollback(pool, &scope);
-                csilk_json_free(results_arr);
-                if (out_code) {
-                    *out_code = 500;
-                }
-                if (err_buf && err_len > 0) {
-                    snprintf(err_buf, err_len, "动作 #%zu 联动转账余额失败", i + 1);
+                    snprintf(err_buf,
+                             err_len,
+                             "动作 #%zu %s",
+                             i + 1,
+                             tres.message[0] ? tres.message : "转账失败");
                 }
                 return -1;
             }
 
             csilk_json_t* item_res = csilk_json_object();
             csilk_json_add_string(item_res, "action_type", "transfer");
-            csilk_json_add_number(item_res, "id", (double)transfer_id);
+            csilk_json_add_number(item_res, "id", (double)tres.id);
             csilk_json_add_bool(item_res, "success", true);
             csilk_json_array_append(results_arr, item_res);
         } else {

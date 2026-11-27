@@ -360,10 +360,27 @@ api_ai_action_confirm_batch_handler(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id < 0) {
+        return;
+    }
+    (void)ledger_id;
+
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "请求体必须为 JSON");
         return;
+    }
+
+    int64_t body_lid = db_get_int(body, "ledger_id");
+    if (body_lid > 0) {
+        char role[32] = {0};
+        if (!ledger_get_user_role(db_get_pool(), body_lid, user_id, role, sizeof(role)) ||
+            (strcmp(role, "owner") != 0 && strcmp(role, "editor") != 0)) {
+            csilk_json_free(body);
+            respond_error(c, 1004, "Forbidden: editor permission required");
+            return;
+        }
     }
 
     const char* draft_token = csilk_json_get_string(body, "draft_token");

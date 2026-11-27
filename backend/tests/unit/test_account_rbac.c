@@ -15,6 +15,12 @@
 #include "services/report_asset_service.h"
 #include "services/export_service.h"
 #include "services/import_service.h"
+#include "services/ai/tools/registry.h"
+#include "services/ai/tools/dispatcher.h"
+#include "services/ai/tools/context.h"
+#include "services/ai/tools/batch_tool.h"
+#include "services/ai/policy/confirmation.h"
+#include "services/ai/policy/permission.h"
 #include "common/db.h"
 #include "common/ledger_utils.h"
 #include "config/secret.h"
@@ -1267,6 +1273,129 @@ test_cashflow_shared_ledger_and_rbac(csilk_db_pool_t* pool)
     printf("  [OK] Cashflow enforces ledger isolation, NULL fallback, shared access, calendar unmasked & delete RBAC\n");
 }
 
+static void
+test_ai_confirm_shared_ledger_and_rbac(csilk_db_pool_t* pool)
+{
+    printf("--- Testing AI Action Confirm Account RBAC Enforcement ---\n");
+    ai_tool_registry_init();
+
+    int64_t owner_id = 0, editor_id = 0;
+    assert(mf_auth_repo_create(pool, "ai_rbac_owner", "h1", &owner_id) == 0);
+    assert(mf_auth_repo_create(pool, "ai_rbac_editor", "h2", &editor_id) == 0);
+
+    char s_oid[32], s_eid[32];
+    snprintf(s_oid, sizeof(s_oid), "%lld", (long long)owner_id);
+    snprintf(s_eid, sizeof(s_eid), "%lld", (long long)editor_id);
+
+    csilk_json_t* lr = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO ledgers (owner_id, name, currency) VALUES (?, 'AiRbacL', 'CNY') RETURNING id;",
+        (const char*[]){s_oid, NULL});
+    int64_t lid = db_get_int(csilk_json_array_get(lr, 0), "id");
+    csilk_json_free(lr);
+
+    char s_lid[32];
+    snprintf(s_lid, sizeof(s_lid), "%lld", (long long)lid);
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO ledger_members (ledger_id, user_id, role) VALUES (?, ?, 'owner'), (?, ?, 'editor');",
+        (const char*[]){s_lid, s_oid, s_lid, s_eid, NULL});
+
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO categories (user_id, ledger_id, name, type, asset_type) VALUES "
+        "(?, ?, 'AiCash', 'asset', 'cash');",
+        (const char*[]){s_oid, s_lid, NULL});
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO categories (user_id, ledger_id, name, type) VALUES (?, ?, 'AiExp', 'expense');",
+        (const char*[]){s_oid, s_lid, NULL});
+    csilk_json_t* cr = csilk_db_query_param_json(
+        pool, "SELECT id, name FROM categories WHERE user_id=?;", (const char*[]){s_oid, NULL});
+    int64_t cash_cat = 0, exp_cat = 0;
+    for (size_t i = 0; i < csilk_json_array_size(cr); i++) {
+        csilk_json_t* r = csilk_json_array_get(cr, i);
+        if (strcmp(csilk_json_get_string(r, "name"), "AiCash") == 0) cash_cat = db_get_int(r, "id");
+        if (strcmp(csilk_json_get_string(r, "name"), "AiExp") == 0) exp_cat = db_get_int(r, "id");
+    }
+    csilk_json_free(cr);
+    assert(cash_cat > 0 && exp_cat > 0);
+
+    account_usecase_result_t acres = {0};
+    create_account_cmd_t ac_ro = {.user_id = owner_id, .ledger_id = lid, .name = "AiRO", .institution = "bank_card", .currency = "CNY"};
+    create_account_cmd_t ac_rw = {.user_id = owner_id, .ledger_id = lid, .name = "AiRW", .institution = "bank_card", .currency = "CNY"};
+    assert(account_usecase_create(pool, &ac_ro, &acres) == 0);
+    int64_t acct_ro = acres.id;
+    assert(account_usecase_create(pool, &ac_rw, &acres) == 0);
+    int64_t acct_rw = acres.id;
+
+    asset_usecase_result_t ares = {0};
+    create_asset_cmd_t as_ro = {.user_id = owner_id, .ledger_id = lid, .category_id = cash_cat, .account_id = acct_ro, .name = "AiAssetRO", .current_value = 1000.0, .currency = "CNY"};
+    create_asset_cmd_t as_rw = {.user_id = owner_id, .ledger_id = lid, .category_id = cash_cat, .account_id = acct_rw, .name = "AiAssetRW", .current_value = 1000.0, .currency = "CNY"};
+    assert(asset_usecase_create(pool, &as_ro, &ares) == 0);
+    int64_t asset_ro = ares.id;
+    assert(asset_usecase_create(pool, &as_rw, &ares) == 0);
+    int64_t asset_rw = ares.id;
+
+    assert(account_permission_usecase_set(pool, owner_id, lid, acct_ro, editor_id, "viewer", 0, 0, &acres) == 0);
+    assert(account_permission_usecase_set(pool, owner_id, lid, acct_rw, editor_id, "operator", 0, 0, &acres) == 0);
+
+    ai_tool_context_t* ed_ctx = ai_tool_context_create(pool, editor_id, 55, "trace_ai_rbac");
+    assert(ed_ctx != NULL);
+    csilk_json_add_int(ed_ctx->metadata, "ledger_id", lid);
+
+    /* Expense confirm on viewer account -> 1004 */
+    csilk_json_t* ea = csilk_json_object();
+    csilk_json_add_number(ea, "amount", 50.0);
+    csilk_json_add_string(ea, "type", "expense");
+    csilk_json_add_string(ea, "date", "2026-11-20");
+    csilk_json_add_number(ea, "category_id", (double)exp_cat);
+    csilk_json_add_number(ea, "asset_id", (double)asset_ro);
+    csilk_json_add_string(ea, "note", "Forbidden");
+    char* et = ai_confirmation_create_bound_token(editor_id, 55, "confirm_proposed_expense", ea, AI_RISK_HIGH, 300);
+    csilk_json_add_string(ea, "draft_token", et);
+    char* er = ai_tool_dispatch_parsed(ed_ctx, "confirm_proposed_expense", ea);
+    csilk_json_t* ep = csilk_json_parse(er);
+    assert(ep != NULL && !csilk_json_get_bool(ep, "success") && db_get_int(ep, "code") == 1004);
+    csilk_json_free(ep); free(er); free(et); csilk_json_free(ea);
+
+    /* Transfer confirm on viewer account -> 1004 */
+    ai_permission_set_user_role(editor_id, AI_USER_ROLE_ADMIN);
+    csilk_json_t* ta = csilk_json_object();
+    csilk_json_add_number(ta, "amount", 100.0);
+    csilk_json_add_number(ta, "from_asset_id", (double)asset_rw);
+    csilk_json_add_number(ta, "to_asset_id", (double)asset_ro);
+    csilk_json_add_string(ta, "date", "2026-11-20");
+    csilk_json_add_string(ta, "note", "Forbidden transfer");
+    char* tt = ai_confirmation_create_bound_token(editor_id, 55, "confirm_proposed_transfer", ta, AI_RISK_HIGH, 300);
+    csilk_json_add_string(ta, "draft_token", tt);
+    char* tr = ai_tool_dispatch_parsed(ed_ctx, "confirm_proposed_transfer", ta);
+    csilk_json_t* tp = csilk_json_parse(tr);
+    assert(tp != NULL && !csilk_json_get_bool(tp, "success") && db_get_int(tp, "code") == 1004);
+    csilk_json_free(tp); free(tr); free(tt); csilk_json_free(ta);
+
+    /* Batch confirm on viewer account -> 1004 */
+    csilk_json_t* ba = csilk_json_array();
+    csilk_json_t* bi = csilk_json_object();
+    csilk_json_add_string(bi, "action_type", "daily_expense");
+    csilk_json_add_number(bi, "amount", 30.0);
+    csilk_json_add_string(bi, "type", "expense");
+    csilk_json_add_number(bi, "category_id", (double)exp_cat);
+    csilk_json_add_number(bi, "asset_id", (double)asset_ro);
+    csilk_json_add_string(bi, "date", "2026-11-20");
+    csilk_json_array_append(ba, bi);
+    char* bt = ai_confirmation_create_batch_token(editor_id, 55, ba, AI_RISK_HIGH, 300);
+    csilk_json_t* bout = NULL;
+    int bcode = 0;
+    char berr[128] = {0};
+    assert(ai_batch_actions_execute_for_session(pool, editor_id, 55, ba, bt, &bout, &bcode, berr, sizeof(berr)) < 0);
+    assert(bcode == 1004);
+    free(bt); csilk_json_free(ba);
+
+    ai_tool_context_free(ed_ctx);
+    printf("  [OK] AI expense/transfer/batch confirm enforce shared-ledger account RBAC (1004)\n");
+}
+
 int main(void) {
     printf("========================================\n");
     printf("Starting Account RBAC & Field Masking Tests\n");
@@ -1282,6 +1411,7 @@ int main(void) {
     test_portfolio_shared_ledger_rbac(pool);
     test_dca_shared_ledger_and_rbac(pool);
     test_cashflow_shared_ledger_and_rbac(pool);
+    test_ai_confirm_shared_ledger_and_rbac(pool);
 
     printf("========================================\n");
     printf("All Account RBAC Tests Passed Successfully!\n");

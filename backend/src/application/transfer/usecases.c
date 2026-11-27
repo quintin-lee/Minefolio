@@ -198,5 +198,6 @@ transfer_usecase_create(void*                        pool,
         return -1;
     }
     out_res->code = 0;
+    out_res->id = transfer_id;
     return 0;
 }

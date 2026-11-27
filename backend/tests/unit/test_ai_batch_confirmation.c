@@ -6,6 +6,9 @@
 #include "common/db.h"
 #include "services/ai/policy/confirmation.h"
 #include "services/ai/tools/batch_tool.h"
+#include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
+#include "application/account/usecases.h"
+#include "core/financial/money.h"
 
 static void
 seed_test_user_and_assets(csilk_db_pool_t* pool,
@@ -452,6 +455,43 @@ main(int argc, char** argv)
         assert(bal2 == 700.0);
         printf("  ✅ Batch execution verified: a1 balance=%.2f, a2 balance=%.2f\n", bal1, bal2);
 
+        /* Verify V014 transfer pairing created by batch transfer */
+        {
+            char uid_str[32];
+            snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+            csilk_json_t* tf_rows = csilk_db_query_param_json(
+                pool,
+                "SELECT id, from_tx_id, to_tx_id FROM transfers WHERE user_id=? ORDER BY id DESC LIMIT 1",
+                (const char*[]){uid_str, NULL});
+            assert(tf_rows != NULL && csilk_json_array_size(tf_rows) == 1);
+            int64_t ftx = db_get_int(csilk_json_array_get(tf_rows, 0), "from_tx_id");
+            int64_t ttx = db_get_int(csilk_json_array_get(tf_rows, 0), "to_tx_id");
+            assert(ftx > 0 && ttx > 0);
+            csilk_json_free(tf_rows);
+
+            char ftx_s[32], ttx_s[32];
+            snprintf(ftx_s, sizeof(ftx_s), "%lld", (long long)ftx);
+            snprintf(ttx_s, sizeof(ttx_s), "%lld", (long long)ttx);
+            csilk_json_t* out_r = csilk_db_query_param_json(
+                pool,
+                "SELECT transaction_type, asset_id, linked_asset_id FROM transactions WHERE id=?",
+                (const char*[]){ftx_s, NULL});
+            csilk_json_t* in_r = csilk_db_query_param_json(
+                pool,
+                "SELECT transaction_type, asset_id, linked_asset_id, parent_tx_id FROM transactions WHERE id=?",
+                (const char*[]){ttx_s, NULL});
+            assert(out_r != NULL && csilk_json_array_size(out_r) == 1);
+            assert(in_r != NULL && csilk_json_array_size(in_r) == 1);
+            assert(strcmp(csilk_json_get_string(csilk_json_array_get(out_r, 0), "transaction_type"), "transfer_out") == 0);
+            assert(strcmp(csilk_json_get_string(csilk_json_array_get(in_r, 0), "transaction_type"), "transfer_in") == 0);
+            assert(db_get_int(csilk_json_array_get(in_r, 0), "parent_tx_id") == ftx);
+            csilk_json_free(out_r);
+            csilk_json_free(in_r);
+            printf("  ✅ Batch transfer V014 pairing verified (from_tx_id=%lld, to_tx_id=%lld)\n",
+                   (long long)ftx,
+                   (long long)ttx);
+        }
+
         /* ------------------------------------------------------------- */
         /* Test 11: Anti-Replay on Execution                            */
         /* ------------------------------------------------------------- */
@@ -570,6 +610,154 @@ main(int argc, char** argv)
             assert(st_match == AI_CONFIRM_OK);
             free(sid_token);
             printf("  ✅ Cross-session batch token strongly rejected (AI_CONFIRM_ERR_SESSION_MISMATCH)\n");
+        }
+
+        /* ------------------------------------------------------------- */
+        /* Test 13: Backdated Batch Expense Invalidates Snapshots From Date */
+        /* ------------------------------------------------------------- */
+        printf("[Test 13] Backdated batch expense invalidates ledger_snapshots from date...\n");
+        {
+            money_t sb;
+            money_from_double(750.0, CURRENCY_CNY, &sb);
+            assert(ledger_snapshot_save(pool, user_id, a1, "2026-11-03", NULL, sb, "2026-11-03", 1, NULL) == 0);
+            assert(ledger_snapshot_save(pool, user_id, a1, "2026-11-12", NULL, sb, "2026-11-12", 2, NULL) == 0);
+            assert(ledger_snapshot_save(pool, user_id, a1, "2026-11-19", NULL, sb, "2026-11-19", 3, NULL) == 0);
+
+            csilk_json_t* bd_acts = csilk_json_array();
+            csilk_json_t* bd_item = csilk_json_object();
+            csilk_json_add_string(bd_item, "action_type", "daily_expense");
+            csilk_json_add_number(bd_item, "amount", 25.0);
+            csilk_json_add_string(bd_item, "type", "expense");
+            csilk_json_add_number(bd_item, "category_id", (double)cat);
+            csilk_json_add_number(bd_item, "asset_id", (double)a1);
+            csilk_json_add_string(bd_item, "date", "2026-11-10");
+            csilk_json_add_string(bd_item, "note", "Backdated batch expense");
+            csilk_json_array_append(bd_acts, bd_item);
+
+            char* bd_tok =
+                ai_confirmation_create_batch_token(user_id, 0, bd_acts, AI_RISK_HIGH, 300);
+            assert(bd_tok != NULL);
+
+            csilk_json_t* bd_out = NULL;
+            int           bd_code = 0;
+            char          bd_err[256] = {0};
+            assert(ai_batch_actions_execute(
+                       pool, user_id, bd_acts, bd_tok, &bd_out, &bd_code, bd_err, sizeof(bd_err)) == 0);
+            csilk_json_free(bd_out);
+            free(bd_tok);
+            csilk_json_free(bd_acts);
+
+            csilk_json_t* snap = NULL;
+            assert(ledger_snapshot_get_latest(pool, user_id, a1, "2026-11-25", &snap) == 0);
+            assert(snap != NULL);
+            assert(strcmp(csilk_json_get_string(snap, "snapshot_date"), "2026-11-03") == 0);
+            csilk_json_free(snap);
+            printf("  ✅ Backdated batch expense invalidated snapshots >= 2026-11-10\n");
+        }
+
+        /* ------------------------------------------------------------- */
+        /* Test 14: Shared-ledger editor with viewer perm rejected (1004) */
+        /* ------------------------------------------------------------- */
+        printf("[Test 14] Shared-ledger editor with viewer permission rejected (1004) in batch...\n");
+        {
+            int64_t sh_owner = 2002;
+            int64_t sh_editor = 2003;
+            int64_t sh_lid = 2;
+            int64_t acct_ro = 20;
+            int64_t acct_rw = 21;
+            int64_t asset_ro = 201;
+            int64_t asset_rw = 202;
+
+            csilk_json_free(csilk_db_query_param_json(
+                pool,
+                "INSERT INTO users (id, username, password) VALUES (2002, 'b_owner', 'h'), (2003, 'b_editor', 'h')",
+                (const char*[]){NULL}));
+            csilk_json_free(csilk_db_query_param_json(
+                pool,
+                "INSERT INTO ledgers (id, owner_id, name, is_default) VALUES (2, 2002, 'SharedBatch', 0)",
+                (const char*[]){NULL}));
+            csilk_json_free(csilk_db_query_param_json(
+                pool,
+                "INSERT INTO ledger_members (ledger_id, user_id, role) VALUES (2, 2002, 'owner'), (2, 2003, 'editor')",
+                (const char*[]){NULL}));
+            csilk_json_free(csilk_db_query_param_json(
+                pool,
+                "INSERT INTO accounts (id, user_id, ledger_id, name, institution) VALUES "
+                "(20, 2002, 2, 'ReadOnlyAcct', 'bank_card'), (21, 2002, 2, 'OperAcct', 'bank_card')",
+                (const char*[]){NULL}));
+            csilk_json_free(csilk_db_query_param_json(
+                pool,
+                "INSERT INTO categories (id, user_id, ledger_id, name, type, icon) VALUES (20, 2002, 2, 'Dining', 'expense', '')",
+                (const char*[]){NULL}));
+            csilk_json_free(csilk_db_query_param_json(
+                pool,
+                "INSERT INTO assets (id, user_id, category_id, account_id, name, current_value, currency, ledger_id) VALUES "
+                "(201, 2002, 20, 20, 'AssetRO', 1000.0, 'CNY', 2), "
+                "(202, 2002, 20, 21, 'AssetRW', 500.0, 'CNY', 2)",
+                (const char*[]){NULL}));
+
+            account_usecase_result_t ares = {0};
+            assert(account_permission_usecase_set(pool, sh_owner, sh_lid, acct_ro, sh_editor, "viewer", 0, 0, &ares) == 0);
+            assert(account_permission_usecase_set(pool, sh_owner, sh_lid, acct_rw, sh_editor, "operator", 0, 0, &ares) == 0);
+
+            /* 14a: Expense on viewer account rejected with 1004 */
+            csilk_json_t* rb_exp = csilk_json_array();
+            csilk_json_t* re1 = csilk_json_object();
+            csilk_json_add_string(re1, "action_type", "daily_expense");
+            csilk_json_add_number(re1, "amount", 40.0);
+            csilk_json_add_string(re1, "type", "expense");
+            csilk_json_add_number(re1, "category_id", 20.0);
+            csilk_json_add_number(re1, "asset_id", (double)asset_ro);
+            csilk_json_add_string(re1, "note", "Forbidden batch expense");
+            csilk_json_array_append(rb_exp, re1);
+
+            char* rb_tok1 =
+                ai_confirmation_create_batch_token(sh_editor, 11, rb_exp, AI_RISK_HIGH, 300);
+            csilk_json_t* rb_out1 = NULL;
+            int           rb_code1 = 0;
+            char          rb_err1[256] = {0};
+            int           rb_rc1 = ai_batch_actions_execute_for_session(
+                pool, sh_editor, 11, rb_exp, rb_tok1, &rb_out1, &rb_code1, rb_err1, sizeof(rb_err1));
+            assert(rb_rc1 < 0);
+            assert(rb_code1 == 1004);
+            free(rb_tok1);
+            csilk_json_free(rb_exp);
+            assert(get_asset_balance(pool, sh_owner, asset_ro) == 1000.0);
+
+            /* 14b: Allowed expense on asset_rw + forbidden transfer to asset_ro -> 1004 and atomic rollback */
+            csilk_json_t* rb_mix = csilk_json_array();
+            csilk_json_t* rm1 = csilk_json_object();
+            csilk_json_add_string(rm1, "action_type", "daily_expense");
+            csilk_json_add_number(rm1, "amount", 50.0);
+            csilk_json_add_string(rm1, "type", "expense");
+            csilk_json_add_number(rm1, "category_id", 20.0);
+            csilk_json_add_number(rm1, "asset_id", (double)asset_rw);
+            csilk_json_add_string(rm1, "note", "Allowed item before forbidden transfer");
+            csilk_json_array_append(rb_mix, rm1);
+
+            csilk_json_t* rm2 = csilk_json_object();
+            csilk_json_add_string(rm2, "action_type", "transfer");
+            csilk_json_add_number(rm2, "amount", 100.0);
+            csilk_json_add_number(rm2, "from_asset_id", (double)asset_rw);
+            csilk_json_add_number(rm2, "to_asset_id", (double)asset_ro);
+            csilk_json_add_string(rm2, "note", "Forbidden transfer to RO");
+            csilk_json_array_append(rb_mix, rm2);
+
+            char* rb_tok2 =
+                ai_confirmation_create_batch_token(sh_editor, 12, rb_mix, AI_RISK_HIGH, 300);
+            csilk_json_t* rb_out2 = NULL;
+            int           rb_code2 = 0;
+            char          rb_err2[256] = {0};
+            int           rb_rc2 = ai_batch_actions_execute_for_session(
+                pool, sh_editor, 12, rb_mix, rb_tok2, &rb_out2, &rb_code2, rb_err2, sizeof(rb_err2));
+            assert(rb_rc2 < 0);
+            assert(rb_code2 == 1004);
+            free(rb_tok2);
+            csilk_json_free(rb_mix);
+
+            assert(get_asset_balance(pool, sh_owner, asset_ro) == 1000.0);
+            assert(get_asset_balance(pool, sh_owner, asset_rw) == 500.0);
+            printf("  ✅ Shared-ledger editor with viewer perm rejected (1004) with atomic rollback in batch\n");
         }
 
         free(token);
