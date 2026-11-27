@@ -193,11 +193,16 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** 会话列表请求序号：防止登出 resetState() 或并发刷新后过期列表响应覆盖当前账号状态 */
+  let sessionListSeq = 0
+
   /**
    * 从服务端获取会话历史列表 (默认最新 50 条)
    */
   async function fetchSessions() {
+    const seq = ++sessionListSeq
     const r = (await listSessions({ page_size: 50 })) as unknown
+    if (seq !== sessionListSeq) return
     const rawList = r && typeof r === 'object' && 'list' in r && Array.isArray((r as { list: unknown }).list) ? (r as { list: Record<string, unknown>[] }).list : []
     sessions.value = rawList.map((s) => ({
       id: Number(s.id),
@@ -268,6 +273,15 @@ export const useChatStore = defineStore('chat', () => {
 
   /** 会话切换请求序号：用于丢弃切走后返回的过期/乱序 selectSession 与 loadMoreMessages 结果 */
   let sessionSwitchSeq = 0
+
+  /**
+   * 创建新会话并校验 await 期间未发生切会话或登出重置
+   */
+  async function ensureNewSession(): Promise<boolean> {
+    const seqBefore = sessionSwitchSeq
+    const created = await createNewSession()
+    return sessionSwitchSeq === seqBefore + 1 && currentSessionId.value === created.id
+  }
 
   /**
    * 选中并切换到指定的对话会话，加载其首屏消息列表
@@ -433,6 +447,8 @@ export const useChatStore = defineStore('chat', () => {
    * 泄露给同一设备上的下一位登录用户)
    */
   function resetState() {
+    sessionSwitchSeq++
+    sessionListSeq++
     abortCurrentStream()
     sessions.value = []
     currentSessionId.value = null
@@ -716,8 +732,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function doSendMessage(content: string) {
-    const sid = currentSessionId.value
-    if (!sid) await createNewSession()
+    if (!currentSessionId.value && !(await ensureNewSession())) return
 
     const userMsg: AiMessage = {
       id: Date.now(),
@@ -843,8 +858,7 @@ export const useChatStore = defineStore('chat', () => {
     const targetWf = workflows.value.find(w => w.id === workflowId)
     const wfTitle = targetWf ? targetWf.title : '智能财务工作流'
 
-    const sid = currentSessionId.value
-    if (!sid) await createNewSession()
+    if (!currentSessionId.value && !(await ensureNewSession())) return
 
     // 1. 添加用户提示消息
     const userMsg: AiMessage = {
@@ -1003,8 +1017,7 @@ export const useChatStore = defineStore('chat', () => {
     if (isStreaming.value) return
     const targetWf = workflows.value.find(w => w.id === workflowId)
     if (!targetWf) return
-    const sid = currentSessionId.value
-    if (!sid) await createNewSession()
+    if (!currentSessionId.value && !(await ensureNewSession())) return
 
     const configMsg: AiMessage = reactive({
       id: Date.now(),
