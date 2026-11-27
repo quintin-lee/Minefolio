@@ -104,6 +104,8 @@ jobs:
           ./tests/test_im_bot.sh
           ./tests/test_im_bind_auth.sh
           ./tests/test_gateway.sh
+          ./tests/test_ilink_scheduler_push.sh
+          ./tests/test_im_bot_instance.sh
 
   backend-sanitizers-postgres:
     name: Backend ASan & UBSan Tests (PostgreSQL)
@@ -181,3 +183,5 @@ jobs:
           ./tests/test_im_bot.sh
           ./tests/test_im_bind_auth.sh
           ./tests/test_gateway.sh
+          ./tests/test_ilink_scheduler_push.sh
+          ./tests/test_im_bot_instance.sh
