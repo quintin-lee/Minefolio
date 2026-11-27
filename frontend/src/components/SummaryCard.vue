@@ -20,7 +20,7 @@ import { computed } from 'vue'
 const props = defineProps<{
   label: string
   value: string | number
-  type?: 'neutral' | 'income' | 'expense' | 'highlight' | 'gain' | 'loss'
+  type?: 'neutral' | 'income' | 'expense' | 'asset' | 'liability' | 'highlight' | 'gain' | 'loss'
   badge?: string
   badgeType?: 'success' | 'danger' | 'warning' | 'primary' | 'neutral' | 'gain' | 'loss'
   subtext?: string
@@ -31,6 +31,8 @@ const typeClass = computed(() => {
   const map: Record<string, string> = {
     income: 'is-income',
     expense: 'is-expense',
+    asset: 'is-asset',
+    liability: 'is-liability',
     highlight: 'highlight-card',
     gain: 'is-gain',
     loss: 'is-loss',
@@ -41,6 +43,8 @@ const typeClass = computed(() => {
 const glowClass = computed(() => {
   if (props.type === 'income') return 'glow-income'
   if (props.type === 'expense') return 'glow-expense'
+  if (props.type === 'asset') return 'glow-asset'
+  if (props.type === 'liability') return 'glow-liability'
   if (props.type === 'highlight') return 'glow-highlight'
   if (props.type === 'gain') return 'glow-gain'
   if (props.type === 'loss') return 'glow-loss'
@@ -49,13 +53,16 @@ const glowClass = computed(() => {
 
 const valueClass = computed(() => {
   const map: Record<string, string> = {
+    neutral: 'neutral-value',
     income: 'income-text',
     expense: 'expense-text',
+    asset: 'asset-text',
+    liability: 'liability-text',
     highlight: 'highlight-text',
     gain: 'gain-text',
     loss: 'loss-text',
   }
-  return map[props.type ?? 'neutral'] ?? ''
+  return map[props.type ?? 'neutral'] ?? 'neutral-value'
 })
 
 const badgeClass = computed(() => {
@@ -110,9 +117,11 @@ const badgeArrow = computed(() => {
   opacity: 0.6;
 }
 
-.glow-neutral { background: var(--mf-primary); }
-.glow-income { background: var(--mf-gain); }
-.glow-expense { background: var(--mf-loss); }
+.glow-neutral { background: var(--mf-text-muted); opacity: 0.15; }
+.glow-income { background: var(--mf-income); }
+.glow-expense { background: var(--mf-expense); }
+.glow-asset { background: var(--mf-asset); }
+.glow-liability { background: var(--mf-liability); }
 .glow-highlight { background: var(--mf-accent); }
 .glow-gain { background: var(--mf-gain); }
 .glow-loss { background: var(--mf-loss); }
@@ -200,11 +209,31 @@ const badgeArrow = computed(() => {
   margin-top: 6px;
 }
 
+.neutral-value {
+  color: var(--mf-amount-zero);
+}
+
 .income-text {
-  color: var(--mf-gain);
+  color: var(--mf-income);
 }
 
 .expense-text {
+  color: var(--mf-expense);
+}
+
+.asset-text {
+  color: var(--mf-asset);
+}
+
+.liability-text {
+  color: var(--mf-liability);
+}
+
+.gain-text {
+  color: var(--mf-gain);
+}
+
+.loss-text {
   color: var(--mf-loss);
 }
 
@@ -213,10 +242,26 @@ const badgeArrow = computed(() => {
 }
 
 [data-theme="dark"] .income-text {
-  text-shadow: 0 0 12px var(--mf-gain-light);
+  text-shadow: 0 0 12px var(--mf-income-light);
 }
 
 [data-theme="dark"] .expense-text {
+  text-shadow: 0 0 12px var(--mf-expense-light);
+}
+
+[data-theme="dark"] .asset-text {
+  text-shadow: 0 0 12px var(--mf-asset-light);
+}
+
+[data-theme="dark"] .liability-text {
+  text-shadow: 0 0 12px var(--mf-liability-light);
+}
+
+[data-theme="dark"] .gain-text {
+  text-shadow: 0 0 12px var(--mf-gain-light);
+}
+
+[data-theme="dark"] .loss-text {
   text-shadow: 0 0 12px var(--mf-loss-light);
 }
 

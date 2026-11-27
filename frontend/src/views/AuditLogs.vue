@@ -37,7 +37,7 @@
         </el-table-column>
         <el-table-column prop="delta" label="变动" width="140" align="right">
           <template #default="{ row }">
-            <span :class="['mono-amount', row.delta > 0 ? 'income-text' : row.delta < 0 ? 'expense-text' : '']">
+            <span :class="['mono-amount', row.delta > 0 ? 'income-text' : row.delta < 0 ? 'expense-text' : 'zero-text']">
               {{ row.delta > 0 ? '+' : '' }}{{ formatCurrency(row.delta) }}
             </span>
           </template>
@@ -262,9 +262,6 @@ onMounted(async () => {
   font-weight: 600;
   font-size: 15px;
 }
-
-.income-text { color: var(--mf-gain) !important; font-weight: 600; }
-.expense-text { color: var(--mf-loss) !important; font-weight: 600; }
 
 .type-badge {
   font-weight: 600;

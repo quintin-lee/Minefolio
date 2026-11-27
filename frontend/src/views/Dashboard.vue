@@ -50,8 +50,8 @@
 
           <div class="hero-amount-row">
             <div class="hero-val-wrap">
-              <span class="currency-symbol">{{ splitCurrency(displayNetWorth).symbol }}</span>
-              <span class="hero-main-val tabular-nums">{{ splitCurrency(displayNetWorth).value }}</span>
+              <span class="currency-symbol" :class="{ 'zero-text': displayNetWorth === 0 }">{{ splitCurrency(displayNetWorth).symbol }}</span>
+              <span class="hero-main-val tabular-nums" :class="displayNetWorth < 0 ? 'expense-text' : displayNetWorth === 0 ? 'zero-text' : ''">{{ splitCurrency(displayNetWorth).value }}</span>
             </div>
             <!-- 平滑发光 Sparkline 迷你走势 -->
             <div v-if="sparklinePoints && sparklineData.length > 1" class="hero-sparkline-wrap">
@@ -107,7 +107,7 @@
                 <Icon icon="ph:wallet" />
               </div>
             </div>
-            <div class="sub-val tabular-nums text-primary">{{ formatCurrency(displayTotalAssets) }}</div>
+            <div class="sub-val tabular-nums" :class="positiveAmountClass(displayTotalAssets, 'asset-text')">{{ formatCurrency(displayTotalAssets) }}</div>
           </div>
 
           <!-- 总负债 -->
@@ -115,13 +115,13 @@
             <div class="sub-header">
               <div class="sub-title-row">
                 <span class="sub-title">负债总额</span>
-                <span class="debt-ratio-badge tabular-nums">负债率 {{ debtRatio }}</span>
+                <span class="debt-ratio-badge tabular-nums" :class="{ 'is-zero': Math.abs(displayTotalLiabilities) === 0 }">负债率 {{ debtRatio }}</span>
               </div>
               <div class="sub-icon-wrap liabilities">
                 <Icon icon="ph:credit-card" />
               </div>
             </div>
-            <div class="sub-val tabular-nums expense-text">{{ formatCurrency(Math.abs(displayTotalLiabilities)) }}</div>
+            <div class="sub-val tabular-nums" :class="positiveAmountClass(Math.abs(displayTotalLiabilities), 'liability-text')">{{ formatCurrency(Math.abs(displayTotalLiabilities)) }}</div>
           </div>
 
           <!-- 本月结余 -->
@@ -134,7 +134,7 @@
             </div>
             <div
               class="sub-val tabular-nums"
-              :class="(currentMonthBalance?.balance ?? 0) >= 0 ? 'income-text' : 'expense-text'"
+              :class="amountClass(currentMonthBalance?.balance ?? 0)"
             >
               {{ formatCurrencyValue(currentMonthBalance?.balance ?? 0, 'CNY') }}
             </div>
@@ -150,9 +150,9 @@
             </div>
             <div
               class="sub-val tabular-nums"
-              :class="positionOverview.daily_pnl >= 0 ? 'income-text' : 'expense-text'"
+              :class="amountClass(positionOverview.daily_pnl, 'gain-text', 'loss-text')"
             >
-              {{ positionOverview.daily_pnl >= 0 ? '+' : '' }}{{ formatCurrencyValue(positionOverview.daily_pnl, 'CNY') }}
+              {{ positionOverview.daily_pnl > 0 ? '+' : '' }}{{ formatCurrencyValue(positionOverview.daily_pnl, 'CNY') }}
             </div>
           </div>
         </div>
@@ -178,8 +178,8 @@
             />
             <span v-if="positionOverview.total_pnl !== 0" class="total-pnl-inline">
               累计收益
-              <span :class="positionOverview.total_pnl >= 0 ? 'income-text' : 'expense-text'">
-                {{ positionOverview.total_pnl >= 0 ? '+' : '' }}{{ formatCurrencyValue(positionOverview.total_pnl, 'CNY') }}
+              <span :class="amountClass(positionOverview.total_pnl, 'gain-text', 'loss-text')">
+                {{ positionOverview.total_pnl > 0 ? '+' : '' }}{{ formatCurrencyValue(positionOverview.total_pnl, 'CNY') }}
               </span>
             </span>
           </div>
@@ -267,6 +267,7 @@ import { reportsApi } from '@/api/reports'
 import { dcaApi } from '@/api/dca'
 import { marketApi } from '@/api/market'
 import type { Summary, DailyExpense, MultiCurrencySummary, PositionOverview } from '@/types'
+import { amountClass, positiveAmountClass } from '@/utils/format'
 import { getSwrCache, setSwrCache } from '@/utils/swr-cache'
 import DashboardSkeleton from '@/components/dashboard/DashboardSkeleton.vue'
 import NetWorthChart from '@/components/NetWorthChart.vue'
@@ -788,9 +789,15 @@ onMounted(loadDashboard)
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: var(--mf-danger-light);
-  color: var(--mf-danger);
-  border: 1px solid var(--mf-danger-border);
+  background: var(--mf-liability-light);
+  color: var(--mf-liability);
+  border: 1px solid var(--mf-liability-border);
+}
+
+.debt-ratio-badge.is-zero {
+  background: var(--mf-surface-muted);
+  color: var(--mf-text-muted);
+  border-color: var(--mf-border);
 }
 
 .sub-icon-wrap {
@@ -804,13 +811,13 @@ onMounted(loadDashboard)
 }
 
 .sub-icon-wrap.assets {
-  background: var(--mf-primary-light);
-  color: var(--mf-primary);
+  background: var(--mf-asset-light);
+  color: var(--mf-asset);
 }
 
 .sub-icon-wrap.liabilities {
-  background: var(--mf-danger-light);
-  color: var(--mf-danger);
+  background: var(--mf-liability-light);
+  color: var(--mf-liability);
 }
 
 .sub-icon-wrap.monthly {
@@ -903,24 +910,6 @@ onMounted(loadDashboard)
 
 .nw-chart-wrap {
   height: 310px;
-}
-
-.income-text {
-  color: var(--mf-gain) !important;
-  font-weight: 600;
-}
-
-.expense-text {
-  color: var(--mf-loss) !important;
-  font-weight: 600;
-}
-
-[data-theme="dark"] .income-text {
-  text-shadow: 0 0 8px rgba(244, 63, 94, 0.3);
-}
-
-[data-theme="dark"] .expense-text {
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
 }
 
 .stream-category-pill {

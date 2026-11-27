@@ -35,6 +35,10 @@ export interface MfChartPalette {
   success: string
   danger: string
   warning: string
+  income: string
+  expense: string
+  asset: string
+  liability: string
   gain: string
   loss: string
 }
@@ -59,6 +63,10 @@ const DEFAULTS: Omit<MfChartPalette, 'isLight'> = {
   success: '#10b981',
   danger: '#f43f5e',
   warning: '#f59e0b',
+  income: '#10b981',
+  expense: '#f43f5e',
+  asset: '#06b6d4',
+  liability: '#f59e0b',
   gain: '#f43f5e',
   loss: '#10b981',
 }
@@ -94,6 +102,10 @@ export function resolveChartPalette(): MfChartPalette {
     success: get('success', DEFAULTS.success),
     danger: get('danger', DEFAULTS.danger),
     warning: get('warning', DEFAULTS.warning),
+    income: get('income', DEFAULTS.income),
+    expense: get('expense', DEFAULTS.expense),
+    asset: get('asset', DEFAULTS.asset),
+    liability: get('liability', DEFAULTS.liability),
     gain: get('gain', DEFAULTS.gain),
     loss: get('loss', DEFAULTS.loss),
   }

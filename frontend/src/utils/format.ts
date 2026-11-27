@@ -145,3 +145,29 @@ export function isIncomeTransaction(tx: { direction?: string; transaction_type?:
   return LEGACY_INCOME_TX_TYPES.has(tx.transaction_type || '')
 }
 
+/**
+ * 根据数值正负零返回语义化颜色类名，零值统一返回中性色类名
+ */
+export function amountClass(
+  val: number | null | undefined,
+  positiveClass = 'income-text',
+  negativeClass = 'expense-text',
+  zeroClass = 'zero-text',
+): string {
+  const n = Number(val) || 0
+  if (n > 0) return positiveClass
+  if (n < 0) return negativeClass
+  return zeroClass
+}
+
+/**
+ * 仅区分「非零正向」与「零值」的语义化类名（如总资产、总负债、总投入）
+ */
+export function positiveAmountClass(
+  val: number | null | undefined,
+  activeClass: string,
+  zeroClass = 'zero-text',
+): string {
+  return (Number(val) || 0) > 0 ? activeClass : zeroClass
+}
+

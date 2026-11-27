@@ -48,19 +48,19 @@
         <!-- 定投计划总览指标 -->
         <el-row :gutter="20" class="summary-cards">
           <el-col :xs="12" :sm="6">
-            <SummaryCard label="活跃定投计划" :value="`${activePlanCount} 个`" type="highlight" />
+            <SummaryCard label="活跃定投计划" :value="`${activePlanCount} 个`" :type="activePlanCount > 0 ? 'highlight' : 'neutral'" />
           </el-col>
           <el-col :xs="12" :sm="6">
-            <SummaryCard label="累计定投总投入" :value="`¥${formatNumber(totalDcaInvested)}`" type="expense" />
+            <SummaryCard label="累计定投总投入" :value="`¥${formatNumber(totalDcaInvested)}`" :type="totalDcaInvested > 0 ? 'asset' : 'neutral'" />
           </el-col>
           <el-col :xs="12" :sm="6">
-            <SummaryCard label="定投标的当前总市值" :value="`¥${formatNumber(totalDcaCurrentValue)}`" type="income" />
+            <SummaryCard label="定投标的当前总市值" :value="`¥${formatNumber(totalDcaCurrentValue)}`" :type="totalDcaCurrentValue > 0 ? 'asset' : 'neutral'" />
           </el-col>
           <el-col :xs="12" :sm="6">
             <SummaryCard
               label="定投整体浮动盈亏"
-              :value="`${totalDcaPnl >= 0 ? '+' : ''}¥${formatNumber(totalDcaPnl)} (${totalDcaPnlPct.toFixed(2)}%)`"
-              :type="totalDcaPnl >= 0 ? 'income' : 'expense'"
+              :value="`${totalDcaPnl > 0 ? '+' : ''}¥${formatNumber(totalDcaPnl)} (${totalDcaPnlPct.toFixed(2)}%)`"
+              :type="totalDcaPnl > 0 ? 'gain' : totalDcaPnl < 0 ? 'loss' : 'neutral'"
             />
           </el-col>
         </el-row>

@@ -6,7 +6,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import type { ExpenseYearlyReport } from '@/api/reports'
-import { resolveChartPalette, useChartThemeSync, modernTooltipConfig } from '@/utils/echarts-theme'
+import { resolveChartPalette, useChartThemeSync, modernTooltipConfig, shade, withAlpha } from '@/utils/echarts-theme'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
 
 const props = withDefaults(defineProps<{
@@ -104,14 +104,14 @@ function updateChart() {
         itemStyle: {
           borderRadius: [4, 4, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#10b981' },
-            { offset: 1, color: '#059669' }
+            { offset: 0, color: P.income },
+            { offset: 1, color: shade(P.income, 0.78) }
           ])
         },
         emphasis: {
           itemStyle: {
             shadowBlur: 10,
-            shadowColor: 'rgba(16, 185, 129, 0.4)'
+            shadowColor: withAlpha(P.income, 0.4)
           }
         }
       },
@@ -123,14 +123,14 @@ function updateChart() {
         itemStyle: {
           borderRadius: [4, 4, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#f43f5e' },
-            { offset: 1, color: '#e11d48' }
+            { offset: 0, color: P.expense },
+            { offset: 1, color: shade(P.expense, 0.78) }
           ])
         },
         emphasis: {
           itemStyle: {
             shadowBlur: 10,
-            shadowColor: 'rgba(244, 63, 94, 0.4)'
+            shadowColor: withAlpha(P.expense, 0.4)
           }
         }
       },

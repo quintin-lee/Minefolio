@@ -13,15 +13,15 @@
     <!-- 汇总卡片 -->
     <el-row :gutter="16">
       <el-col :xs="24" :sm="12" :md="8">
-        <SummaryCard label="总市值" :value="formatCurrency(report?.summary.total_market_value ?? 0)" type="highlight" />
+        <SummaryCard label="总市值" :value="formatCurrency(report?.summary.total_market_value ?? 0)" :type="(report?.summary.total_market_value ?? 0) > 0 ? 'asset' : 'neutral'" />
       </el-col>
       <el-col :xs="24" :sm="12" :md="8">
         <SummaryCard
           label="总浮动盈亏"
           :value="formatSigned(report?.summary.total_floating_pnl ?? 0)"
           :type="(report?.summary.total_floating_pnl ?? 0) > 0 ? 'gain' : (report?.summary.total_floating_pnl ?? 0) < 0 ? 'loss' : 'neutral'"
-          :badge="`${(report?.summary.floating_pct ?? 0) >= 0 ? '+' : ''}${(report?.summary.floating_pct ?? 0).toFixed(2)}%`"
-          :badgeType="(report?.summary.total_floating_pnl ?? 0) >= 0 ? 'gain' : 'loss'"
+          :badge="`${(report?.summary.floating_pct ?? 0) > 0 ? '+' : ''}${(report?.summary.floating_pct ?? 0).toFixed(2)}%`"
+          :badgeType="(report?.summary.total_floating_pnl ?? 0) > 0 ? 'gain' : (report?.summary.total_floating_pnl ?? 0) < 0 ? 'loss' : 'neutral'"
           :extraClass="floatCardClass"
         />
         <el-progress
@@ -37,7 +37,7 @@
           label="总已实现盈亏"
           :value="formatSigned(report?.summary.total_realized_pnl ?? 0)"
           :type="(report?.summary.total_realized_pnl ?? 0) > 0 ? 'gain' : (report?.summary.total_realized_pnl ?? 0) < 0 ? 'loss' : 'neutral'"
-          :badgeType="(report?.summary.total_realized_pnl ?? 0) >= 0 ? 'gain' : 'loss'"
+          :badgeType="(report?.summary.total_realized_pnl ?? 0) > 0 ? 'gain' : (report?.summary.total_realized_pnl ?? 0) < 0 ? 'loss' : 'neutral'"
         />
       </el-col>
     </el-row>

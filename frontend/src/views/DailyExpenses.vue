@@ -45,13 +45,13 @@
           <!-- 月度汇总 -->
           <el-row :gutter="16" class="monthly-summary">
             <el-col :xs="24" :sm="8">
-              <SummaryCard label="本月收入" :value="formatCurrency(monthSummary?.total_income ?? 0)" type="income" />
+              <SummaryCard label="本月收入" :value="formatCurrency(monthSummary?.total_income ?? 0)" :type="(monthSummary?.total_income ?? 0) > 0 ? 'income' : 'neutral'" />
             </el-col>
             <el-col :xs="24" :sm="8">
-              <SummaryCard label="本月支出" :value="formatCurrency(monthSummary?.total_expense ?? 0)" type="expense" />
+              <SummaryCard label="本月支出" :value="formatCurrency(monthSummary?.total_expense ?? 0)" :type="(monthSummary?.total_expense ?? 0) > 0 ? 'expense' : 'neutral'" />
             </el-col>
             <el-col :xs="24" :sm="8">
-              <SummaryCard label="本月结余" :value="formatCurrency(monthSummary?.balance ?? 0)" type="highlight" />
+              <SummaryCard label="本月结余" :value="formatCurrency(monthSummary?.balance ?? 0)" :type="(monthSummary?.balance ?? 0) > 0 ? 'income' : (monthSummary?.balance ?? 0) < 0 ? 'expense' : 'neutral'" />
             </el-col>
           </el-row>
 
@@ -63,7 +63,7 @@
               <el-table-column prop="category_name" label="分类" min-width="96" show-overflow-tooltip />
               <el-table-column prop="expense_type" label="类型" width="70">
                 <template #default="{ row }">
-                  <el-tag :type="row.expense_type === 'income' ? 'danger' : 'success'" effect="light" class="type-badge" round>
+                  <el-tag :type="row.expense_type === 'income' ? 'success' : 'danger'" effect="light" class="type-badge" round>
                     {{ row.expense_type === 'income' ? '收入' : '支出' }}
                   </el-tag>
                 </template>
@@ -626,21 +626,6 @@ async function handleImport() {
   font-weight: 700;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   letter-spacing: -0.5px;
-}
-
-.income-text {
-  color: var(--mf-gain) !important;
-  font-weight: 600;
-}
-.expense-text {
-  color: var(--mf-loss) !important;
-  font-weight: 600;
-}
-[data-theme="dark"] .income-text {
-  text-shadow: 0 0 8px rgba(244, 63, 94, 0.3);
-}
-[data-theme="dark"] .expense-text {
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
 }
 
 .main-panel {

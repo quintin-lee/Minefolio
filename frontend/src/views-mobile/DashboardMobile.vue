@@ -158,6 +158,6 @@ onMounted(async () => {
 .record-card { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--mf-border); }
 .record-card .cat { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .record-card span:last-child { flex-shrink: 0; white-space: nowrap; }
-.income { color: var(--mf-gain); } .expense { color: var(--mf-loss); }
+.income { color: var(--mf-income); } .expense { color: var(--mf-expense); }
 .empty-state { text-align: center; color: var(--mf-text-muted); padding: 20px 0; font-size: 13px; }
 </style>

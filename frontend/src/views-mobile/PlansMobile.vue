@@ -566,8 +566,8 @@ onBeforeUnmount(() => {
   font-size: 16px;
   font-weight: 700;
 }
-.income { color: var(--mf-gain); }
-.expense { color: var(--mf-loss); }
+.income { color: var(--mf-income); }
+.expense { color: var(--mf-expense); }
 .highlight { color: var(--mf-primary); }
 .plan-card {
   background: var(--mf-surface-card);

@@ -50,6 +50,26 @@
   --mf-info-light: rgba(2, 132, 199, 0.14);
   --mf-info-border: rgba(2, 132, 199, 0.3);
 
+  /* Financial Semantic Tokens (Cashflow, Balance Sheet & Zero State) */
+  --mf-income: #10b981;
+  --mf-income-light: rgba(16, 185, 129, 0.14);
+  --mf-income-border: rgba(16, 185, 129, 0.3);
+  --mf-expense: #f43f5e;
+  --mf-expense-light: rgba(244, 63, 94, 0.14);
+  --mf-expense-border: rgba(244, 63, 94, 0.3);
+  --mf-asset: #06b6d4;
+  --mf-asset-light: rgba(6, 182, 212, 0.14);
+  --mf-asset-border: rgba(6, 182, 212, 0.3);
+  --mf-liability: #f59e0b;
+  --mf-liability-light: rgba(245, 158, 11, 0.14);
+  --mf-liability-border: rgba(245, 158, 11, 0.3);
+  --mf-amount-zero: var(--mf-text-muted);
+
+  /* Opaque Sticky Table Surfaces (prevent bleed-through on horizontal scroll) */
+  --mf-table-sticky-bg: #111827;
+  --mf-table-sticky-header-bg: #172236;
+  --mf-table-sticky-hover-bg: #1e293b;
+
   /* Investment Return Colors (Red for Positive Returns, Green for Negative Returns) */
   --mf-gain: #f43f5e;
   --mf-gain-light: rgba(244, 63, 94, 0.14);
@@ -242,6 +262,26 @@
   --mf-info: #0284c7;
   --mf-info-light: rgba(2, 132, 199, 0.1);
   --mf-info-border: rgba(2, 132, 199, 0.25);
+
+  /* Financial Semantic Tokens (Cashflow, Balance Sheet & Zero State) */
+  --mf-income: #059669;
+  --mf-income-light: rgba(5, 150, 105, 0.1);
+  --mf-income-border: rgba(5, 150, 105, 0.25);
+  --mf-expense: #e11d48;
+  --mf-expense-light: rgba(225, 29, 72, 0.1);
+  --mf-expense-border: rgba(225, 29, 72, 0.25);
+  --mf-asset: #0891b2;
+  --mf-asset-light: rgba(8, 145, 178, 0.1);
+  --mf-asset-border: rgba(8, 145, 178, 0.25);
+  --mf-liability: #d97706;
+  --mf-liability-light: rgba(217, 119, 6, 0.1);
+  --mf-liability-border: rgba(217, 119, 6, 0.25);
+  --mf-amount-zero: var(--mf-text-muted);
+
+  /* Opaque Sticky Table Surfaces (prevent bleed-through on horizontal scroll) */
+  --mf-table-sticky-bg: #ffffff;
+  --mf-table-sticky-header-bg: #f1f5f9;
+  --mf-table-sticky-hover-bg: #f1f5f9;
 
   /* Investment Return Colors (Red for Positive Returns, Green for Negative Returns) */
   --mf-gain: #e11d48;
@@ -516,6 +556,31 @@ body {
 }
 .el-table__body tr:hover > td.el-table__cell {
   background-color: var(--mf-surface-hover) !important;
+}
+/* Opaque sticky fixed-right column so scrolling headers/cells never bleed through */
+.el-table th.el-table-fixed-column--right {
+  background-color: var(--mf-table-sticky-header-bg) !important;
+  z-index: 3 !important;
+}
+.el-table td.el-table-fixed-column--right {
+  background-color: var(--mf-table-sticky-bg) !important;
+  z-index: 2 !important;
+}
+.el-table__body tr:hover > td.el-table-fixed-column--right {
+  background-color: var(--mf-table-sticky-hover-bg) !important;
+}
+.el-table.is-scrolling-left th.el-table-fixed-column--right.is-first-column,
+.el-table.is-scrolling-left td.el-table-fixed-column--right.is-first-column,
+.el-table.is-scrolling-middle th.el-table-fixed-column--right.is-first-column,
+.el-table.is-scrolling-middle td.el-table-fixed-column--right.is-first-column {
+  box-shadow: -8px 0 16px -6px rgba(0, 0, 0, 0.35);
+  border-left: 1px solid var(--mf-border-subtle);
+}
+[data-theme="light"] .el-table.is-scrolling-left th.el-table-fixed-column--right.is-first-column,
+[data-theme="light"] .el-table.is-scrolling-left td.el-table-fixed-column--right.is-first-column,
+[data-theme="light"] .el-table.is-scrolling-middle th.el-table-fixed-column--right.is-first-column,
+[data-theme="light"] .el-table.is-scrolling-middle td.el-table-fixed-column--right.is-first-column {
+  box-shadow: -8px 0 16px -6px rgba(15, 23, 42, 0.12);
 }
 .el-table__empty-text {
   color: var(--mf-text-placeholder) !important;
@@ -1108,12 +1173,22 @@ html.dark .el-popper.el-tooltip .el-popper__arrow::before {
    Financial Indicators & Utility Badges
    ========================================================================= */
 .income-text {
-  color: var(--mf-gain) !important;
+  color: var(--mf-income) !important;
   font-weight: 600;
 }
 
 .expense-text {
-  color: var(--mf-loss) !important;
+  color: var(--mf-expense) !important;
+  font-weight: 600;
+}
+
+.asset-text {
+  color: var(--mf-asset) !important;
+  font-weight: 600;
+}
+
+.liability-text {
+  color: var(--mf-liability) !important;
   font-weight: 600;
 }
 
@@ -1130,22 +1205,17 @@ html.dark .el-popper.el-tooltip .el-popper__arrow::before {
 }
 
 [data-theme="light"] .income-text,
-html.light .income-text {
-  text-shadow: none !important;
-}
-
+html.light .income-text,
 [data-theme="light"] .expense-text,
-html.light .expense-text {
-  text-shadow: none !important;
-}
-
+html.light .expense-text,
+[data-theme="light"] .asset-text,
+html.light .asset-text,
+[data-theme="light"] .liability-text,
+html.light .liability-text,
 [data-theme="light"] .positive-text,
 [data-theme="light"] .gain-text,
 html.light .positive-text,
-html.light .gain-text {
-  text-shadow: none !important;
-}
-
+html.light .gain-text,
 [data-theme="light"] .negative-text,
 [data-theme="light"] .loss-text,
 html.light .negative-text,
@@ -1154,25 +1224,35 @@ html.light .loss-text {
 }
 
 [data-theme="dark"] .income-text {
-  text-shadow: 0 0 8px rgba(244, 63, 94, 0.3);
+  text-shadow: 0 0 8px var(--mf-income-light);
 }
 
 [data-theme="dark"] .expense-text {
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
+  text-shadow: 0 0 8px var(--mf-expense-light);
+}
+
+[data-theme="dark"] .asset-text {
+  text-shadow: 0 0 8px var(--mf-asset-light);
+}
+
+[data-theme="dark"] .liability-text {
+  text-shadow: 0 0 8px var(--mf-liability-light);
 }
 
 [data-theme="dark"] .positive-text,
 [data-theme="dark"] .gain-text {
-  text-shadow: 0 0 8px rgba(244, 63, 94, 0.3);
+  text-shadow: 0 0 8px var(--mf-gain-light);
 }
 
 [data-theme="dark"] .negative-text,
 [data-theme="dark"] .loss-text {
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
+  text-shadow: 0 0 8px var(--mf-loss-light);
 }
 
+.zero-text,
 .neutral-text {
-  color: var(--mf-text-muted) !important;
+  color: var(--mf-amount-zero) !important;
+  text-shadow: none !important;
 }
 
 /* Semantic Utility Colors */

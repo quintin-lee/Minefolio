@@ -150,7 +150,7 @@ onMounted(() => loadData(true))
 .tx-card .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 16px; }
 .tx-card .top span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tx-card .bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--mf-text-muted); font-size: 12px; margin-top: 6px; }
-.income { color: var(--mf-gain); flex-shrink: 0; white-space: nowrap; } .expense { color: var(--mf-loss); flex-shrink: 0; white-space: nowrap; }
+.income { color: var(--mf-income); flex-shrink: 0; white-space: nowrap; } .expense { color: var(--mf-expense); flex-shrink: 0; white-space: nowrap; }
 .load-more-wrap { display: flex; justify-content: center; margin: 16px 0 24px; }
 .load-more-btn { width: 100%; border-radius: var(--mf-radius-md); color: var(--mf-text-muted); }
 </style>

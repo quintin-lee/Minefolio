@@ -143,7 +143,9 @@ const unrealizedPct = computed(() => {
 const dailyChange = computed(() => assetDetail.value?.daily_change ?? null)
 
 function pnlClass(val: number): string {
-  return val >= 0 ? 'gain-text' : 'loss-text'
+  if (val > 0) return 'gain-text'
+  if (val < 0) return 'loss-text'
+  return 'zero-text'
 }
 
 async function loadAsset() {

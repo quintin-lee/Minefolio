@@ -178,7 +178,7 @@ onMounted(() => loadData(true))
 .expense-card .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 16px; }
 .expense-card .top .cat { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .expense-card .bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--mf-text-muted); font-size: 12px; margin-top: 6px; }
-.income { color: var(--mf-gain); flex-shrink: 0; white-space: nowrap; } .expense { color: var(--mf-loss); flex-shrink: 0; white-space: nowrap; }
+.income { color: var(--mf-income); flex-shrink: 0; white-space: nowrap; } .expense { color: var(--mf-expense); flex-shrink: 0; white-space: nowrap; }
 .card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .mobile-tag { border: none; font-size: 11px; padding: 0 6px; height: 20px; line-height: 20px; }
 .load-more-wrap { display: flex; justify-content: center; margin: 16px 0 24px; }
