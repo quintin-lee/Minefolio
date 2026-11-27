@@ -57,7 +57,7 @@ import { useChatStore } from '@/stores/chat'
 import { useLedgerStore } from '@/stores/ledger'
 import { useMarketStore } from '@/stores/market'
 import { useAuthStore } from '@/stores/auth'
-import { sharedMdCache, linkedMdCache } from '@/utils/chat-md-cache'
+import { sharedMdCache, linkedMdCache, mermaidSvgCache, codeHighlightCache } from '@/utils/chat-md-cache'
 import { useFinancialEntities, resetFinancialEntities } from '@/composables/useFinancialEntities'
 
 function deferred<T>() {
@@ -363,9 +363,11 @@ describe('store logout race isolation (async epoch guards)', () => {
     expect(linkFinancialEntities('<p>旧用户茅台 新用户腾讯</p>')).toContain('data-entity-id="20"')
   })
 
-  it('auth store: logout() clears chat markdown caches (sharedMdCache and linkedMdCache)', async () => {
+  it('auth store: logout() clears chat markdown caches (sharedMdCache, linkedMdCache, mermaidSvgCache, codeHighlightCache)', async () => {
     sharedMdCache.set('raw', '<p>raw</p>')
     linkedMdCache.set('1::raw', '<p><span class="mf-entity-badge">raw</span></p>')
+    mermaidSvgCache.set('diagram::1', '<svg></svg>')
+    codeHighlightCache.set('ts::const a = 1', '<span>const</span>')
 
     const authStore = useAuthStore()
     authStore.token = 'tok-123'
@@ -373,5 +375,7 @@ describe('store logout race isolation (async epoch guards)', () => {
 
     expect(sharedMdCache.size).toBe(0)
     expect(linkedMdCache.size).toBe(0)
+    expect(mermaidSvgCache.size).toBe(0)
+    expect(codeHighlightCache.size).toBe(0)
   }, 60000)
 })

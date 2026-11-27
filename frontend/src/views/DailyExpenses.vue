@@ -228,7 +228,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download, Upload, UploadFilled, SuccessFilled, Camera, Delete } from '@element-plus/icons-vue'
 import { dailyExpensesApi } from '@/api/daily_expenses'
@@ -512,14 +512,33 @@ function exportCsv() {
   }).catch(() => ElMessage.error('导出失败'))
 }
 
+let activeImportReader: FileReader | null = null
+
+onBeforeUnmount(() => {
+  activeImportReader?.abort()
+  activeImportReader = null
+})
+
 function handleFileChange(raw: any) {
+  activeImportReader?.abort()
+  activeImportReader = null
   const file = raw.raw ?? null
   importFile.value = file
   importText.value = null
   importResult.value = null
   if (file) {
     const reader = new FileReader()
-    reader.onload = (e) => { importText.value = e.target?.result as string }
+    activeImportReader = reader
+    reader.onload = (e) => {
+      if (activeImportReader !== reader) return
+      activeImportReader = null
+      importText.value = e.target?.result as string
+    }
+    reader.onerror = () => {
+      if (activeImportReader !== reader) return
+      activeImportReader = null
+      ElMessage.error('读取 CSV 文件失败')
+    }
     reader.readAsText(file, 'UTF-8')
   }
 }

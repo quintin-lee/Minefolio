@@ -15,15 +15,11 @@
   </div>
 </template>
 
-<script lang="ts">
-const highlightCache = new Map<string, string>()
-const HIGHLIGHT_CACHE_LIMIT = 120
-</script>
-
 <script setup lang="ts">
 import { computed, ref, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { copyTextToClipboard } from '@/utils/clipboard'
+import { codeHighlightCache, CODE_HIGHLIGHT_CACHE_LIMIT } from '@/utils/chat-md-cache'
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.css'
 import javascript from 'highlight.js/lib/languages/javascript'
@@ -90,7 +86,7 @@ const highlightedHtml = computed(() => {
   const rawCode = props.code || ''
   const l = (props.lang || '').trim().toLowerCase()
   const key = cacheKey(rawCode, l)
-  const cached = highlightCache.get(key)
+  const cached = codeHighlightCache.get(key)
   if (cached !== undefined) return cached
   let html: string
   if (l && hljs.getLanguage(l)) {
@@ -113,11 +109,11 @@ const highlightedHtml = computed(() => {
       html = rawCode.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     }
   }
-  if (highlightCache.size >= HIGHLIGHT_CACHE_LIMIT) {
-    const firstKey = highlightCache.keys().next().value as string
-    highlightCache.delete(firstKey)
+  if (codeHighlightCache.size >= CODE_HIGHLIGHT_CACHE_LIMIT) {
+    const firstKey = codeHighlightCache.keys().next().value as string
+    codeHighlightCache.delete(firstKey)
   }
-  highlightCache.set(key, html)
+  codeHighlightCache.set(key, html)
   return html
 })
 

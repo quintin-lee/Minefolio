@@ -259,4 +259,46 @@ describe('SyncEngine conflict discard, validation cleanup, and ledger scoping', 
     expect(engine.getConflicts()[0].table_name).toBe('daily_expenses')
     expect(engine.getConflicts()[0].record_id).toBe(tempExpenseId)
   })
+
+  it('marks dependent categories (parent_id) and daily_expenses (tags[]) as conflict when parent/tag create fails', async () => {
+    const tempParentCatId = -9101
+    const tempChildCatId = -9102
+    const tempTagId = -9103
+    const tempExpenseId = -9104
+    const engine = SyncEngine.getInstance()
+
+    engine.enqueue('categories', tempParentCatId, 'create', {
+      name: 'Temp Parent Cat',
+      type: 'expense',
+      currency: 'CNY',
+    })
+    engine.enqueue('categories', tempChildCatId, 'create', {
+      name: 'Temp Child Cat',
+      type: 'expense',
+      currency: 'CNY',
+      parent_id: tempParentCatId,
+    })
+    engine.enqueue('tags', tempTagId, 'create', {
+      name: 'Temp Tag',
+    })
+    engine.enqueue('daily_expenses', tempExpenseId, 'create', {
+      ...COMPLETE_EXPENSE,
+      tags: [tempTagId],
+    })
+
+    // First root create (parent category) fails 1002 -> child category (parent_id) marked conflict
+    // Third item (temp tag) fails 1002 -> expense (tags: [tempTagId]) marked conflict
+    httpMock.post
+      .mockRejectedValueOnce({ response: { data: { code: 1002, message: '分类参数错误' } } })
+      .mockRejectedValueOnce({ response: { data: { code: 1002, message: '标签参数错误' } } })
+
+    await engine.pushLocal()
+
+    expect(httpMock.post).toHaveBeenCalledTimes(2)
+    const conflicts = engine.getConflicts()
+    expect(conflicts.map((c) => `${c.table_name}:${c.record_id}`).sort()).toEqual([
+      `categories:${tempChildCatId}`,
+      `daily_expenses:${tempExpenseId}`,
+    ])
+  })
 })

@@ -217,17 +217,13 @@
   </div>
 </template>
 
-<script lang="ts">
-const svgCache = new Map<string, string>()
-const SVG_CACHE_LIMIT = 80
-</script>
-
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import { Icon } from '@iconify/vue'
 import { ElMessage } from 'element-plus'
 import { useThemeStore } from '@/stores/theme'
 import { copyTextToClipboard } from '@/utils/clipboard'
+import { mermaidSvgCache, MERMAID_SVG_CACHE_LIMIT } from '@/utils/chat-md-cache'
 import {
   detectDiagramType,
   renderMermaidSvg,
@@ -269,7 +265,7 @@ async function renderDiagram(isSilent = false) {
 
   const currentTheme = themeStore.resolvedTheme
   const key = cacheKeyForRender(props.code, curveMode.value, currentTheme)
-  const cached = svgCache.get(key)
+  const cached = mermaidSvgCache.get(key)
   if (cached) {
     svgContent.value = cached
     renderError.value = ''
@@ -292,11 +288,11 @@ async function renderDiagram(isSilent = false) {
     if (seq !== renderSeq) return
     svgContent.value = result.svg
     renderError.value = ''
-    if (svgCache.size >= SVG_CACHE_LIMIT) {
-      const firstKey = svgCache.keys().next().value as string
-      svgCache.delete(firstKey)
+    if (mermaidSvgCache.size >= MERMAID_SVG_CACHE_LIMIT) {
+      const firstKey = mermaidSvgCache.keys().next().value as string
+      mermaidSvgCache.delete(firstKey)
     }
-    svgCache.set(key, result.svg)
+    mermaidSvgCache.set(key, result.svg)
   } catch (err: unknown) {
     if (seq !== renderSeq) return
     if (!isSilent && !props.isStreaming) {
@@ -450,7 +446,7 @@ watch(
     } else {
       if (streamDebounceTimer) clearTimeout(streamDebounceTimer)
       const key = cacheKeyForRender(props.code, curveMode.value, currentTheme)
-      if (svgCache.has(key) && svgContent.value) {
+      if (mermaidSvgCache.has(key) && svgContent.value) {
         return
       }
       renderDiagram(false)

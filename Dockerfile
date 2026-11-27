@@ -270,6 +270,8 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     tini \
     curl \
     python3 \
+    poppler-utils \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js 20 + npm + npx (供 stdio transport 的 .js MCP server 解释器; mcp_client.c 自动注入 node)

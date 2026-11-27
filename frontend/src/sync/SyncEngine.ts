@@ -413,6 +413,7 @@ export class SyncEngine {
       'account_id',
       'asset_id',
       'category_id',
+      'parent_id',
       'ledger_id',
       'from_asset_id',
       'to_asset_id',
@@ -434,6 +435,9 @@ export class SyncEngine {
             fkMatch = true
             break
           }
+        }
+        if (!fkMatch && Array.isArray(p.tags)) {
+          fkMatch = p.tags.some((t: any) => Number(t) === failedTempId || Number(t?.id) === failedTempId)
         }
       }
       if (sameRecord || fkMatch) {

@@ -12,7 +12,7 @@ version: '3.8'
 
 services:
   minefolio:
-    image: ghcr.io/quintin-lee/minefolio:latest
+    image: ghcr.io/quintin-lee/minefolio:${MINEFOLIO_VERSION:-1.4.1}
     container_name: minefolio
     ports:
       - "8080:8080"
@@ -30,8 +30,9 @@ services:
 
   # NapCat QQ OneBot v11 服务
   # 部署后在浏览器访问 http://<NAS或服务器IP>:6099 进入 NapCat WebUI 扫码登录 QQ 小号
+  # 建议在生产 .env 中通过 NAPCAT_IMAGE 固定经过验证的镜像 tag 或 digest
   napcat:
-    image: mlikiowa/napcat-docker:latest
+    image: ${NAPCAT_IMAGE:-mlikiowa/napcat-docker:latest}
     container_name: minefolio-napcat
     environment:
       ACCOUNT: "${NAPCAT_QQ:-}"
@@ -47,7 +48,7 @@ services:
 
   # IM 网关服务 (桥接 NapCat 与 Minefolio)
   im-gateway:
-    image: node:22-alpine
+    image: node:${NODE_GATEWAY_VERSION:-22.14-alpine}
     container_name: minefolio-im-gateway
     working_dir: /app
     volumes:
@@ -70,7 +71,7 @@ services:
 
   # 微信 iLink 用户级独立实例网关 (按需启用: docker compose -f docker-compose.im.yml --profile ilink up -d)
   ilink-gateway:
-    image: node:22-alpine
+    image: node:${NODE_GATEWAY_VERSION:-22.14-alpine}
     container_name: minefolio-ilink-gateway
     profiles:
       - ilink

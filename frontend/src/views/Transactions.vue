@@ -951,6 +951,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  activeImportReader?.abort()
+  activeImportReader = null
   compactMediaQuery?.removeEventListener?.('change', handleCompactTableChange)
   compactMediaQuery = null
 })
@@ -961,6 +963,7 @@ const importFile = ref<File | null>(null)
 const importText = ref<string | null>(null)
 const importResult = ref<{ imported: number; errors: number; errors_detail?: string; ok: boolean } | null>(null)
 const importing = ref(false)
+let activeImportReader: FileReader | null = null
 
 function exportCsv() {
   transactionsApi.exportCsv().then((blob) => {
@@ -977,13 +980,25 @@ function exportCsv() {
 }
 
 function handleFileChange(raw: any) {
+  activeImportReader?.abort()
+  activeImportReader = null
   const file = raw.raw ?? null
   importFile.value = file
   importText.value = null
   importResult.value = null
   if (file) {
     const reader = new FileReader()
-    reader.onload = (e) => { importText.value = e.target?.result as string }
+    activeImportReader = reader
+    reader.onload = (e) => {
+      if (activeImportReader !== reader) return
+      activeImportReader = null
+      importText.value = e.target?.result as string
+    }
+    reader.onerror = () => {
+      if (activeImportReader !== reader) return
+      activeImportReader = null
+      ElMessage.error('读取 CSV 文件失败')
+    }
     reader.readAsText(file, 'UTF-8')
   }
 }

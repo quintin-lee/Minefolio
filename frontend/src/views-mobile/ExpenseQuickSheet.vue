@@ -62,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { useCategoryStore } from '@/stores/category'
@@ -142,6 +142,14 @@ function triggerFilePick() {
   fileInputRef.value?.click()
 }
 
+let activeScanReader: FileReader | null = null
+
+onBeforeUnmount(() => {
+  activeScanReader?.abort()
+  activeScanReader = null
+  scanning.value = false
+})
+
 async function onFileSelected(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
@@ -151,9 +159,14 @@ async function onFileSelected(e: Event) {
     return
   }
 
+  activeScanReader?.abort()
+  activeScanReader = null
   scanning.value = true
   const reader = new FileReader()
+  activeScanReader = reader
   reader.onload = async () => {
+    if (activeScanReader !== reader) return
+    activeScanReader = null
     const base64 = reader.result as string
     try {
       const res = await receiptsApi.scan({ image: base64 })
@@ -181,6 +194,8 @@ async function onFileSelected(e: Event) {
     }
   }
   reader.onerror = () => {
+    if (activeScanReader !== reader) return
+    activeScanReader = null
     scanning.value = false
     if (fileInputRef.value) fileInputRef.value.value = ''
     ElMessage.error('读取图片失败')
