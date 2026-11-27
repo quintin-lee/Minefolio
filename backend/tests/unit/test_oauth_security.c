@@ -125,7 +125,7 @@ test_oidc_id_token_and_provider_gating(void)
                     "\"exp\":2000000100}",
                     jwt,
                     sizeof(jwt));
-    jwt[strlen(jwt) - 1] = (jwt[strlen(jwt) - 1] == 'A') ? 'B' : 'A';
+    jwt[strlen(jwt) - 4] = (jwt[strlen(jwt) - 4] == 'A') ? 'B' : 'A';
     assert(auth_oidc_verify_id_token(
                jwt, "mf-app", "https://idp.example", jwks, 2000000000, sub, sizeof(sub), uname, sizeof(uname)) !=
            0);
