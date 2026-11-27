@@ -1,5 +1,5 @@
 <template>
-  <div ref="chartRef" style="height: 285px; width: 100%;"></div>
+  <div ref="chartRef" class="chart-canvas" :style="{ minHeight: props.minHeight }"></div>
 </template>
 
 <script setup lang="ts">
@@ -9,7 +9,12 @@ import type { ExpenseYearlyReport } from '@/api/reports'
 import { resolveChartPalette, useChartThemeSync, modernTooltipConfig } from '@/utils/echarts-theme'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
 
-const props = defineProps<{ data: ExpenseYearlyReport | null }>()
+const props = withDefaults(defineProps<{
+  data: ExpenseYearlyReport | null
+  minHeight?: string
+}>(), {
+  minHeight: '285px',
+})
 const displaySettings = useDisplaySettingsStore()
 const chartRef = ref<HTMLElement>()
 let chart: ECharts | null = null
@@ -133,3 +138,10 @@ function updateChart() {
   })
 }
 </script>
+
+<style scoped>
+.chart-canvas {
+  width: 100%;
+  height: 100%;
+}
+</style>

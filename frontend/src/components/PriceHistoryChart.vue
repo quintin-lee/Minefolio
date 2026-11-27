@@ -25,7 +25,7 @@
         </el-dropdown>
       </div>
     </div>
-    <div v-loading="loading" ref="chartRef" class="chart-body" />
+    <div v-loading="loading" ref="chartRef" class="chart-body" :style="{ minHeight: props.minHeight }" />
   </div>
 </template>
 
@@ -39,11 +39,14 @@ import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echar
 import { useDisplaySettingsStore } from '@/stores/display-settings'
 import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   assetId: number
   assetName: string
   currency?: string
-}>()
+  minHeight?: string
+}>(), {
+  minHeight: '320px',
+})
 
 const chartRef = ref<HTMLElement | null>(null)
 const displaySettings = useDisplaySettingsStore()
@@ -206,7 +209,8 @@ useChartThemeSync(() => {
 .price-history-container {
   display: flex;
   flex-direction: column;
-  height: 380px;
+  height: 100%;
+  min-height: 360px;
   width: 100%;
 }
 .chart-header {
@@ -248,6 +252,6 @@ useChartThemeSync(() => {
 .chart-body {
   flex: 1;
   width: 100%;
-  min-height: 320px;
+  min-height: 240px;
 }
 </style>

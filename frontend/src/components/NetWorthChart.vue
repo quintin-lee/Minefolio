@@ -21,7 +21,7 @@
         </template>
       </el-dropdown>
     </div>
-    <div ref="chartRef" style="height: 285px; width: 100%;"></div>
+    <div ref="chartRef" class="chart-canvas" :style="{ minHeight: props.minHeight }"></div>
   </div>
 </template>
 
@@ -34,7 +34,12 @@ import { useDisplaySettingsStore } from '@/stores/display-settings'
 import { formatCurrency } from '@/utils/format'
 import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
 
-const props = defineProps<{ data: { date: string; net_worth: number }[] }>()
+const props = withDefaults(defineProps<{
+  data: { date: string; net_worth: number }[]
+  minHeight?: string
+}>(), {
+  minHeight: '285px',
+})
 const displaySettings = useDisplaySettingsStore()
 const chartRef = ref<HTMLElement>()
 const timeRange = ref<'30D' | '90D' | '1Y' | 'ALL'>('ALL')
@@ -184,6 +189,13 @@ function handleExport(cmd: string) {
 <style scoped>
 .net-worth-chart-container {
   position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.chart-canvas {
+  flex: 1;
   width: 100%;
 }
 .chart-header-actions {
