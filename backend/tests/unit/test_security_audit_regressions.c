@@ -13,6 +13,7 @@
 #include "infrastructure/repositories/daily_expense_repo_impl.h"
 #include "infrastructure/repositories/ledger_repo_impl.h"
 #include "application/category/usecases.h"
+#include "application/auth/usecases.h"
 #include "application/mcp/usecases.h"
 #include "application/report/commands.h"
 #include "application/task/async_task_manager.h"
@@ -23,6 +24,7 @@
 #include "services/ai/tools/mcp/mcp_client.h"
 #include "middlewares/csrf_middleware.h"
 #include "middlewares/rate_limit.h"
+#include "csilk/core/totp.h"
 #include "csilk/csilk.h"
 #include <arpa/inet.h>
 #include <assert.h>
@@ -1235,6 +1237,107 @@ test_rate_limit_uses_peer_ip_when_proxy_untrusted(void)
     csilk_app_free(srv.app);
 }
 
+static void
+test_totp_replay_and_window_hardening(csilk_db_pool_t* pool)
+{
+    printf("  [8] Testing TOTP replay rejection and configurable window...\n");
+    setenv("JWT_SECRET", "test_totp_audit_jwt_secret_123456", 1);
+
+    /* (a) Enable -> immediate login in same step succeeds, replay in same step is rejected */
+    register_user_cmd_t reg1 = {.username = "totp_replay_audit_u1", .plain_password = "Password123!"};
+    csilk_json_t*       reg1_data = NULL;
+    auth_usecase_result_t ares = {0};
+    assert(auth_usecase_register(pool, &reg1, NULL, &reg1_data, &ares) == 0);
+    csilk_json_free(reg1_data);
+
+    mf_user_t u1 = {0};
+    assert(mf_auth_repo_find_by_username(pool, "totp_replay_audit_u1", &u1) == 0);
+    csilk_json_t* setup_data = NULL;
+    assert(auth_usecase_2fa_setup(pool, u1.id, &setup_data, &ares) == 0 && setup_data != NULL);
+    const char* s1_ptr = csilk_json_get_string(setup_data, "secret");
+    assert(s1_ptr && s1_ptr[0]);
+    char secret1[128] = {0};
+    snprintf(secret1, sizeof(secret1), "%s", s1_ptr);
+    csilk_json_free(setup_data);
+
+    char code1[8] = {0};
+    assert(csilk_totp_generate_code(secret1, (uint64_t)time(NULL), code1, sizeof(code1)) == 0);
+
+    enable_2fa_cmd_t en1 = {.user_id = u1.id, .code = code1};
+    csilk_json_t*    en1_data = NULL;
+    assert(auth_usecase_2fa_enable(pool, &en1, &en1_data, &ares) == 0);
+    csilk_json_free(en1_data);
+
+    login_user_cmd_t log1 = {.username = "totp_replay_audit_u1", .plain_password = "Password123!"};
+    csilk_json_t*    log1_data = NULL;
+    assert(auth_usecase_login(pool, &log1, NULL, &log1_data, &ares) == 0);
+    const char* tok1 = csilk_json_get_string(log1_data, "temp_token");
+    assert(tok1 && tok1[0]);
+
+    verify_2fa_login_cmd_t v1 = {.temp_token = tok1, .code = code1};
+    csilk_json_t*          v1_data = NULL;
+    assert(auth_usecase_2fa_verify_login(pool, &v1, &v1_data, &ares) == 0);
+    assert(ares.code == 0 && v1_data != NULL);
+    csilk_json_free(v1_data);
+    csilk_json_free(log1_data);
+
+    /* Second login attempt within the same step with the same TOTP MUST fail */
+    csilk_json_t* log1_replay_data = NULL;
+    assert(auth_usecase_login(pool, &log1, NULL, &log1_replay_data, &ares) == 0);
+    const char* tok1_replay = csilk_json_get_string(log1_replay_data, "temp_token");
+    verify_2fa_login_cmd_t v1_replay = {.temp_token = tok1_replay, .code = code1};
+    csilk_json_t*          v1_replay_data = NULL;
+    assert(auth_usecase_2fa_verify_login(pool, &v1_replay, &v1_replay_data, &ares) != 0);
+    assert(ares.code == 1002);
+    csilk_json_free(v1_replay_data);
+    csilk_json_free(log1_replay_data);
+
+    /* (b) Default ±2 window rejects -4 step code, configurable MINEFOLIO_TOTP_WINDOW_STEPS=5 allows it */
+    unsetenv("MINEFOLIO_TOTP_WINDOW_STEPS");
+    register_user_cmd_t reg2 = {.username = "totp_window_audit_u2", .plain_password = "Password123!"};
+    csilk_json_t*       reg2_data = NULL;
+    assert(auth_usecase_register(pool, &reg2, NULL, &reg2_data, &ares) == 0);
+    csilk_json_free(reg2_data);
+
+    mf_user_t u2 = {0};
+    assert(mf_auth_repo_find_by_username(pool, "totp_window_audit_u2", &u2) == 0);
+    setup_data = NULL;
+    assert(auth_usecase_2fa_setup(pool, u2.id, &setup_data, &ares) == 0 && setup_data != NULL);
+    char secret2[128] = {0};
+    snprintf(secret2, sizeof(secret2), "%s", csilk_json_get_string(setup_data, "secret"));
+    csilk_json_free(setup_data);
+
+    char cur2[8] = {0};
+    char drift4[8] = {0};
+    uint64_t now_ts = (uint64_t)time(NULL);
+    assert(csilk_totp_generate_code(secret2, now_ts, cur2, sizeof(cur2)) == 0);
+    assert(csilk_totp_generate_code(secret2, now_ts - 120, drift4, sizeof(drift4)) == 0);
+
+    enable_2fa_cmd_t en2 = {.user_id = u2.id, .code = cur2};
+    csilk_json_t*    en2_data = NULL;
+    assert(auth_usecase_2fa_enable(pool, &en2, &en2_data, &ares) == 0);
+    csilk_json_free(en2_data);
+
+    login_user_cmd_t log2 = {.username = "totp_window_audit_u2", .plain_password = "Password123!"};
+    csilk_json_t*    log2_data = NULL;
+    assert(auth_usecase_login(pool, &log2, NULL, &log2_data, &ares) == 0);
+    const char* tok2 = csilk_json_get_string(log2_data, "temp_token");
+
+    verify_2fa_login_cmd_t v2_fail = {.temp_token = tok2, .code = drift4};
+    csilk_json_t*          v2_data = NULL;
+    assert(auth_usecase_2fa_verify_login(pool, &v2_fail, &v2_data, &ares) != 0);
+    assert(ares.code == 1002);
+    csilk_json_free(v2_data);
+
+    setenv("MINEFOLIO_TOTP_WINDOW_STEPS", "5", 1);
+    v2_data = NULL;
+    assert(auth_usecase_2fa_verify_login(pool, &v2_fail, &v2_data, &ares) == 0);
+    assert(ares.code == 0 && v2_data != NULL);
+    csilk_json_free(v2_data);
+    csilk_json_free(log2_data);
+    unsetenv("MINEFOLIO_TOTP_WINDOW_STEPS");
+}
+
 int
 main(void)
 {
@@ -1251,6 +1354,7 @@ main(void)
     test_config_get_str_oob_regression();
     test_csrf_middleware_oauth_and_no_duplicate_cookie();
     test_rate_limit_uses_peer_ip_when_proxy_untrusted();
+    test_totp_replay_and_window_hardening(pool);
 
     cleanup_db_files();
     printf("=== All Security & Audit Regression Tests Passed ===\n");

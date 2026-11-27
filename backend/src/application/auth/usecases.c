@@ -143,15 +143,118 @@ normalize_auth_code(const char* in, char* out_clean, char* out_digits, size_t ca
     return clean_len;
 }
 
-/* TOTP 验证包装：在 csilk_totp_verify_code (±1 步容差) 基础上扩展至 ±10 步 (±300s = ±5分钟)，
-   彻底吸收自建宿主机/Docker 容器无 NTP 漂移、移动端切应用延迟及手机时钟偏差。
+/* 可配置的 TOTP 时钟偏移步长上限：默认 ±2 步（±60s），允许通过 MINEFOLIO_TOTP_WINDOW_STEPS 在 [1, 10] 内调整。 */
+static int
+mf_totp_window_steps(void)
+{
+    char        buf[32] = {0};
+    const char* raw = config_env_get("MINEFOLIO_TOTP_WINDOW_STEPS", buf, sizeof(buf), NULL);
+    if (!raw || !raw[0]) {
+        return 2;
+    }
+    char* end = NULL;
+    long  v = strtol(raw, &end, 10);
+    if (!end || *end != '\0' || v < 1) {
+        return 2;
+    }
+    if (v > 10) {
+        return 10;
+    }
+    return (int)v;
+}
+
+#define MF_TOTP_REPLAY_CAP 1024
+
+typedef struct {
+    bool    in_use;
+    int64_t user_id;
+    int64_t last_step;
+    time_t  updated_at;
+} mf_totp_replay_entry_t;
+
+static mf_totp_replay_entry_t g_totp_replay[MF_TOTP_REPLAY_CAP];
+static pthread_mutex_t        g_totp_replay_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/* 基于进程内滑动步长防重放：同一用户在相同或更早 TOTP 时间步内禁止重复使用动态码。 */
+static bool
+totp_replay_check_and_record(int64_t user_id, int64_t matched_step)
+{
+    if (user_id <= 0) {
+        return false;
+    }
+    if (pthread_mutex_lock(&g_totp_replay_mutex) != 0) {
+        return false;
+    }
+
+    int    free_idx = -1;
+    int    oldest_idx = 0;
+    time_t oldest_ts = g_totp_replay[0].updated_at;
+    time_t now_ts = time(NULL);
+
+    for (int i = 0; i < MF_TOTP_REPLAY_CAP; i++) {
+        if (!g_totp_replay[i].in_use) {
+            if (free_idx < 0) {
+                free_idx = i;
+            }
+            continue;
+        }
+        if (g_totp_replay[i].user_id == user_id) {
+            bool allowed = (matched_step > g_totp_replay[i].last_step);
+            if (allowed) {
+                g_totp_replay[i].last_step = matched_step;
+                g_totp_replay[i].updated_at = now_ts;
+            }
+            pthread_mutex_unlock(&g_totp_replay_mutex);
+            return allowed;
+        }
+        if (g_totp_replay[i].updated_at < oldest_ts) {
+            oldest_ts = g_totp_replay[i].updated_at;
+            oldest_idx = i;
+        }
+    }
+
+    int target = (free_idx >= 0) ? free_idx : oldest_idx;
+    g_totp_replay[target].in_use = true;
+    g_totp_replay[target].user_id = user_id;
+    g_totp_replay[target].last_step = matched_step;
+    g_totp_replay[target].updated_at = now_ts;
+    pthread_mutex_unlock(&g_totp_replay_mutex);
+    return true;
+}
+
+static void
+totp_replay_clear_user(int64_t user_id)
+{
+    if (user_id <= 0) {
+        return;
+    }
+    if (pthread_mutex_lock(&g_totp_replay_mutex) != 0) {
+        return;
+    }
+    for (int i = 0; i < MF_TOTP_REPLAY_CAP; i++) {
+        if (g_totp_replay[i].in_use && g_totp_replay[i].user_id == user_id) {
+            memset(&g_totp_replay[i], 0, sizeof(g_totp_replay[i]));
+            break;
+        }
+    }
+    pthread_mutex_unlock(&g_totp_replay_mutex);
+}
+
+/* TOTP 验证包装：按配置步长窗口（默认 ±2 步 = ±60s，可通过 MINEFOLIO_TOTP_WINDOW_STEPS 调整）
+   校验动态码，使用 CRYPTO_memcmp 常时间比较避免时序侧信道。
    验证失败时回填服务器当前 Unix 时间戳，供前端提示用户校准本地时钟。 */
 static bool
-mf_totp_verify_lenient(const char* base32_secret, const char* code, uint64_t* out_server_ts)
+mf_totp_verify_lenient(const char* base32_secret,
+                       const char* code,
+                       uint64_t*   out_server_ts,
+                       int64_t*    out_matched_step)
 {
     uint64_t now = (uint64_t)time(NULL);
     if (out_server_ts) {
         *out_server_ts = now;
+    }
+    if (out_matched_step) {
+        *out_matched_step = 0;
     }
     if (!base32_secret || !base32_secret[0] || !code) {
         return false;
@@ -162,11 +265,20 @@ mf_totp_verify_lenient(const char* base32_secret, const char* code, uint64_t* ou
     if (strlen(digits) != 6) {
         return false;
     }
-    for (int step = -10; step <= 10; step++) {
-        uint64_t t = (int64_t)now + (int64_t)step * 30;
-        char     expected[8];
+    int     window = mf_totp_window_steps();
+    int64_t base_step = (int64_t)(now / 30ULL);
+    for (int step = -window; step <= window; step++) {
+        int64_t cand_step = base_step + step;
+        if (cand_step < 0) {
+            continue;
+        }
+        uint64_t t = (uint64_t)cand_step * 30ULL;
+        char     expected[8] = {0};
         if (csilk_totp_generate_code(base32_secret, t, expected, sizeof(expected)) == 0 &&
-            strcmp(expected, digits) == 0) {
+            strlen(expected) == 6 && CRYPTO_memcmp(expected, digits, 6) == 0) {
+            if (out_matched_step) {
+                *out_matched_step = cand_step;
+            }
             return true;
         }
     }
@@ -777,7 +889,7 @@ auth_usecase_2fa_enable(void*                   pool,
     }
 
     uint64_t _ts_unused;
-    if (!mf_totp_verify_lenient(user.totp_secret, digits, &_ts_unused)) {
+    if (!mf_totp_verify_lenient(user.totp_secret, digits, &_ts_unused, NULL)) {
         out_res->code = 1002;
         snprintf(out_res->message,
                  sizeof(out_res->message),
@@ -797,6 +909,7 @@ auth_usecase_2fa_enable(void*                   pool,
     char*  codes_json = csilk_json_serialize(codes_arr, &slen);
 
     mf_auth_repo_enable_totp(pool, cmd->user_id, codes_json ? codes_json : "[]");
+    totp_replay_clear_user(cmd->user_id);
     if (codes_json) {
         free(codes_json);
     }
@@ -849,13 +962,17 @@ auth_usecase_2fa_disable(void*                    pool,
         }
     }
 
-    /* 2. 或验证当前有效的 6 位 TOTP 动态码 (lenient ±3 步容差，过滤空白，吸收时钟漂移) */
+    /* 2. 或验证当前有效的 6 位 TOTP 动态码 (配置步长容差 + 防同步长重放) */
     if (!authenticated && cmd->code && cmd->code[0] && user.totp_secret[0]) {
         uint64_t _ts_unused;
-        if (mf_totp_verify_lenient(user.totp_secret, cmd->code, &_ts_unused)) {
+        int64_t  matched_step = 0;
+        if (mf_totp_verify_lenient(user.totp_secret, cmd->code, &_ts_unused, &matched_step) &&
+            totp_replay_check_and_record(user.id, matched_step)) {
             authenticated = true;
         }
     }
+
+    OPENSSL_cleanse(pw_buf, sizeof(pw_buf));
 
     if (!authenticated) {
         out_res->code = 1002;
@@ -867,6 +984,7 @@ auth_usecase_2fa_disable(void*                    pool,
 
     mf_auth_repo_disable_totp(pool, cmd->user_id);
     mf_auth_repo_update_token_version(pool, cmd->user_id);
+    totp_replay_clear_user(cmd->user_id);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
     return 0;
@@ -934,10 +1052,12 @@ auth_usecase_2fa_verify_login(void*                         pool,
 
     bool     ok = false;
     uint64_t server_ts = (uint64_t)time(NULL);
+    int64_t  matched_step = 0;
 
-    /* 1. 若提取出 6 位数字，优先进行 TOTP 动态码校验 (lenient ±10 步/±300s 容差) */
+    /* 1. 若提取出 6 位数字，优先进行 TOTP 动态码校验 (可配置步长容差 + 进程内步长防重放) */
     if (strlen(digits_code) == 6 &&
-        mf_totp_verify_lenient(user.totp_secret, digits_code, &server_ts)) {
+        mf_totp_verify_lenient(user.totp_secret, digits_code, &server_ts, &matched_step) &&
+        totp_replay_check_and_record(user.id, matched_step)) {
         ok = true;
     } else if (user.totp_backup_codes[0] != '\0') {
         char updated_codes[1024];
@@ -2702,6 +2822,7 @@ auth_usecase_admin_disable_2fa(void* pool, int64_t target_user_id, auth_usecase_
     }
 
     invalidate_user_jwt(target_user_id);
+    totp_replay_clear_user(target_user_id);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "已关闭该用户的两步验证");
     return 0;
@@ -2770,6 +2891,7 @@ auth_usecase_admin_delete_user(void*                  pool,
     }
 
     invalidate_user_jwt(target_user_id);
+    totp_replay_clear_user(target_user_id);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "用户已删除");
     return 0;

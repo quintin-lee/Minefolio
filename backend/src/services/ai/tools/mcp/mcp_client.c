@@ -757,6 +757,31 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
         fcntl(in_pipe[1], F_SETFL, O_NONBLOCK);
         fcntl(out_pipe[0], F_SETFL, O_NONBLOCK);
 
+        /* 在 fork() 前读取环境变量与数字解析，保持子进程 fork-exec 之间仅执行 async-signal-safe 调用 */
+        struct rlimit rl_fsize = {64ULL * 1024ULL * 1024ULL, 64ULL * 1024ULL * 1024ULL};
+        const char*   fsize_mb_str = getenv("MINEFOLIO_MCP_RLIMIT_FSIZE_MB");
+        if (fsize_mb_str && fsize_mb_str[0]) {
+            long fsize_mb = strtol(fsize_mb_str, NULL, 10);
+            if (fsize_mb > 0 && fsize_mb <= 16384) {
+                rlim_t fbytes = (rlim_t)fsize_mb * 1024ULL * 1024ULL;
+                rl_fsize.rlim_cur = fbytes;
+                rl_fsize.rlim_max = fbytes;
+            }
+        }
+
+        bool          apply_as_limit = false;
+        struct rlimit rl_as = {0, 0};
+        const char*   as_mb_str = getenv("MINEFOLIO_MCP_RLIMIT_AS_MB");
+        if (as_mb_str && as_mb_str[0]) {
+            long as_mb = strtol(as_mb_str, NULL, 10);
+            if (as_mb > 0 && as_mb <= 65536) {
+                rlim_t bytes = (rlim_t)as_mb * 1024ULL * 1024ULL;
+                rl_as.rlim_cur = bytes;
+                rl_as.rlim_max = bytes;
+                apply_as_limit = true;
+            }
+        }
+
         pid_t pid = fork();
         if (pid < 0) {
             close(in_pipe[0]);
@@ -792,26 +817,9 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
                 (void)setrlimit(RLIMIT_NOFILE, &rl_nofile);
             }
 
-            struct rlimit rl_fsize = {64ULL * 1024ULL * 1024ULL, 64ULL * 1024ULL * 1024ULL};
-            const char*   fsize_mb_str = getenv("MINEFOLIO_MCP_RLIMIT_FSIZE_MB");
-            if (fsize_mb_str && fsize_mb_str[0]) {
-                long fsize_mb = strtol(fsize_mb_str, NULL, 10);
-                if (fsize_mb > 0 && fsize_mb <= 16384) {
-                    rlim_t fbytes = (rlim_t)fsize_mb * 1024ULL * 1024ULL;
-                    rl_fsize.rlim_cur = fbytes;
-                    rl_fsize.rlim_max = fbytes;
-                }
-            }
             (void)setrlimit(RLIMIT_FSIZE, &rl_fsize);
-
-            const char* as_mb_str = getenv("MINEFOLIO_MCP_RLIMIT_AS_MB");
-            if (as_mb_str && as_mb_str[0]) {
-                long as_mb = strtol(as_mb_str, NULL, 10);
-                if (as_mb > 0 && as_mb <= 65536) {
-                    rlim_t        bytes = (rlim_t)as_mb * 1024ULL * 1024ULL;
-                    struct rlimit rl_as = {bytes, bytes};
-                    (void)setrlimit(RLIMIT_AS, &rl_as);
-                }
+            if (apply_as_limit) {
+                (void)setrlimit(RLIMIT_AS, &rl_as);
             }
 
             /* 1. 先重定向标准输入/输出/错误描述符 */

@@ -3,7 +3,8 @@
 ############################################################
 
 ARG UBUNTU_VERSION=24.04
-ARG NODE_VERSION=20-bookworm-slim
+ARG NODE_VERSION=20.18-bookworm-slim
+ARG NGINX_VERSION=1.27-alpine
 
 # 构建期 DNS 绕过: 宿主机 /etc/resolv.conf 含 IPv6 link-local nameserver
 # (如 fe80::1%wlp5s0) 时, Docker 内嵌 DNS (127.0.0.11) 无法向上游转发,
@@ -215,7 +216,7 @@ RUN npm run build
 # Stage 3: nginx
 ############################################################
 
-FROM nginx:alpine AS nginx
+FROM nginx:${NGINX_VERSION} AS nginx
 
 COPY nginx/minefolio.docker.conf /etc/nginx/conf.d/default.conf
 
