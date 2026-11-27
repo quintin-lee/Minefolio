@@ -16,6 +16,17 @@ const BACKOFF_DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
 const CRASH_WINDOW_MS = 5 * 60 * 1000;
 const CRASH_THRESHOLD = 5;
 
+function parseBoolFlag(v) {
+  if (v === null || v === undefined || v === false || v === 0) return false;
+  if (typeof v === 'number') return Number.isFinite(v) && v !== 0;
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    if (s === '' || s === '0' || s === 'false' || s === 'f') return false;
+    return true;
+  }
+  return Boolean(v);
+}
+
 function defaultSpawn(runnerPath, args) {
   return spawn(process.execPath, [runnerPath, ...args], {
     stdio: 'inherit',
@@ -121,7 +132,7 @@ function createSupervisor({
     for (const inst of list) {
       const id = Number(inst.id);
       const epoch = Number(inst.login_epoch || 0);
-      const enabled = Boolean(inst.enabled);
+      const enabled = parseBoolFlag(inst.enabled);
       const shouldRun = enabled && NEEDED_STATUSES.has(inst.status);
 
       if (!shouldRun) {
@@ -195,5 +206,6 @@ function createSupervisor({
 module.exports = {
   NEEDED_STATUSES,
   BACKOFF_DELAYS_MS,
+  parseBoolFlag,
   createSupervisor,
 };
