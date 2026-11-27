@@ -272,6 +272,12 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         size_t       n_calls = ai_res.tool_call_count;
         const size_t asst_idx = loop_append_assistant_tool_message(
             &env.msgs, &env.mc, ai_res.content, ai_res.tool_calls, n_calls);
+        if (asst_idx == (size_t)-1) {
+            ai_runtime_status_set(
+                &status, AI_RUNTIME_ERR_TOOL, "Out of memory appending tool message", NULL);
+            csilk_ai_chat_response_free(&ai_res);
+            break;
+        }
 
         /* 检查当前批次是否全为无状态网络只读工具 */
         const char* tool_names[8];
