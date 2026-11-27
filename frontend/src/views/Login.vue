@@ -429,6 +429,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
   --login-bg-start: var(--mf-background);
   --login-bg-mid: color-mix(in srgb, var(--mf-background) 70%, var(--mf-primary));
   --login-bg-end: color-mix(in srgb, var(--mf-background) 60%, var(--mf-accent));
@@ -562,7 +564,9 @@ onBeforeUnmount(() => {
 }
 
 .login-card {
-  width: 420px;
+  width: min(420px, calc(100vw - 32px));
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 10px;
 }
 

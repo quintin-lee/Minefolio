@@ -125,6 +125,8 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
   background: linear-gradient(135deg, #060b18 0%, #0a1628 50%, #0d1f3c 100%);
   position: relative;
   overflow: hidden;
@@ -140,7 +142,9 @@ async function handleSubmit() {
   pointer-events: none;
 }
 .setup-card {
-  width: 440px;
+  width: min(440px, calc(100vw - 32px));
+  max-width: 100%;
+  box-sizing: border-box;
   z-index: 1;
   padding: 10px;
 }
