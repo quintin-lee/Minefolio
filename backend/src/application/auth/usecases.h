@@ -59,6 +59,20 @@ int auth_usecase_oauth_callback(void*                       pool,
                                 auth_usecase_result_t*      out_res);
 
 /**
+ * @brief 校验 OIDC ID Token（声明检查 + 可选 JWKS RS256/ES256 验签）并提取 sub 与用户名
+ * @return 0 校验通过；-1 校验失败
+ */
+int auth_oidc_verify_id_token(const char* id_token,
+                              const char* expected_client_id,
+                              const char* expected_issuer,
+                              const char* jwks_json,
+                              int64_t     now_ts,
+                              char*       out_sub,
+                              size_t      sub_cap,
+                              char*       out_username,
+                              size_t      un_cap);
+
+/**
  * @brief 重新固化 OAuth mock 开关（仅测试使用）
  * @note mock 开关在启动期从 MINEFOLIO_TEST_OAUTH_MOCK 固化一次；
  *       该函数供测试在改变环境变量后重新固化，模拟不同启动环境。

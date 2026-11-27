@@ -44,7 +44,7 @@
               </el-button>
             </el-form-item>
             <div class="switch-mode">
-              <el-button link type="info" class="switch-btn" @click="isTwoFactorStep = false">
+              <el-button link type="info" class="switch-btn" @click="handleBackToPassword">
                 {{ t('login.backToPasswordLogin') }}
               </el-button>
             </div>
@@ -126,7 +126,12 @@ import { authApi } from '@/api/auth'
 import type { OAuthProvider } from '@/types'
 import { t } from '@/utils/locale'
 import { buildOAuthAuthUrl } from '@/utils/oauth-state'
-import { normalize2FaCode } from '@/utils/two-factor'
+import {
+  normalize2FaCode,
+  save2FaTempSession,
+  load2FaTempSession,
+  clear2FaTempSession,
+} from '@/utils/two-factor'
 import AppLogo from '@/components/AppLogo.vue'
 
 const router = useRouter()
@@ -175,10 +180,21 @@ const rules = {
 function toggleMode() {
   isRegister.value = !isRegister.value
   isTwoFactorStep.value = false
+  tempToken.value = ''
+  twoFactorCode.value = ''
+  clear2FaTempSession()
   form.password = ''
   form.confirmPassword = ''
   formRef.value?.clearValidate()
   statusText.value = isRegister.value ? 'REGISTRATION_MODE' : 'AUTHENTICATION'
+}
+
+function handleBackToPassword() {
+  isTwoFactorStep.value = false
+  tempToken.value = ''
+  twoFactorCode.value = ''
+  clear2FaTempSession()
+  statusText.value = 'AUTHENTICATION'
 }
 
 async function navigateAfterAuth() {
@@ -209,6 +225,9 @@ async function handleSubmit() {
         if (res?.require_2fa) {
           isTwoFactorStep.value = true
           tempToken.value = res.temp_token || ''
+          if (tempToken.value) {
+            save2FaTempSession(tempToken.value)
+          }
           twoFactorCode.value = ''
           statusText.value = '2FA_CHALLENGE'
           ElMessage.info(t('login.twoFactorPrompt'))
@@ -234,6 +253,14 @@ async function handleSubmit() {
 
 async function handle2FaSubmit() {
   if (loading.value) return
+  if (!tempToken.value) {
+    tempToken.value = load2FaTempSession() || ''
+  }
+  if (!tempToken.value) {
+    ElMessage.warning(t('login.twoFactorFailed'))
+    handleBackToPassword()
+    return
+  }
   const cleanCode = normalize2FaCode(twoFactorCode.value)
   if (!cleanCode) {
     ElMessage.warning(t('login.twoFactorCodeRequired'))
@@ -244,6 +271,7 @@ async function handle2FaSubmit() {
   let verified = false
   try {
     await auth.verify2FaLogin(tempToken.value, cleanCode)
+    clear2FaTempSession()
     ElMessage.success(t('login.twoFactorSuccess'))
     verified = true
   } catch (e: any) {
@@ -395,6 +423,13 @@ function onPointerMove(e: PointerEvent) {
 }
 
 onMounted(async () => {
+  const saved2Fa = load2FaTempSession()
+  if (saved2Fa) {
+    tempToken.value = saved2Fa
+    isTwoFactorStep.value = true
+    statusText.value = '2FA_CHALLENGE'
+  }
+
   // 状态指示灯: 初始化 → 在线
   statusTimer = window.setTimeout(() => {
     if (isUnmounted) return

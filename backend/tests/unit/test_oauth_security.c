@@ -3,11 +3,160 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <openssl/evp.h>
+#include <openssl/bn.h>
+#include <openssl/rsa.h>
+#include <openssl/core_names.h>
+#include "csilk/core/primitives/codec.h"
 #include "common/db.h"
 #include "application/auth/commands.h"
 #include "application/auth/dtos.h"
 #include "application/auth/usecases.h"
 #include "domain/auth/repository.h"
+
+static void
+make_signed_jwt(EVP_PKEY* pkey,
+                const char* hdr_json,
+                const char* pay_json,
+                char* out_jwt,
+                size_t out_cap)
+{
+    char hdr_b64[512] = {0};
+    char pay_b64[1024] = {0};
+    csilk_base64url_encode((const uint8_t*)hdr_json, strlen(hdr_json), hdr_b64);
+    csilk_base64url_encode((const uint8_t*)pay_json, strlen(pay_json), pay_b64);
+
+    char signing[1600];
+    snprintf(signing, sizeof(signing), "%s.%s", hdr_b64, pay_b64);
+
+    if (!pkey) {
+        snprintf(out_jwt, out_cap, "%s.unsigned_sig", signing);
+        return;
+    }
+
+    uint8_t sig[512];
+    size_t  sig_len = sizeof(sig);
+    EVP_MD_CTX* mctx = EVP_MD_CTX_new();
+    assert(mctx != NULL);
+    assert(EVP_DigestSignInit(mctx, NULL, EVP_sha256(), NULL, pkey) == 1);
+    assert(EVP_DigestSign(mctx, sig, &sig_len, (const uint8_t*)signing, strlen(signing)) == 1);
+    EVP_MD_CTX_free(mctx);
+
+    char sig_b64[1024] = {0};
+    csilk_base64url_encode(sig, sig_len, sig_b64);
+    snprintf(out_jwt, out_cap, "%s.%s", signing, sig_b64);
+}
+
+static void
+test_oidc_id_token_and_provider_gating(void)
+{
+    /* Generate test RSA keypair & JWKS */
+    EVP_PKEY* pkey = EVP_RSA_gen(2048);
+    assert(pkey != NULL);
+
+    BIGNUM* bn_n = NULL;
+    BIGNUM* bn_e = NULL;
+    assert(EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_RSA_N, &bn_n) == 1);
+    assert(EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_RSA_E, &bn_e) == 1);
+    uint8_t n_bytes[512], e_bytes[64];
+    int     n_len = BN_bn2bin(bn_n, n_bytes);
+    int     e_len = BN_bn2bin(bn_e, e_bytes);
+    char    n_b64[1024] = {0}, e_b64[128] = {0};
+    csilk_base64url_encode(n_bytes, (size_t)n_len, n_b64);
+    csilk_base64url_encode(e_bytes, (size_t)e_len, e_b64);
+    BN_free(bn_n);
+    BN_free(bn_e);
+
+    char jwks[2048];
+    snprintf(jwks,
+             sizeof(jwks),
+             "{\"keys\":[{\"kty\":\"RSA\",\"use\":\"sig\",\"alg\":\"RS256\",\"kid\":\"k1\","
+             "\"n\":\"%s\",\"e\":\"%s\"}]}",
+             n_b64,
+             e_b64);
+
+    char jwt[4096], sub[128], uname[128];
+    const char* hdr_rs = "{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"k1\"}";
+
+    /* Valid RS256 ID token with array aud + matching azp */
+    make_signed_jwt(pkey,
+                    hdr_rs,
+                    "{\"iss\":\"https://idp.example\",\"sub\":\"oidc-u-1\",\"aud\":[\"mf-app\","
+                    "\"other\"],\"azp\":\"mf-app\",\"exp\":2000000100,\"preferred_username\":"
+                    "\"alice_oidc\"}",
+                    jwt,
+                    sizeof(jwt));
+    assert(auth_oidc_verify_id_token(
+               jwt, "mf-app", "https://idp.example", jwks, 2000000000, sub, sizeof(sub), uname, sizeof(uname)) ==
+           0);
+    assert(strcmp(sub, "oidc-u-1") == 0);
+    assert(strcmp(uname, "alice_oidc") == 0);
+
+    /* Expired token rejected */
+    assert(auth_oidc_verify_id_token(
+               jwt, "mf-app", "https://idp.example", jwks, 2000000200, sub, sizeof(sub), uname, sizeof(uname)) !=
+           0);
+
+    /* Wrong issuer rejected */
+    assert(auth_oidc_verify_id_token(
+               jwt, "mf-app", "https://evil.example", jwks, 2000000000, sub, sizeof(sub), uname, sizeof(uname)) !=
+           0);
+
+    /* Wrong aud rejected */
+    assert(auth_oidc_verify_id_token(
+               jwt, "wrong-client", "https://idp.example", jwks, 2000000000, sub, sizeof(sub), uname, sizeof(uname)) !=
+           0);
+
+    /* alg=none MUST always be rejected even when jwks_json is NULL */
+    make_signed_jwt(NULL,
+                    "{\"alg\":\"none\"}",
+                    "{\"iss\":\"https://idp.example\",\"sub\":\"oidc-u-1\",\"aud\":\"mf-app\","
+                    "\"exp\":2000000100}",
+                    jwt,
+                    sizeof(jwt));
+    assert(auth_oidc_verify_id_token(
+               jwt, "mf-app", "https://idp.example", NULL, 2000000000, sub, sizeof(sub), uname, sizeof(uname)) !=
+           0);
+
+    /* Tampered signature MUST fail JWKS verification */
+    make_signed_jwt(pkey,
+                    hdr_rs,
+                    "{\"iss\":\"https://idp.example\",\"sub\":\"oidc-u-1\",\"aud\":\"mf-app\","
+                    "\"exp\":2000000100}",
+                    jwt,
+                    sizeof(jwt));
+    jwt[strlen(jwt) - 1] = (jwt[strlen(jwt) - 1] == 'A') ? 'B' : 'A';
+    assert(auth_oidc_verify_id_token(
+               jwt, "mf-app", "https://idp.example", jwks, 2000000000, sub, sizeof(sub), uname, sizeof(uname)) !=
+           0);
+
+    EVP_PKEY_free(pkey);
+
+    /* OIDC provider listing requires CLIENT_ID + AUTH_URL + TOKEN_URL */
+    setenv("OAUTH_OIDC_CLIENT_ID", "oidc_cid_test", 1);
+    setenv("OAUTH_OIDC_AUTH_URL", "https://idp.example/auth", 1);
+    unsetenv("OAUTH_OIDC_TOKEN_URL");
+    unsetenv("MINEFOLIO_OAUTH_OIDC_TOKEN_URL");
+    csilk_json_t*         pdata = NULL;
+    auth_usecase_result_t pres = {0};
+    assert(auth_usecase_oauth_providers(&pdata, &pres) == 0 && pdata != NULL);
+    const csilk_json_t* parr = csilk_json_get(pdata, "providers");
+    assert(parr && csilk_json_array_size(parr) == 0);
+    csilk_json_free(pdata);
+
+    setenv("OAUTH_OIDC_TOKEN_URL", "https://idp.example/token", 1);
+    pdata = NULL;
+    assert(auth_usecase_oauth_providers(&pdata, &pres) == 0 && pdata != NULL);
+    parr = csilk_json_get(pdata, "providers");
+    assert(parr && csilk_json_array_size(parr) == 1);
+    assert(strcmp(csilk_json_get_string(csilk_json_array_get(parr, 0), "id"), "oidc") == 0);
+    csilk_json_free(pdata);
+    unsetenv("OAUTH_OIDC_CLIENT_ID");
+    unsetenv("OAUTH_OIDC_AUTH_URL");
+    unsetenv("OAUTH_OIDC_TOKEN_URL");
+
+    printf("PASS: test_oidc_id_token_and_provider_gating\n");
+}
 
 int main(void) {
     printf("=== Running test_oauth_security ===\n");
@@ -148,6 +297,7 @@ int main(void) {
     printf("PASS: test_oauth_callback_requires_2fa_when_enabled\n");
 
     unlink("/tmp/test_oauth_security.db");
+    test_oidc_id_token_and_provider_gating();
     printf("=== All test_oauth_security tests passed ===\n");
     return 0;
 }

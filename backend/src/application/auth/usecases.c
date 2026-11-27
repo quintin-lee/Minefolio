@@ -14,6 +14,7 @@
 #include "common/jwt.h"
 #include "csilk/core/totp.h"
 #include "common/db.h"
+#include "common/http_safety.h"
 #include "common/legacy_bcrypt.h"
 #include "csilk/csilk.h"
 #include "csilk/crypto/bcrypt.h"
@@ -21,10 +22,16 @@
 #include "csilk/crypto/crypto_dispatch.h"
 #include "csilk/drivers/cipher.h"
 #include <curl/curl.h>
+#include <openssl/bn.h>
+#include <openssl/core_names.h>
 #include <openssl/crypto.h>
+#include <openssl/ecdsa.h>
+#include <openssl/evp.h>
+#include <openssl/param_build.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 #define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
@@ -1006,22 +1013,50 @@ auth_usecase_oauth_providers(csilk_json_t** out_data, auth_usecase_result_t* out
         csilk_json_array_append(providers, gh);
     }
 
-    const char* oidc_client_id = config_secret_get("OAUTH_OIDC_CLIENT_ID", NULL, 0);
-    const char* oidc_auth_url = config_env_get("OAUTH_OIDC_AUTH_URL", NULL, 0, NULL);
-    if (oidc_client_id && oidc_client_id[0] && oidc_auth_url && oidc_auth_url[0]) {
+    char          oidc_client_id[256] = {0};
+    char          oidc_auth_url[512] = {0};
+    char          oidc_token_url[512] = {0};
+    char          oidc_redirect_uri[512] = {0};
+    const char*   has_id = config_secret_get("OAUTH_OIDC_CLIENT_ID", oidc_client_id, sizeof(oidc_client_id));
+    const char*   has_auth = config_env_get("OAUTH_OIDC_AUTH_URL", oidc_auth_url, sizeof(oidc_auth_url), NULL);
+    const char*   has_tok = config_env_get("OAUTH_OIDC_TOKEN_URL", oidc_token_url, sizeof(oidc_token_url), NULL);
+    const char*   has_redir =
+        config_env_get("OAUTH_OIDC_REDIRECT_URI", oidc_redirect_uri, sizeof(oidc_redirect_uri), NULL);
+    if (has_id && oidc_client_id[0] && has_auth && oidc_auth_url[0] && has_tok &&
+        oidc_token_url[0]) {
         csilk_json_t* oidc = csilk_json_object();
         csilk_json_add_string(oidc, "id", "oidc");
         csilk_json_add_string(oidc, "name", "Single Sign-On (OIDC)");
         csilk_json_add_string(oidc, "icon", "ph:key");
-        char full_auth_url[512];
-        snprintf(full_auth_url,
-                 sizeof(full_auth_url),
-                 "%s?client_id=%s&response_type=code&scope=openid%%20profile%%20email",
-                 oidc_auth_url,
-                 oidc_client_id);
+        char full_auth_url[1024];
+        if (has_redir && oidc_redirect_uri[0]) {
+            CURL* esc_curl = curl_easy_init();
+            char* enc_redir =
+                esc_curl ? curl_easy_escape(esc_curl, oidc_redirect_uri, (int)strlen(oidc_redirect_uri))
+                         : NULL;
+            snprintf(full_auth_url,
+                     sizeof(full_auth_url),
+                     "%s?client_id=%s&redirect_uri=%s&response_type=code&scope=openid%%20profile%%20email",
+                     oidc_auth_url,
+                     oidc_client_id,
+                     enc_redir ? enc_redir : oidc_redirect_uri);
+            if (enc_redir) {
+                curl_free(enc_redir);
+            }
+            if (esc_curl) {
+                curl_easy_cleanup(esc_curl);
+            }
+        } else {
+            snprintf(full_auth_url,
+                     sizeof(full_auth_url),
+                     "%s?client_id=%s&response_type=code&scope=openid%%20profile%%20email",
+                     oidc_auth_url,
+                     oidc_client_id);
+        }
         csilk_json_add_string(oidc, "auth_url", full_auth_url);
         csilk_json_array_append(providers, oidc);
     }
+    OPENSSL_cleanse(oidc_client_id, sizeof(oidc_client_id));
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_array(resp, "providers", providers);
@@ -1213,6 +1248,693 @@ oauth_exchange_github(
     return 0;
 }
 
+static int
+oidc_decode_b64url_alloc(const char* src, uint8_t** out_buf, size_t* out_len)
+{
+    if (!src || !src[0] || !out_buf || !out_len) {
+        return -1;
+    }
+    size_t slen = strlen(src);
+    size_t cap = (slen * 3U) / 4U + 16U;
+    uint8_t* buf = (uint8_t*)calloc(1, cap + 1U);
+    if (!buf) {
+        return -1;
+    }
+    int n = csilk_base64url_decode(src, buf, cap);
+    if (n < 0) {
+        free(buf);
+        return -1;
+    }
+    buf[n] = '\0';
+    *out_buf = buf;
+    *out_len = (size_t)n;
+    return 0;
+}
+
+static EVP_PKEY*
+oidc_build_rsa_pkey_from_jwk(const csilk_json_t* jwk)
+{
+    const char* n_b64 = csilk_json_get_string(jwk, "n");
+    const char* e_b64 = csilk_json_get_string(jwk, "e");
+    if (!n_b64 || !e_b64) {
+        return NULL;
+    }
+    uint8_t* n_raw = NULL;
+    uint8_t* e_raw = NULL;
+    size_t   n_len = 0, e_len = 0;
+    if (oidc_decode_b64url_alloc(n_b64, &n_raw, &n_len) != 0 ||
+        oidc_decode_b64url_alloc(e_b64, &e_raw, &e_len) != 0 || n_len == 0 || e_len == 0) {
+        free(n_raw);
+        free(e_raw);
+        return NULL;
+    }
+
+    BIGNUM*         bn_n = BN_bin2bn(n_raw, (int)n_len, NULL);
+    BIGNUM*         bn_e = BN_bin2bn(e_raw, (int)e_len, NULL);
+    OSSL_PARAM_BLD* bld = OSSL_PARAM_BLD_new();
+    OSSL_PARAM*     params = NULL;
+    EVP_PKEY_CTX*   pctx = NULL;
+    EVP_PKEY*       pkey = NULL;
+
+    if (bn_n && bn_e && bld && OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_N, bn_n) &&
+        OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_E, bn_e)) {
+        params = OSSL_PARAM_BLD_to_param(bld);
+        pctx = params ? EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL) : NULL;
+        if (pctx && EVP_PKEY_fromdata_init(pctx) > 0) {
+            if (EVP_PKEY_fromdata(pctx, &pkey, EVP_PKEY_PUBLIC_KEY, params) <= 0) {
+                pkey = NULL;
+            }
+        }
+    }
+
+    EVP_PKEY_CTX_free(pctx);
+    OSSL_PARAM_free(params);
+    OSSL_PARAM_BLD_free(bld);
+    BN_free(bn_n);
+    BN_free(bn_e);
+    free(n_raw);
+    free(e_raw);
+    return pkey;
+}
+
+static EVP_PKEY*
+oidc_build_ec_p256_pkey_from_jwk(const csilk_json_t* jwk)
+{
+    const char* crv = csilk_json_get_string(jwk, "crv");
+    const char* x_b64 = csilk_json_get_string(jwk, "x");
+    const char* y_b64 = csilk_json_get_string(jwk, "y");
+    if (!crv || strcmp(crv, "P-256") != 0 || !x_b64 || !y_b64) {
+        return NULL;
+    }
+    uint8_t* x_raw = NULL;
+    uint8_t* y_raw = NULL;
+    size_t   x_len = 0, y_len = 0;
+    if (oidc_decode_b64url_alloc(x_b64, &x_raw, &x_len) != 0 ||
+        oidc_decode_b64url_alloc(y_b64, &y_raw, &y_len) != 0 || x_len == 0 || x_len > 32 ||
+        y_len == 0 || y_len > 32) {
+        free(x_raw);
+        free(y_raw);
+        return NULL;
+    }
+
+    uint8_t uncompressed[65];
+    memset(uncompressed, 0, sizeof(uncompressed));
+    uncompressed[0] = 0x04;
+    memcpy(uncompressed + 1 + (32 - x_len), x_raw, x_len);
+    memcpy(uncompressed + 33 + (32 - y_len), y_raw, y_len);
+    free(x_raw);
+    free(y_raw);
+
+    OSSL_PARAM_BLD* bld = OSSL_PARAM_BLD_new();
+    OSSL_PARAM*     params = NULL;
+    EVP_PKEY_CTX*   pctx = NULL;
+    EVP_PKEY*       pkey = NULL;
+
+    if (bld &&
+        OSSL_PARAM_BLD_push_utf8_string(bld, OSSL_PKEY_PARAM_GROUP_NAME, "prime256v1", 0) &&
+        OSSL_PARAM_BLD_push_octet_string(
+            bld, OSSL_PKEY_PARAM_PUB_KEY, uncompressed, sizeof(uncompressed))) {
+        params = OSSL_PARAM_BLD_to_param(bld);
+        pctx = params ? EVP_PKEY_CTX_new_from_name(NULL, "EC", NULL) : NULL;
+        if (pctx && EVP_PKEY_fromdata_init(pctx) > 0) {
+            if (EVP_PKEY_fromdata(pctx, &pkey, EVP_PKEY_PUBLIC_KEY, params) <= 0) {
+                pkey = NULL;
+            }
+        }
+    }
+
+    EVP_PKEY_CTX_free(pctx);
+    OSSL_PARAM_free(params);
+    OSSL_PARAM_BLD_free(bld);
+    return pkey;
+}
+
+static int
+oidc_verify_jws_signature(const char* signing_input,
+                          size_t      signing_len,
+                          const char* sig_b64,
+                          const char* alg,
+                          const char* kid,
+                          const char* jwks_json)
+{
+    bool is_rs256 = (strcmp(alg, "RS256") == 0);
+    bool is_es256 = (strcmp(alg, "ES256") == 0);
+    if (!is_rs256 && !is_es256) {
+        return -1;
+    }
+
+    csilk_json_t* jwks = csilk_json_parse(jwks_json);
+    if (!jwks) {
+        return -1;
+    }
+    const csilk_json_t* keys = csilk_json_get(jwks, "keys");
+    if (!keys || !csilk_json_is_array(keys)) {
+        csilk_json_free(jwks);
+        return -1;
+    }
+
+    uint8_t* sig_raw = NULL;
+    size_t   sig_raw_len = 0;
+    if (oidc_decode_b64url_alloc(sig_b64, &sig_raw, &sig_raw_len) != 0 || sig_raw_len == 0) {
+        free(sig_raw);
+        csilk_json_free(jwks);
+        return -1;
+    }
+
+    uint8_t*       verify_sig = sig_raw;
+    size_t         verify_sig_len = sig_raw_len;
+    unsigned char* der_sig = NULL;
+
+    if (is_es256) {
+        if (sig_raw_len != 64) {
+            free(sig_raw);
+            csilk_json_free(jwks);
+            return -1;
+        }
+        ECDSA_SIG* esig = ECDSA_SIG_new();
+        BIGNUM*    r = BN_bin2bn(sig_raw, 32, NULL);
+        BIGNUM*    s = BN_bin2bn(sig_raw + 32, 32, NULL);
+        if (!esig || !r || !s || ECDSA_SIG_set0(esig, r, s) != 1) {
+            if (!esig || ECDSA_SIG_set0(esig, NULL, NULL) == 0) {
+                BN_free(r);
+                BN_free(s);
+            }
+            ECDSA_SIG_free(esig);
+            free(sig_raw);
+            csilk_json_free(jwks);
+            return -1;
+        }
+        int der_len = i2d_ECDSA_SIG(esig, &der_sig);
+        ECDSA_SIG_free(esig);
+        if (der_len <= 0 || !der_sig) {
+            OPENSSL_free(der_sig);
+            free(sig_raw);
+            csilk_json_free(jwks);
+            return -1;
+        }
+        verify_sig = der_sig;
+        verify_sig_len = (size_t)der_len;
+    }
+
+    int    verified = -1;
+    size_t key_cnt = csilk_json_array_size(keys);
+    for (size_t i = 0; i < key_cnt; i++) {
+        const csilk_json_t* jwk = csilk_json_array_get(keys, i);
+        if (!jwk) {
+            continue;
+        }
+        const char* k_use = csilk_json_get_string(jwk, "use");
+        if (k_use && k_use[0] && strcmp(k_use, "sig") != 0) {
+            continue;
+        }
+        const char* k_kid = csilk_json_get_string(jwk, "kid");
+        if (kid && kid[0] && (!k_kid || strcmp(k_kid, kid) != 0)) {
+            continue;
+        }
+        const char* k_alg = csilk_json_get_string(jwk, "alg");
+        if (k_alg && k_alg[0] && strcmp(k_alg, alg) != 0) {
+            continue;
+        }
+        const char* kty = csilk_json_get_string(jwk, "kty");
+        if (!kty) {
+            continue;
+        }
+
+        EVP_PKEY* pkey = NULL;
+        if (is_rs256 && strcmp(kty, "RSA") == 0) {
+            pkey = oidc_build_rsa_pkey_from_jwk(jwk);
+        } else if (is_es256 && strcmp(kty, "EC") == 0) {
+            pkey = oidc_build_ec_p256_pkey_from_jwk(jwk);
+        }
+        if (!pkey) {
+            continue;
+        }
+
+        EVP_MD_CTX* mctx = EVP_MD_CTX_new();
+        if (mctx &&
+            EVP_DigestVerifyInit(mctx, NULL, EVP_sha256(), NULL, pkey) == 1 &&
+            EVP_DigestVerify(mctx,
+                             verify_sig,
+                             verify_sig_len,
+                             (const unsigned char*)signing_input,
+                             signing_len) == 1) {
+            verified = 0;
+        }
+        EVP_MD_CTX_free(mctx);
+        EVP_PKEY_free(pkey);
+        if (verified == 0) {
+            break;
+        }
+    }
+
+    if (der_sig) {
+        OPENSSL_free(der_sig);
+    }
+    free(sig_raw);
+    csilk_json_free(jwks);
+    return verified;
+}
+
+int
+auth_oidc_verify_id_token(const char* id_token,
+                          const char* expected_client_id,
+                          const char* expected_issuer,
+                          const char* jwks_json,
+                          int64_t     now_ts,
+                          char*       out_sub,
+                          size_t      sub_cap,
+                          char*       out_username,
+                          size_t      un_cap)
+{
+    if (!id_token || !id_token[0] || !out_sub || sub_cap == 0) {
+        return -1;
+    }
+    out_sub[0] = '\0';
+    if (out_username && un_cap > 0) {
+        out_username[0] = '\0';
+    }
+
+    const char* dot1 = strchr(id_token, '.');
+    if (!dot1 || dot1 == id_token) {
+        return -1;
+    }
+    const char* dot2 = strchr(dot1 + 1, '.');
+    if (!dot2 || dot2 == dot1 + 1 || !dot2[1] || strchr(dot2 + 1, '.') != NULL) {
+        return -1;
+    }
+
+    size_t hdr_len = (size_t)(dot1 - id_token);
+    size_t pay_len = (size_t)(dot2 - (dot1 + 1));
+    char*  hdr_b64 = (char*)malloc(hdr_len + 1);
+    char*  pay_b64 = (char*)malloc(pay_len + 1);
+    if (!hdr_b64 || !pay_b64) {
+        free(hdr_b64);
+        free(pay_b64);
+        return -1;
+    }
+    memcpy(hdr_b64, id_token, hdr_len);
+    hdr_b64[hdr_len] = '\0';
+    memcpy(pay_b64, dot1 + 1, pay_len);
+    pay_b64[pay_len] = '\0';
+
+    uint8_t* hdr_raw = NULL;
+    uint8_t* pay_raw = NULL;
+    size_t   hdr_raw_len = 0, pay_raw_len = 0;
+    int      dec_rc = oidc_decode_b64url_alloc(hdr_b64, &hdr_raw, &hdr_raw_len);
+    int      dec_rc2 = oidc_decode_b64url_alloc(pay_b64, &pay_raw, &pay_raw_len);
+    free(hdr_b64);
+    free(pay_b64);
+    if (dec_rc != 0 || dec_rc2 != 0) {
+        free(hdr_raw);
+        free(pay_raw);
+        return -1;
+    }
+
+    csilk_json_t* hdr = csilk_json_parse((const char*)hdr_raw);
+    csilk_json_t* pay = csilk_json_parse((const char*)pay_raw);
+    free(hdr_raw);
+    free(pay_raw);
+    if (!hdr || !pay) {
+        if (hdr) {
+            csilk_json_free(hdr);
+        }
+        if (pay) {
+            csilk_json_free(pay);
+        }
+        return -1;
+    }
+
+    const char* alg = csilk_json_get_string(hdr, "alg");
+    const char* kid = csilk_json_get_string(hdr, "kid");
+    if (!alg || !alg[0] || strcasecmp(alg, "none") == 0) {
+        csilk_json_free(hdr);
+        csilk_json_free(pay);
+        return -1;
+    }
+
+    if (jwks_json && jwks_json[0]) {
+        if (oidc_verify_jws_signature(
+                id_token, (size_t)(dot2 - id_token), dot2 + 1, alg, kid, jwks_json) != 0) {
+            csilk_json_free(hdr);
+            csilk_json_free(pay);
+            return -1;
+        }
+    }
+
+    const char* sub = csilk_json_get_string(pay, "sub");
+    if (!sub || !sub[0]) {
+        csilk_json_free(hdr);
+        csilk_json_free(pay);
+        return -1;
+    }
+
+    const csilk_json_t* exp_v = csilk_json_get(pay, "exp");
+    if (!exp_v || !csilk_json_is_number(exp_v)) {
+        csilk_json_free(hdr);
+        csilk_json_free(pay);
+        return -1;
+    }
+    int64_t exp_ts = (int64_t)csilk_json_number_value(exp_v);
+    int64_t eff_now = (now_ts > 0) ? now_ts : (int64_t)time(NULL);
+    if (exp_ts + 60 < eff_now) {
+        csilk_json_free(hdr);
+        csilk_json_free(pay);
+        return -1;
+    }
+
+    if (expected_issuer && expected_issuer[0]) {
+        const char* iss = csilk_json_get_string(pay, "iss");
+        if (!iss || strcmp(iss, expected_issuer) != 0) {
+            csilk_json_free(hdr);
+            csilk_json_free(pay);
+            return -1;
+        }
+    }
+
+    if (expected_client_id && expected_client_id[0]) {
+        const csilk_json_t* aud_v = csilk_json_get(pay, "aud");
+        bool                aud_ok = false;
+        size_t              aud_cnt = 0;
+        if (aud_v && csilk_json_is_string(aud_v)) {
+            const char* a = csilk_json_string_value(aud_v);
+            aud_ok = (a && strcmp(a, expected_client_id) == 0);
+            aud_cnt = 1;
+        } else if (aud_v && csilk_json_is_array(aud_v)) {
+            aud_cnt = csilk_json_array_size(aud_v);
+            for (size_t i = 0; i < aud_cnt; i++) {
+                const csilk_json_t* elem = csilk_json_array_get(aud_v, i);
+                if (elem && csilk_json_is_string(elem)) {
+                    const char* a = csilk_json_string_value(elem);
+                    if (a && strcmp(a, expected_client_id) == 0) {
+                        aud_ok = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!aud_ok) {
+            csilk_json_free(hdr);
+            csilk_json_free(pay);
+            return -1;
+        }
+        if (aud_cnt > 1) {
+            const char* azp = csilk_json_get_string(pay, "azp");
+            if (azp && azp[0] && strcmp(azp, expected_client_id) != 0) {
+                csilk_json_free(hdr);
+                csilk_json_free(pay);
+                return -1;
+            }
+        }
+    }
+
+    snprintf(out_sub, sub_cap, "%s", sub);
+    if (out_username && un_cap > 0) {
+        const char* pref = csilk_json_get_string(pay, "preferred_username");
+        const char* email = csilk_json_get_string(pay, "email");
+        const char* name = csilk_json_get_string(pay, "name");
+        const char* pick = (pref && pref[0]) ? pref
+                                              : ((email && email[0]) ? email
+                                                                     : ((name && name[0]) ? name : sub));
+        snprintf(out_username, un_cap, "%s", pick);
+    }
+
+    csilk_json_free(hdr);
+    csilk_json_free(pay);
+    return 0;
+}
+
+static int
+oidc_http_request(const char*        url,
+                  const char*        post_body,
+                  struct curl_slist* extra_headers,
+                  bool               allow_local,
+                  char**             out_body)
+{
+    if (!url || !url[0] || !out_body) {
+        return -1;
+    }
+    *out_body = NULL;
+
+    char resolve_entry[320] = {0};
+    if (mf_http_validate_and_resolve_url(
+            url, 0, allow_local, false, resolve_entry, sizeof(resolve_entry)) != 0) {
+        return -1;
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        return -1;
+    }
+
+    struct curl_slist* resolve_list =
+        mf_http_curl_apply_security(curl, resolve_entry[0] ? resolve_entry : NULL, NULL, false);
+
+    mf_curl_buf_t buf = {.data = (char*)malloc(8192), .size = 0, .cap = 8192, .max_bytes = MF_CURL_MAX_1MB, .overflow = false};
+    if (!buf.data) {
+        curl_slist_free_all(resolve_list);
+        curl_easy_cleanup(curl);
+        return -1;
+    }
+    buf.data[0] = '\0';
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, mf_curl_bounded_write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    if (extra_headers) {
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, extra_headers);
+    }
+    if (post_body) {
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_body);
+    } else {
+        curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    }
+
+    CURLcode res = curl_easy_perform(curl);
+    long     http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    curl_slist_free_all(resolve_list);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || buf.overflow || http_code != 200 || buf.size == 0) {
+        free(buf.data);
+        return -1;
+    }
+
+    *out_body = buf.data;
+    return 0;
+}
+
+static int
+oauth_exchange_oidc(
+    const char* code, char* out_oauth_id, size_t id_cap, char* out_username, size_t un_cap)
+{
+    char client_id[256] = {0};
+    char client_secret[512] = {0};
+    char token_url[512] = {0};
+    char userinfo_url[512] = {0};
+    char jwks_url[512] = {0};
+    char issuer[512] = {0};
+    char redirect_uri[512] = {0};
+    char allow_local_buf[16] = {0};
+
+    if (!config_secret_get("OAUTH_OIDC_CLIENT_ID", client_id, sizeof(client_id)) ||
+        !client_id[0] ||
+        !config_secret_get("OAUTH_OIDC_CLIENT_SECRET", client_secret, sizeof(client_secret)) ||
+        !client_secret[0] ||
+        !config_env_get("OAUTH_OIDC_TOKEN_URL", token_url, sizeof(token_url), NULL) ||
+        !token_url[0]) {
+        OPENSSL_cleanse(client_id, sizeof(client_id));
+        OPENSSL_cleanse(client_secret, sizeof(client_secret));
+        return -2;
+    }
+    config_env_get("OAUTH_OIDC_USERINFO_URL", userinfo_url, sizeof(userinfo_url), NULL);
+    config_env_get("OAUTH_OIDC_JWKS_URL", jwks_url, sizeof(jwks_url), NULL);
+    config_env_get("OAUTH_OIDC_ISSUER", issuer, sizeof(issuer), NULL);
+    config_env_get("OAUTH_OIDC_REDIRECT_URI", redirect_uri, sizeof(redirect_uri), NULL);
+    config_env_get("OAUTH_OIDC_ALLOW_LOCAL", allow_local_buf, sizeof(allow_local_buf), "0");
+    bool allow_local =
+        (strcmp(allow_local_buf, "1") == 0 || strcasecmp(allow_local_buf, "true") == 0);
+
+    CURL* esc = curl_easy_init();
+    if (!esc) {
+        OPENSSL_cleanse(client_id, sizeof(client_id));
+        OPENSSL_cleanse(client_secret, sizeof(client_secret));
+        return -1;
+    }
+    char* enc_code = curl_easy_escape(esc, code, (int)strlen(code));
+    char* enc_cid = curl_easy_escape(esc, client_id, (int)strlen(client_id));
+    char* enc_csec = curl_easy_escape(esc, client_secret, (int)strlen(client_secret));
+    char* enc_redir =
+        redirect_uri[0] ? curl_easy_escape(esc, redirect_uri, (int)strlen(redirect_uri)) : NULL;
+
+    char post_fields[2048];
+    int  pf_n = -1;
+    if (enc_code && enc_cid && enc_csec) {
+        if (enc_redir) {
+            pf_n = snprintf(post_fields,
+                            sizeof(post_fields),
+                            "grant_type=authorization_code&code=%s&client_id=%s&client_secret=%s&"
+                            "redirect_uri=%s",
+                            enc_code,
+                            enc_cid,
+                            enc_csec,
+                            enc_redir);
+        } else {
+            pf_n = snprintf(post_fields,
+                            sizeof(post_fields),
+                            "grant_type=authorization_code&code=%s&client_id=%s&client_secret=%s",
+                            enc_code,
+                            enc_cid,
+                            enc_csec);
+        }
+    }
+    if (enc_code) {
+        curl_free(enc_code);
+    }
+    if (enc_cid) {
+        curl_free(enc_cid);
+    }
+    if (enc_csec) {
+        OPENSSL_cleanse(enc_csec, strlen(enc_csec));
+        curl_free(enc_csec);
+    }
+    if (enc_redir) {
+        curl_free(enc_redir);
+    }
+    curl_easy_cleanup(esc);
+    OPENSSL_cleanse(client_secret, sizeof(client_secret));
+
+    if (pf_n < 0 || (size_t)pf_n >= sizeof(post_fields)) {
+        OPENSSL_cleanse(post_fields, sizeof(post_fields));
+        OPENSSL_cleanse(client_id, sizeof(client_id));
+        return -1;
+    }
+
+    struct curl_slist* tok_hdrs = NULL;
+    tok_hdrs = curl_slist_append(tok_hdrs, "Accept: application/json");
+    tok_hdrs = curl_slist_append(tok_hdrs, "Content-Type: application/x-www-form-urlencoded");
+    tok_hdrs = curl_slist_append(tok_hdrs, "User-Agent: Minefolio-Backend");
+
+    char* tok_body = NULL;
+    int   http_rc = oidc_http_request(token_url, post_fields, tok_hdrs, allow_local, &tok_body);
+    OPENSSL_cleanse(post_fields, sizeof(post_fields));
+    curl_slist_free_all(tok_hdrs);
+    if (http_rc != 0 || !tok_body) {
+        OPENSSL_cleanse(client_id, sizeof(client_id));
+        return -1;
+    }
+
+    csilk_json_t* tok_resp = csilk_json_parse(tok_body);
+    OPENSSL_cleanse(tok_body, strlen(tok_body));
+    free(tok_body);
+    if (!tok_resp) {
+        OPENSSL_cleanse(client_id, sizeof(client_id));
+        return -1;
+    }
+
+    const char* access_tok = csilk_json_get_string(tok_resp, "access_token");
+    const char* id_token = csilk_json_get_string(tok_resp, "id_token");
+
+    bool has_id_sub = false;
+    char id_sub[128] = {0};
+    char id_user[128] = {0};
+
+    if (id_token && id_token[0]) {
+        char* jwks_body = NULL;
+        if (jwks_url[0]) {
+            if (oidc_http_request(jwks_url, NULL, NULL, allow_local, &jwks_body) != 0 ||
+                !jwks_body) {
+                csilk_json_free(tok_resp);
+                OPENSSL_cleanse(client_id, sizeof(client_id));
+                return -1;
+            }
+        }
+        int vrc = auth_oidc_verify_id_token(id_token,
+                                            client_id,
+                                            issuer[0] ? issuer : NULL,
+                                            jwks_body,
+                                            0,
+                                            id_sub,
+                                            sizeof(id_sub),
+                                            id_user,
+                                            sizeof(id_user));
+        free(jwks_body);
+        if (vrc != 0) {
+            csilk_json_free(tok_resp);
+            OPENSSL_cleanse(client_id, sizeof(client_id));
+            return -1;
+        }
+        has_id_sub = true;
+    }
+    OPENSSL_cleanse(client_id, sizeof(client_id));
+
+    bool has_ui_sub = false;
+    char ui_sub[128] = {0};
+    char ui_user[128] = {0};
+
+    if (userinfo_url[0] && access_tok && access_tok[0]) {
+        char auth_hdr[1024];
+        int  ahn = snprintf(auth_hdr, sizeof(auth_hdr), "Authorization: Bearer %s", access_tok);
+        if (ahn < 0 || (size_t)ahn >= sizeof(auth_hdr)) {
+            OPENSSL_cleanse(auth_hdr, sizeof(auth_hdr));
+            csilk_json_free(tok_resp);
+            return -1;
+        }
+        struct curl_slist* ui_hdrs = NULL;
+        ui_hdrs = curl_slist_append(ui_hdrs, auth_hdr);
+        OPENSSL_cleanse(auth_hdr, sizeof(auth_hdr));
+        ui_hdrs = curl_slist_append(ui_hdrs, "Accept: application/json");
+        ui_hdrs = curl_slist_append(ui_hdrs, "User-Agent: Minefolio-Backend");
+
+        char* ui_body = NULL;
+        int   ui_rc = oidc_http_request(userinfo_url, NULL, ui_hdrs, allow_local, &ui_body);
+        curl_slist_free_all(ui_hdrs);
+        if (ui_rc == 0 && ui_body) {
+            csilk_json_t* ui_resp = csilk_json_parse(ui_body);
+            free(ui_body);
+            if (ui_resp) {
+                const char* sub = csilk_json_get_string(ui_resp, "sub");
+                const char* pref = csilk_json_get_string(ui_resp, "preferred_username");
+                const char* email = csilk_json_get_string(ui_resp, "email");
+                const char* name = csilk_json_get_string(ui_resp, "name");
+                if (sub && sub[0]) {
+                    snprintf(ui_sub, sizeof(ui_sub), "%s", sub);
+                    const char* pick =
+                        (pref && pref[0]) ? pref
+                                          : ((email && email[0]) ? email
+                                                                 : ((name && name[0]) ? name : sub));
+                    snprintf(ui_user, sizeof(ui_user), "%s", pick);
+                    has_ui_sub = true;
+                }
+                csilk_json_free(ui_resp);
+            }
+        } else {
+            free(ui_body);
+        }
+    }
+    csilk_json_free(tok_resp);
+
+    if (has_id_sub && has_ui_sub && strcmp(id_sub, ui_sub) != 0) {
+        /* Prevent sub-substitution mismatch between ID Token and UserInfo */
+        return -1;
+    }
+
+    if (has_ui_sub) {
+        snprintf(out_oauth_id, id_cap, "%s", ui_sub);
+        snprintf(out_username, un_cap, "%s", ui_user[0] ? ui_user : ui_sub);
+        return 0;
+    }
+    if (has_id_sub) {
+        snprintf(out_oauth_id, id_cap, "%s", id_sub);
+        snprintf(out_username, un_cap, "%s", id_user[0] ? id_user : id_sub);
+        return 0;
+    }
+    return -1;
+}
+
 int
 auth_usecase_oauth_callback(void*                       pool,
                             const oauth_callback_cmd_t* cmd,
@@ -1263,6 +1985,19 @@ auth_usecase_oauth_callback(void*                       pool,
                 out_res->code = 1002;
                 snprintf(
                     out_res->message, sizeof(out_res->message), "GitHub OAuth 服务端配置未就绪");
+                return -1;
+            } else if (ex_rc != 0) {
+                out_res->code = 1002;
+                snprintf(out_res->message, sizeof(out_res->message), "OAuth 授权置换失败");
+                return -1;
+            }
+        } else if (strcmp(provider_buf, "oidc") == 0) {
+            int ex_rc = oauth_exchange_oidc(
+                cmd->code, oauth_id_buf, sizeof(oauth_id_buf), username_buf, sizeof(username_buf));
+            if (ex_rc == -2) {
+                out_res->code = 1002;
+                snprintf(
+                    out_res->message, sizeof(out_res->message), "OIDC OAuth 服务端配置未就绪");
                 return -1;
             } else if (ex_rc != 0) {
                 out_res->code = 1002;

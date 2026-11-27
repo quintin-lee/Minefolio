@@ -17,6 +17,7 @@ import { useAuthStore } from '@/stores/auth'
 import { isMobileMode } from '@/utils/http'
 import { t } from '@/utils/locale'
 import { consumeAndVerifyOAuthState } from '@/utils/oauth-state'
+import { save2FaTempSession } from '@/utils/two-factor'
 
 const router = useRouter()
 const route = useRoute()
@@ -70,6 +71,13 @@ onMounted(async () => {
       oauth_id: route.query.oauth_id as string,
       username: route.query.username as string,
     })
+
+    if (res && res.require_2fa && res.temp_token) {
+      save2FaTempSession(res.temp_token)
+      ElMessage.info(t('login.twoFactorPrompt'))
+      router.replace(loginPath)
+      return
+    }
 
     if (res && res.token) {
       auth.setToken(res.token)
