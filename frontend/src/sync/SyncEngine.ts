@@ -129,6 +129,7 @@ export class SyncEngine {
   private syncing = false
   private lastSyncAt: string | null = null
   private pushErrors: PushError[] = []
+  private syncEpoch = 0
 
   private constructor() {
     // 默认注册 6 张可写表；bootstrap 的 registerTable() 可覆盖同名定义。
@@ -257,6 +258,7 @@ export class SyncEngine {
   }
 
   reset(): void {
+    this.syncEpoch += 1
     this.queue = []
     this.lastSyncAt = null
     this.syncing = false
@@ -407,9 +409,11 @@ export class SyncEngine {
   }
 
   async pushLocal(): Promise<Map<string, Set<number>>> {
+    const epoch = this.syncEpoch
     const pushedInCycle = new Map<string, Set<number>>()
     this.loadQueue()
     for (const item of this.queue) {
+      if (epoch !== this.syncEpoch) return pushedInCycle
       if (item.conflict === 1) continue
       const def = this.registeredTables.get(item.table_name)
       if (!def) continue
@@ -429,6 +433,7 @@ export class SyncEngine {
         let effectiveId = recordId
         if (operation === 'create') {
           const res: any = config ? await def.api.create(payload, config) : await def.api.create(payload)
+          if (epoch !== this.syncEpoch) return pushedInCycle
           const newId = res?.id ?? (typeof res === 'number' ? res : null)
           if (newId) effectiveId = Number(newId)
           if (newId && newId !== recordId) {
@@ -452,9 +457,11 @@ export class SyncEngine {
         } else if (operation === 'update') {
           if (config) await def.api.update(recordId, payload, config)
           else await def.api.update(recordId, payload)
+          if (epoch !== this.syncEpoch) return pushedInCycle
         } else if (operation === 'delete') {
           if (config) await def.api.delete(recordId, config)
           else await def.api.delete(recordId)
+          if (epoch !== this.syncEpoch) return pushedInCycle
         }
         this.markSynced(item.id)
         if (operation !== 'delete' && effectiveId > 0) {
@@ -466,10 +473,10 @@ export class SyncEngine {
           set.add(effectiveId)
         }
       } catch (e: any) {
+        if (epoch !== this.syncEpoch) return pushedInCycle
         const code = Number(e?.response?.data?.code || 0)
         const status = Number(e?.response?.status || 0)
         if (code === AUTH_FAIL_CODE) {
-          this.authFailHandler?.()
           throw e
         }
         if (
@@ -495,9 +502,12 @@ export class SyncEngine {
     return pushedInCycle
   }
 
-  async pullRemote(pushedInCycle?: Map<string, Set<number>>): Promise<void> {
+  async pullRemote(pushedInCycle?: Map<string, Set<number>>): Promise<boolean> {
+    const epoch = this.syncEpoch
+    let hadPullFailure = false
     const tables = Object.keys(API_BY_TABLE)
     for (const table of tables) {
+      if (epoch !== this.syncEpoch) return false
       const api = this.registeredTables.get(table)?.api ?? API_BY_TABLE[table]
       if (!api?.list) continue
       try {
@@ -511,6 +521,7 @@ export class SyncEngine {
             params.include_archived = 1
           }
           const res: any = await api.list(params)
+          if (epoch !== this.syncEpoch) return false
           const rawRows = (res?.list ?? (Array.isArray(res) ? res : [])) as any[]
           const remoteRows = table === 'categories' ? flattenCategoryTree(rawRows) : rawRows
           for (const remote of remoteRows) {
@@ -572,12 +583,20 @@ export class SyncEngine {
             }
           }
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (epoch !== this.syncEpoch) return false
+        const code = Number(err?.response?.data?.code || 0)
+        if (code === AUTH_FAIL_CODE) {
+          throw err
+        }
+        hadPullFailure = true
         console.error(`[sync] Failed to pull remote data for table ${table}:`, err)
       }
     }
+    if (epoch !== this.syncEpoch) return false
     persist()
     this.emitStateChanged()
+    return !hadPullFailure
   }
 
   private upsertLocal(table: string, record: Record<string, unknown>): void {
@@ -598,19 +617,27 @@ export class SyncEngine {
 
   async syncNow(): Promise<void> {
     if (this.syncing) return
+    const epoch = this.syncEpoch
     this.syncing = true
     this.emitStateChanged()
     try {
       const pushedInCycle = await this.pushLocal()
-      await this.pullRemote(pushedInCycle)
-      this.setLastSync(new Date().toISOString())
+      if (epoch !== this.syncEpoch) return
+      const pullSucceeded = await this.pullRemote(pushedInCycle)
+      if (epoch !== this.syncEpoch) return
+      if (pullSucceeded) {
+        this.setLastSync(new Date().toISOString())
+      }
     } catch (e: any) {
-      // 网络/超时静默；鉴权失效由 pushLocal 调用 handler 后抛出
+      if (epoch !== this.syncEpoch) return
+      // 网络/超时静默；鉴权失效统一由 syncNow 触发 handler（pushLocal / pullRemote 遇 1001 均直接抛出）
       const code = Number(e?.response?.data?.code || 0)
       if (code === AUTH_FAIL_CODE) this.authFailHandler?.()
     } finally {
-      this.syncing = false
-      this.emitStateChanged()
+      if (epoch === this.syncEpoch) {
+        this.syncing = false
+        this.emitStateChanged()
+      }
     }
   }
 
