@@ -249,6 +249,58 @@ int main(void) {
     csilk_json_free(res.data_payload);
     printf("  [OK] report_expense_tag\n");
 
+    // 13. Yearly category fallback, blank/uncategorized items, and strict year/month validation
+    assert(csilk_db_exec_param(
+               pool,
+               "INSERT INTO categories (user_id, ledger_id, name, type) VALUES (?, ?, '   ', 'expense');",
+               (const char*[]){uid_str, lid_str, NULL}) == 0);
+    csilk_json_t* blank_cat_rows = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM categories WHERE user_id=? AND name='   ' LIMIT 1;",
+        (const char*[]){uid_str, NULL});
+    assert(blank_cat_rows && csilk_json_array_size(blank_cat_rows) == 1);
+    char blank_cat_str[32];
+    snprintf(blank_cat_str,
+             sizeof(blank_cat_str),
+             "%lld",
+             (long long)db_get_int(csilk_json_array_get(blank_cat_rows, 0), "id"));
+    csilk_json_free(blank_cat_rows);
+
+    assert(csilk_db_exec_param(
+               pool,
+               "INSERT INTO daily_expenses (user_id, ledger_id, category_id, asset_id, "
+               "expense_type, amount, currency, expense_date) "
+               "VALUES (?, ?, ?, 1, 'expense', 123.45, 'CNY', '2024-03-10');",
+               (const char*[]){uid_str, lid_str, blank_cat_str, NULL}) == 0);
+
+    report_query_t q_hist_yr = {
+        .user_id = user_id,
+        .ledger_id = ledger_id,
+        .year = "2024",
+        .month = NULL,
+        .base_currency = "CNY",
+    };
+    report_expense_category(pool, &q_hist_yr, &res);
+    assert(res.code == 0 && res.data_payload != NULL);
+    assert(strcmp(csilk_json_get_string(res.data_payload, "period"), "2024-") == 0);
+    const csilk_json_t* cat_items = csilk_json_get(res.data_payload, "items");
+    assert(cat_items && csilk_json_array_size(cat_items) == 1);
+    assert(strcmp(csilk_json_get_string(csilk_json_array_get(cat_items, 0), "name"), "未分类") == 0);
+    assert(fabs(db_get_num(csilk_json_array_get(cat_items, 0), "amount") - 123.45) < 1e-4);
+    csilk_json_free(res.data_payload);
+
+    report_query_t q_bad_wild = {
+        .user_id = user_id,
+        .ledger_id = ledger_id,
+        .year = "2026%",
+        .month = "01",
+    };
+    report_expense_monthly(pool, &q_bad_wild, &res);
+    assert(res.code == 1002);
+    report_expense_category(pool, &q_bad_wild, &res);
+    assert(res.code == 1002);
+    printf("  [OK] report_expense yearly, uncategorized, and strict validation\n");
+
     printf("=== Report Services Unit Tests Passed ===\n");
     return 0;
 }

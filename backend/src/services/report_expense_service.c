@@ -20,6 +20,59 @@
 #include <time.h>
 #include <math.h>
 
+static int
+parse_expense_period_parts(const char*      year_str,
+                           const char*      month_str,
+                           bool             require_month,
+                           int*             out_year,
+                           int*             out_month,
+                           bool*            out_has_month,
+                           report_result_t* out_res)
+{
+    time_t    now = time(NULL);
+    struct tm tm_now_storage;
+    struct tm* tm_now = localtime_r(&now, &tm_now_storage);
+
+    int year = tm_now ? (tm_now->tm_year + 1900) : 1970;
+    if (year_str && year_str[0] != '\0') {
+        int64_t parsed = parse_query_int_strict(year_str, -1);
+        if (parsed < 1970 || parsed > 2100) {
+            if (out_res) {
+                out_res->code = 1002;
+                snprintf(out_res->message, sizeof(out_res->message), "年份参数非法");
+            }
+            return -1;
+        }
+        year = (int)parsed;
+    }
+
+    int  month = tm_now ? (tm_now->tm_mon + 1) : 1;
+    bool has_month = require_month;
+    if (month_str && month_str[0] != '\0') {
+        int64_t parsed_m = parse_query_int_strict(month_str, -1);
+        if (parsed_m < 1 || parsed_m > 12) {
+            if (out_res) {
+                out_res->code = 1002;
+                snprintf(out_res->message, sizeof(out_res->message), "月份参数非法");
+            }
+            return -1;
+        }
+        month = (int)parsed_m;
+        has_month = true;
+    }
+
+    if (out_year) {
+        *out_year = year;
+    }
+    if (out_month) {
+        *out_month = month;
+    }
+    if (out_has_month) {
+        *out_has_month = has_month;
+    }
+    return 0;
+}
+
 void
 report_expense_monthly(void* pool, const report_query_t* q, report_result_t* out_res)
 {
@@ -32,20 +85,13 @@ report_expense_monthly(void* pool, const report_query_t* q, report_result_t* out
     }
     memset(out_res, 0, sizeof(*out_res));
 
-    const char* year_str = q->year;
-    const char* month_str = q->month;
-    char        year_buf[8] = {0}, month_buf[4] = {0};
-    if (!year_str || !month_str) {
-        time_t     now = time(NULL);
-        struct tm  tm_now_storage;
-        struct tm* tm_now = localtime_r(&now, &tm_now_storage);
-        strftime(year_buf, sizeof(year_buf), "%Y", tm_now);
-        strftime(month_buf, sizeof(month_buf), "%m", tm_now);
-        year_str = year_buf;
-        month_str = month_buf;
+    int year_val = 0, month_val = 0;
+    if (parse_expense_period_parts(
+            q->year, q->month, true, &year_val, &month_val, NULL, out_res) != 0) {
+        return;
     }
     char date_pattern[32];
-    snprintf(date_pattern, sizeof(date_pattern), "%s-%02d-%%", year_str, atoi(month_str));
+    snprintf(date_pattern, sizeof(date_pattern), "%04d-%02d-%%", year_val, month_val);
 
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
@@ -279,8 +325,8 @@ report_expense_monthly(void* pool, const report_query_t* q, report_result_t* out
         balance_m = income_m;
     }
     csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_number(resp, "year", (double)parse_query_int_strict(year_str, 0));
-    csilk_json_add_number(resp, "month", (double)parse_query_int_strict(month_str, 0));
+    csilk_json_add_number(resp, "year", (double)year_val);
+    csilk_json_add_number(resp, "month", (double)month_val);
     csilk_json_add_number(resp, "total_income", money_to_double(income_m));
     csilk_json_add_number(resp, "total_expense", money_to_double(expense_m));
     csilk_json_add_number(resp, "balance", money_to_double(balance_m));
@@ -423,15 +469,12 @@ report_expense_yearly(void* pool, const report_query_t* q, report_result_t* out_
     }
     memset(out_res, 0, sizeof(*out_res));
 
-    const char* year_str = q->year;
-    char        year_buf[8] = {0};
-    if (year_str && strlen(year_str) > 0) {
-        snprintf(year_buf, sizeof(year_buf), "%s", year_str);
-    } else {
-        time_t    now = time(NULL);
-        struct tm tm_local;
-        strftime(year_buf, sizeof(year_buf), "%Y", localtime_r(&now, &tm_local));
+    int year_val = 0;
+    if (parse_expense_period_parts(q->year, NULL, false, &year_val, NULL, NULL, out_res) != 0) {
+        return;
     }
+    char year_buf[8] = {0};
+    snprintf(year_buf, sizeof(year_buf), "%04d", year_val);
 
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
@@ -519,17 +562,17 @@ report_expense_category(void* pool, const report_query_t* q, report_result_t* ou
     }
     memset(out_res, 0, sizeof(*out_res));
 
-    const char* year_str = q->year;
-    const char* month_str = q->month;
-    char        year_buf[8] = {0};
-    time_t      now = time(NULL);
-    struct tm   tm_local;
-    strftime(year_buf, sizeof(year_buf), "%Y", localtime_r(&now, &tm_local));
+    int  year_val = 0, month_val = 0;
+    bool has_month = false;
+    if (parse_expense_period_parts(
+            q->year, q->month, false, &year_val, &month_val, &has_month, out_res) != 0) {
+        return;
+    }
     char period[16], period_pattern[32];
-    if (year_str && month_str) {
-        snprintf(period, sizeof(period), "%s-%02d-", year_str, atoi(month_str));
+    if (has_month) {
+        snprintf(period, sizeof(period), "%04d-%02d-", year_val, month_val);
     } else {
-        snprintf(period, sizeof(period), "%s-", year_buf);
+        snprintf(period, sizeof(period), "%04d-", year_val);
     }
     snprintf(period_pattern, sizeof(period_pattern), "%s%%", period);
 
@@ -541,7 +584,7 @@ report_expense_category(void* pool, const report_query_t* q, report_result_t* ou
 
     csilk_json_t* rows = csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
-        "SELECT c.name as name, de.amount, de.currency "
+        "SELECT COALESCE(NULLIF(TRIM(c.name), ''), '未分类') as name, de.amount, de.currency "
         "FROM daily_expenses de LEFT JOIN categories c ON de.category_id=c.id "
         "LEFT JOIN assets a ON de.asset_id=a.id "
         "WHERE de.ledger_id=? AND (de.user_id=? OR EXISTS (SELECT 1 FROM ledgers _l WHERE "
@@ -570,15 +613,15 @@ report_expense_category(void* pool, const report_query_t* q, report_result_t* ou
     for (size_t i = 0; i < n; i++) {
         csilk_json_t* row = csilk_json_array_get(rows, i);
         const char*   name = csilk_json_get_string(row, "name");
-        const char*   cur_s = csilk_json_get_string(row, "currency");
-        currency_t    cur = currency_from_str(cur_s ? cur_s : "CNY");
-        money_t       amt = exchange_rate_convert_m(db_get_money(row, "amount", cur), base_cur);
-        money_t       acc;
+        if (!name || !name[0]) {
+            name = "未分类";
+        }
+        const char* cur_s = csilk_json_get_string(row, "currency");
+        currency_t  cur = currency_from_str(cur_s ? cur_s : "CNY");
+        money_t     amt = exchange_rate_convert_m(db_get_money(row, "amount", cur), base_cur);
+        money_t     acc;
         if (money_add(total, amt, &acc) == DECIMAL_OK) {
             total = acc;
-        }
-        if (!name) {
-            continue;
         }
 
         int found = -1;
@@ -674,17 +717,17 @@ report_expense_tag(void* pool, const report_query_t* q, report_result_t* out_res
     }
     memset(out_res, 0, sizeof(*out_res));
 
-    const char* year_str = q->year;
-    const char* month_str = q->month;
-    char        year_buf[8] = {0};
-    time_t      now = time(NULL);
-    struct tm   tm_local;
-    strftime(year_buf, sizeof(year_buf), "%Y", localtime_r(&now, &tm_local));
+    int  year_val = 0, month_val = 0;
+    bool has_month = false;
+    if (parse_expense_period_parts(
+            q->year, q->month, false, &year_val, &month_val, &has_month, out_res) != 0) {
+        return;
+    }
     char period[16], period_pattern[32];
-    if (year_str && month_str) {
-        snprintf(period, sizeof(period), "%s-%02d-", year_str, atoi(month_str));
+    if (has_month) {
+        snprintf(period, sizeof(period), "%04d-%02d-", year_val, month_val);
     } else {
-        snprintf(period, sizeof(period), "%s-", year_buf);
+        snprintf(period, sizeof(period), "%04d-", year_val);
     }
     snprintf(period_pattern, sizeof(period_pattern), "%s%%", period);
 
