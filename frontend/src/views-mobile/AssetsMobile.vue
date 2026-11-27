@@ -82,7 +82,7 @@ const list = ref<Asset[]>([])
 const accounts = ref<Account[]>([])
 const loading = ref(false)
 const exchangeRates = ref<Record<string, number>>({})
-const collapsed = ref<Set<string>>(new Set())
+const expanded = ref<Set<string>>(new Set())
 const categories = ref<Category[]>([])
 const assetSheetVisible = ref(false)
 const accountSheetVisible = ref(false)
@@ -164,14 +164,14 @@ const groups = computed(() => {
 })
 
 function isCollapsed(key: string) {
-  return collapsed.value.has(key)
+  return !expanded.value.has(key)
 }
 
 function toggle(key: string) {
-  if (collapsed.value.has(key)) {
-    collapsed.value.delete(key)
+  if (expanded.value.has(key)) {
+    expanded.value.delete(key)
   } else {
-    collapsed.value.add(key)
+    expanded.value.add(key)
   }
 }
 

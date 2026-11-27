@@ -62,12 +62,12 @@
               <el-button class="group-edit" type="primary" link :icon="Edit" @click.stop="openAccountDialog(group.account)" />
             </el-tooltip>
             <el-icon class="group-chevron">
-              <ArrowDown v-if="collapsedGroups.has(group.key)" />
+              <ArrowDown v-if="!expandedGroups.has(group.key)" />
               <ArrowUp v-else />
             </el-icon>
           </div>
         </div>
-        <div v-if="!collapsedGroups.has(group.key)" class="account-group-body">
+        <div v-if="expandedGroups.has(group.key)" class="account-group-body">
           <div
             v-for="a in group.assets"
             :key="a.id"
@@ -290,7 +290,7 @@ const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth:
 const accounts = ref<Account[]>([])
 const accountDialogVisible = ref(false)
 const editingAccount = ref<Account | null>(null)
-const collapsedGroups = ref<Set<string>>(new Set())
+const expandedGroups = ref<Set<string>>(new Set())
 const exchangeRates = ref<Record<string, number>>({})
 
 const totalAssets = computed(() => summary.value.total_assets)
@@ -412,10 +412,10 @@ const groupedAccounts = computed(() => {
 })
 
 function toggleGroup(key: string) {
-  if (collapsedGroups.value.has(key)) {
-    collapsedGroups.value.delete(key)
+  if (expandedGroups.value.has(key)) {
+    expandedGroups.value.delete(key)
   } else {
-    collapsedGroups.value.add(key)
+    expandedGroups.value.add(key)
   }
 }
 
@@ -673,7 +673,7 @@ async function handleDeepLinkTarget() {
   if (assetId) {
     for (const g of groupedAccounts.value) {
       if (g.assets.some(a => a.id === assetId)) {
-        collapsedGroups.value.delete(g.key)
+        expandedGroups.value.add(g.key)
         break
       }
     }
@@ -698,7 +698,7 @@ async function handleDeepLinkTarget() {
 
   if (accountId) {
     const key = `acct-${accountId}`
-    collapsedGroups.value.delete(key)
+    expandedGroups.value.add(key)
     highlightedTarget.value = key
     await nextTick()
     if (isUnmounted) return
