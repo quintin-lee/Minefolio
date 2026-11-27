@@ -30,7 +30,10 @@ describe('ilink/supervisor', () => {
         spawnImpl: (runnerPath, args) => {
           const proc = new EventEmitter();
           proc.args = args;
-          proc.kill = (sig) => killed.push({ args, sig });
+          proc.kill = (sig) => {
+            killed.push({ args, sig });
+            proc.emit('exit', 0);
+          };
           spawned.push(proc);
           return proc;
         },
@@ -84,6 +87,67 @@ describe('ilink/supervisor', () => {
       // A single crash on the new epoch must back off cleanly instead of immediately halting again
       spawned[spawned.length - 1].emit('exit', 1);
       assert.strictEqual(statusCalls.length, 1);
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('awaits child exit before respawning on epoch change or deleting instance dir', async () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mf-ilink-sup-wait-'));
+    try {
+      const events = [];
+      let childSeq = 0;
+
+      const sup = createSupervisor({
+        api: {
+          listInstances: async () => [],
+          updateStatus: async () => {},
+        },
+        stateRoot: tmpRoot,
+        runnerPath: '/fake/runner.js',
+        shutdownGraceMs: 60,
+        spawnImpl: (runnerPath, args) => {
+          const seq = ++childSeq;
+          events.push(`spawn:${seq}`);
+          const proc = new EventEmitter();
+          proc.args = args;
+          proc.seq = seq;
+          proc.kill = (sig) => {
+            events.push(`kill:${seq}:${sig}`);
+            if (seq === 1 && sig === 'SIGTERM') {
+              // Simulate slow graceful exit (30ms)
+              setTimeout(() => {
+                events.push(`exit:${seq}`);
+                proc.emit('exit', 0);
+              }, 30);
+            } else if (seq === 2 && sig === 'SIGKILL') {
+              // Ignore SIGTERM and exit only on escalated SIGKILL
+              setTimeout(() => {
+                events.push(`exit:${seq}`);
+                proc.emit('exit', null);
+              }, 10);
+            }
+          };
+          return proc;
+        },
+        killImpl: (proc, sig) => proc.kill(sig),
+      });
+
+      await sup.reconcile([{ id: 30, status: 'active', login_epoch: 0, enabled: 1 }]);
+      createStateStore({ rootDir: tmpRoot, instanceId: 30 }).writeAccount({ bot_token: 'tok' });
+
+      // Epoch change: replacement spawn:2 must occur AFTER delayed exit:1
+      await sup.reconcile([{ id: 30, status: 'pending_login', login_epoch: 1, enabled: 1 }]);
+      const exit1Idx = events.indexOf('exit:1');
+      const spawn2Idx = events.indexOf('spawn:2');
+      assert.ok(exit1Idx >= 0 && spawn2Idx > exit1Idx, `expected exit:1 before spawn:2, got ${events.join(',')}`);
+
+      // Removal with unresponsive SIGTERM -> escalates to SIGKILL and waits for exit:2 before dir removal
+      await sup.reconcile([]);
+      assert.ok(events.includes('kill:2:SIGTERM'));
+      assert.ok(events.includes('kill:2:SIGKILL'));
+      assert.ok(events.includes('exit:2'));
+      assert.strictEqual(fs.existsSync(instanceDir(tmpRoot, 30)), false);
     } finally {
       fs.rmSync(tmpRoot, { recursive: true, force: true });
     }

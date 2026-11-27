@@ -73,6 +73,32 @@ function createSupervisor({
     children.delete(id);
   }
 
+  async function stopChildAndWait(id, graceMs = shutdownGraceMs) {
+    const entry = children.get(id);
+    if (!entry) return;
+    entry.stopping = true;
+    children.delete(id);
+    killImpl(entry.proc, 'SIGTERM');
+    if (entry.exited) return;
+
+    let graceTimer;
+    const waitGrace = new Promise((resolve) => {
+      graceTimer = setTimeout(resolve, graceMs);
+    });
+    await Promise.race([entry.exitPromise, waitGrace]);
+    clearTimeout(graceTimer);
+
+    if (!entry.exited) {
+      killImpl(entry.proc, 'SIGKILL');
+      let killTimer;
+      const waitKill = new Promise((resolve) => {
+        killTimer = setTimeout(resolve, Math.min(graceMs, 500));
+      });
+      await Promise.race([entry.exitPromise, waitKill]);
+      clearTimeout(killTimer);
+    }
+  }
+
   function startChild(inst, forceLogin) {
     const id = Number(inst.id);
     const epoch = Number(inst.login_epoch || 0);
@@ -125,7 +151,7 @@ function createSupervisor({
 
     for (const id of Array.from(children.keys())) {
       if (!byId.has(id)) {
-        stopChild(id);
+        await stopChildAndWait(id);
         crashState.delete(id);
         removeInstanceDir(stateRoot, id);
       }
@@ -145,7 +171,7 @@ function createSupervisor({
 
       if (!shouldRun) {
         if (children.has(id)) {
-          stopChild(id);
+          await stopChildAndWait(id);
         }
         continue;
       }
@@ -153,7 +179,7 @@ function createSupervisor({
       const existing = children.get(id);
       if (existing) {
         if (existing.epoch !== epoch) {
-          stopChild(id);
+          await stopChildAndWait(id);
           crashState.delete(id);
           startChild(inst, true);
         }

@@ -59,7 +59,10 @@ describe('ilink boolean flag parsing (SQLite/PostgreSQL defensive handling)', ()
         spawnImpl: (runnerPath, args) => {
           const proc = new EventEmitter();
           proc.args = args;
-          proc.kill = (sig) => killed.push({ args, sig });
+          proc.kill = (sig) => {
+            killed.push({ args, sig });
+            proc.emit('exit', 0);
+          };
           spawned.push(proc);
           return proc;
         },
