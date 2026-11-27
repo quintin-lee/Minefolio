@@ -85,6 +85,7 @@ import { Icon } from '@iconify/vue'
 import echarts, { type ECharts, type EChartsOption } from '@/utils/echarts'
 import { useMarketStore } from '@/stores/market'
 import { calculatePeriodStats, formatRate, calcCrossRate } from '@/utils/fx'
+import { localToday } from '@/utils/format'
 import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
 import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
 
@@ -185,7 +186,7 @@ function updateChart() {
 
 function handleExport(cmd: string) {
   if (!chartInstance) return
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const pair = `${marketStore.selectedCurrency}_${marketStore.baseCurrency}`
   if (cmd === 'png') {
     exportChartPng(chartInstance, `fx-trend-${pair}-${today}`)

@@ -155,7 +155,6 @@ async function handleBeforeChange(): Promise<boolean> {
       timeout_ms: props.server.timeout_ms,
       enabled: targetVal ? 1 : 0,
     })
-    props.server.enabled = targetVal ? 1 : 0
     ElMessage.success(targetVal ? `MCP服务「${props.server.name}」已启用` : `MCP服务「${props.server.name}」已停用`)
     emit('toggle', props.server, targetVal)
     return true

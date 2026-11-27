@@ -59,11 +59,11 @@
           <div v-if="report.summary" class="report-summary">{{ report.summary }}</div>
 
           <!-- 脱敏持仓概览 -->
-          <div v-if="parseHoldings(report.holdings_snapshot).length > 0" class="report-holdings-row">
+          <div v-if="(holdingsMap.get(report.id)?.length ?? 0) > 0" class="report-holdings-row">
             <span class="holdings-label">分析基准组合 (脱敏权重)：</span>
             <div class="holdings-pills">
               <span
-                v-for="(h, idx) in parseHoldings(report.holdings_snapshot)"
+                v-for="(h, idx) in holdingsMap.get(report.id)"
                 :key="idx"
                 class="holding-pill"
               >
@@ -75,7 +75,7 @@
           <div
             v-if="expandedId === report.id && report.status === 'done' && report.analysis"
             class="report-body"
-            v-html="renderMarkdown(report.analysis)"
+            v-html="expandedAnalysisHtml"
           ></div>
           <div v-else-if="expandedId === report.id && report.status === 'done' && fetchingId === report.id" class="report-pending">
             <el-skeleton :rows="3" animated />
@@ -107,7 +107,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { renderSafeMarkdown } from '@/utils/markdown'
@@ -177,7 +177,9 @@ async function expandReport(report: AiNewsReport) {
   }
 }
 
-function parseHoldings(snapshotStr?: string): Array<{ name: string; category: string; weight: string }> {
+type HoldingSnapshotItem = { name: string; category: string; weight: string }
+
+function parseHoldings(snapshotStr?: string): HoldingSnapshotItem[] {
   if (!snapshotStr || snapshotStr === '[]') return []
   try {
     const arr = JSON.parse(snapshotStr)
@@ -187,9 +189,34 @@ function parseHoldings(snapshotStr?: string): Array<{ name: string; category: st
   }
 }
 
-function renderMarkdown(md: string): string {
-  return renderSafeMarkdown(md)
-}
+let holdingsEntryCache = new Map<number, { raw: string; parsed: HoldingSnapshotItem[] }>()
+const holdingsMap = computed(() => {
+  const nextCache = new Map<number, { raw: string; parsed: HoldingSnapshotItem[] }>()
+  const result = new Map<number, HoldingSnapshotItem[]>()
+  for (const report of reports.value) {
+    const raw = report.holdings_snapshot || ''
+    const cached = holdingsEntryCache.get(report.id)
+    const parsed = cached && cached.raw === raw ? cached.parsed : parseHoldings(raw)
+    nextCache.set(report.id, { raw, parsed })
+    result.set(report.id, parsed)
+  }
+  holdingsEntryCache = nextCache
+  return result
+})
+
+const renderedMdCache = new Map<number, { raw: string; html: string }>()
+const expandedAnalysisHtml = computed(() => {
+  if (expandedId.value === -1) return ''
+  const report = reports.value.find(r => r.id === expandedId.value)
+  if (!report || report.status !== 'done' || !report.analysis) return ''
+  const cached = renderedMdCache.get(report.id)
+  if (cached && cached.raw === report.analysis) {
+    return cached.html
+  }
+  const html = renderSafeMarkdown(report.analysis)
+  renderedMdCache.set(report.id, { raw: report.analysis, html })
+  return html
+})
 
 let loadReqSeq = 0
 let isUnmounted = false

@@ -37,6 +37,7 @@ import { marketApi } from '@/api/market'
 import type { PriceHistoryItem } from '@/types'
 import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
+import { localToday } from '@/utils/format'
 import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
 
 const props = withDefaults(defineProps<{
@@ -163,7 +164,7 @@ function renderChart() {
 
 function handleExport(cmd: string) {
   if (!chart) return
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const safeName = (props.assetName || 'asset').replace(/[\\/:*?"<>|]/g, '_')
   if (cmd === 'png') {
     exportChartPng(chart, `${safeName}-price-history-${today}`)

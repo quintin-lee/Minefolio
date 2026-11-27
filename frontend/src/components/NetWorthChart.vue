@@ -31,7 +31,7 @@ import { Icon } from '@iconify/vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync, makeAreaGradient, modernTooltipConfig, withAlpha } from '@/utils/echarts-theme'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
-import { formatCurrency } from '@/utils/format'
+import { formatCurrency, localToday } from '@/utils/format'
 import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
 
 const props = withDefaults(defineProps<{
@@ -175,7 +175,7 @@ function updateChart() {
 
 function handleExport(cmd: string) {
   if (!chart) return
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   if (cmd === 'png') {
     exportChartPng(chart, `minefolio-net-worth-${today}`)
   } else if (cmd === 'csv') {
