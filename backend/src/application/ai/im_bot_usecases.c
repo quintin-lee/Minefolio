@@ -400,6 +400,12 @@ im_bot_usecase_bind_auth(void*          pool,
     }
     OPENSSL_cleanse(password_buf, sizeof(password_buf));
 
+    if (user.disabled != 0) {
+        *out_code = 1004;
+        snprintf(err_buf, err_cap, "账号已被禁用，请联系管理员");
+        return -1;
+    }
+
     int is_2fa_active = (user.totp_secret[0] != '\0') &&
                         (user.totp_enabled || (user.totp_backup_codes[0] != '\0' &&
                                                strcmp(user.totp_backup_codes, "[]") != 0));

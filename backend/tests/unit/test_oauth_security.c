@@ -93,6 +93,18 @@ int main(void) {
     assert(reg_rc != 0 && reg_res.code == 1004);
     printf("PASS: test_register_rejected_when_disabled_with_existing_users\n");
 
+    /* 4b. 注册开放门禁：ENABLE_REGISTRATION=0 时 OAuth 新用户注册同样必须被 1004 拒绝 */
+    oauth_callback_cmd_t oauth_closed_cmd = {
+        .provider = "github",
+        .code = "mock_code_new_blocked",
+        .username = "gh_blocked_user",
+    };
+    out_data = NULL;
+    memset(&res, 0, sizeof(res));
+    rc = auth_usecase_oauth_callback(pool, &oauth_closed_cmd, &out_data, &res);
+    assert(rc != 0 && res.code == 1004 && out_data == NULL);
+    printf("PASS: test_oauth_callback_new_user_rejected_when_registration_disabled\n");
+
     /* 5. 恢复开放注册（默认），验证新用户名可注册成功 */
     setenv("ENABLE_REGISTRATION", "1", 1);
     register_user_cmd_t reg_open = {
@@ -105,6 +117,35 @@ int main(void) {
     assert(reg_rc == 0 && reg_res.code == 0);
     csilk_json_free(reg_data);
     printf("PASS: test_register_allowed_when_open_with_existing_users\n");
+
+    /* 6. 已启用 2FA 的 OAuth 老用户回调必须返回 require_2fa=true + temp_token，禁止直接下发正式 JWT */
+    mf_user_t gh_user = {0};
+    assert(mf_auth_repo_find_by_username(pool, "gh_user99", &gh_user) == 0);
+    assert(mf_auth_repo_set_totp_secret(pool, gh_user.id, "JBSWY3DPEHPK3PXP") == 0);
+    assert(mf_auth_repo_enable_totp(pool, gh_user.id, "[\"OAUTHBACKUP1\"]") == 0);
+
+    out_data = NULL;
+    memset(&res, 0, sizeof(res));
+    rc = auth_usecase_oauth_callback(pool, &mock_ok_cmd, &out_data, &res);
+    assert(rc == 0 && res.code == 0 && out_data != NULL);
+    assert(csilk_json_as_bool(csilk_json_get(out_data, "require_2fa"), false) == true);
+    const char* oauth_temp_tok = csilk_json_get_string(out_data, "temp_token");
+    assert(oauth_temp_tok != NULL && strlen(oauth_temp_tok) > 10);
+    assert(csilk_json_get(out_data, "token") == NULL);
+
+    verify_2fa_login_cmd_t oauth_2fa_cmd = {
+        .temp_token = oauth_temp_tok,
+        .code = "OAUTHBACKUP1",
+    };
+    csilk_json_t* oauth_2fa_data = NULL;
+    auth_usecase_result_t oauth_2fa_res = {0};
+    assert(auth_usecase_2fa_verify_login(pool, &oauth_2fa_cmd, &oauth_2fa_data, &oauth_2fa_res) == 0);
+    assert(oauth_2fa_res.code == 0 && oauth_2fa_data != NULL);
+    assert(csilk_json_get_string(oauth_2fa_data, "token") != NULL);
+    csilk_json_free(oauth_2fa_data);
+    csilk_json_free(out_data);
+    out_data = NULL;
+    printf("PASS: test_oauth_callback_requires_2fa_when_enabled\n");
 
     unlink("/tmp/test_oauth_security.db");
     printf("=== All test_oauth_security tests passed ===\n");

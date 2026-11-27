@@ -391,7 +391,8 @@ mf_auth_repo_find_by_oauth(void*       pool,
     memset(out_user, 0, sizeof(*out_user));
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
-        "SELECT id, username, token_version, COALESCE(oauth_provider, '') AS oauth_provider, "
+        "SELECT id, username, token_version, totp_secret, totp_enabled, "
+        "totp_backup_codes, COALESCE(oauth_provider, '') AS oauth_provider, "
         "COALESCE(role, 'user') AS role, COALESCE(disabled, 0) AS disabled, "
         "COALESCE(CAST(created_at AS TEXT), '') AS created_at "
         "FROM users WHERE oauth_provider = ? AND oauth_id = ?",

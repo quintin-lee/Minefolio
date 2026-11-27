@@ -10,6 +10,7 @@
 #include "application/auth/commands.h"
 #include "application/auth/dtos.h"
 #include "application/auth/usecases.h"
+#include "application/ai/im_bot_usecases.h"
 #include "domain/auth/repository.h"
 
 int main(void) {
@@ -257,6 +258,24 @@ int main(void) {
     rc = auth_usecase_2fa_disable(pool, &dis_cmd_ok, NULL, &dis_res);
     assert(rc == 0 && dis_res.code == 0);
     printf("PASS: test_2fa_disable_succeeds_with_correct_password\n");
+
+    /* 7. 测试被禁用用户调用 im_bot_usecase_bind_auth 必须被 1004 拒绝 */
+    assert(mf_auth_repo_set_disabled(pool, test_uid, true) == 0);
+    csilk_json_t* bind_data = NULL;
+    int bind_code = 0;
+    char bind_err[256] = {0};
+    int bind_rc = im_bot_usecase_bind_auth(pool,
+                                           NULL,
+                                           "qq",
+                                           "qq_disabled_test",
+                                           "user_2fa_test",
+                                           "Password123!",
+                                           &bind_data,
+                                           &bind_code,
+                                           bind_err,
+                                           sizeof(bind_err));
+    assert(bind_rc != 0 && bind_code == 1004 && bind_data == NULL);
+    printf("PASS: test_im_bot_bind_auth_rejects_disabled_user\n");
 
     free(temp_token);
     unlink("/tmp/test_auth_2fa_lifecycle.db");
