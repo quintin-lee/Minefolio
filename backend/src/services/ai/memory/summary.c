@@ -52,6 +52,7 @@ typedef struct {
     bool            shutdown;
     bool            initialized;
     pthread_t       workers[2];
+    bool            worker_started[2];
 } summary_worker_pool_t;
 
 static summary_worker_pool_t s_pool = {.lock = PTHREAD_MUTEX_INITIALIZER,
@@ -311,8 +312,15 @@ ai_summary_pool_init(void)
     s_pool.head = 0;
     s_pool.tail = 0;
     s_pool.count = 0;
-    pthread_create(&s_pool.workers[0], NULL, summary_pool_worker_entry, NULL);
-    pthread_create(&s_pool.workers[1], NULL, summary_pool_worker_entry, NULL);
+    s_pool.worker_started[0] =
+        (pthread_create(&s_pool.workers[0], NULL, summary_pool_worker_entry, NULL) == 0);
+    s_pool.worker_started[1] =
+        (pthread_create(&s_pool.workers[1], NULL, summary_pool_worker_entry, NULL) == 0);
+    if (!s_pool.worker_started[0] && !s_pool.worker_started[1]) {
+        s_pool.initialized = false;
+        pthread_mutex_unlock(&s_pool.lock);
+        return;
+    }
     s_pool.initialized = true;
     pthread_mutex_unlock(&s_pool.lock);
 }
@@ -326,11 +334,19 @@ ai_summary_pool_shutdown(void)
         return;
     }
     s_pool.shutdown = true;
+    bool join0 = s_pool.worker_started[0];
+    bool join1 = s_pool.worker_started[1];
+    s_pool.worker_started[0] = false;
+    s_pool.worker_started[1] = false;
     pthread_cond_broadcast(&s_pool.not_empty);
     pthread_mutex_unlock(&s_pool.lock);
 
-    pthread_join(s_pool.workers[0], NULL);
-    pthread_join(s_pool.workers[1], NULL);
+    if (join0) {
+        pthread_join(s_pool.workers[0], NULL);
+    }
+    if (join1) {
+        pthread_join(s_pool.workers[1], NULL);
+    }
 
     pthread_mutex_lock(&s_pool.lock);
     /* 清空任务队列中的任务 */

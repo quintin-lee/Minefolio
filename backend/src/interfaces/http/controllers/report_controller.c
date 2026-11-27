@@ -14,6 +14,7 @@
 #include "common/db.h"
 #include "common/response.h"
 #include "csilk/csilk.h"
+#include <limits.h>
 #include <stdlib.h>
 
 /* ── 公共解析与响应辅助 ───────────────────────────────────────── */
@@ -45,11 +46,21 @@ report_ctx_resolve_year_month(csilk_ctx_t* c, report_query_t* q)
     q->month = csilk_get_query(c, "month");
 }
 
-static void
+static int
 report_ctx_resolve_days(csilk_ctx_t* c, report_query_t* q)
 {
     const char* s = csilk_get_query(c, "months");
-    q->days = s ? atoi(s) : 0;
+    if (!s || !s[0]) {
+        q->days = 0;
+        return 0;
+    }
+    int64_t parsed = parse_query_int_strict(s, -1);
+    if (parsed < 0 || parsed > INT_MAX) {
+        respond_bad_request(c, "Invalid months parameter");
+        return -1;
+    }
+    q->days = (int)parsed;
+    return 0;
 }
 
 static void
@@ -107,7 +118,9 @@ report_expense_trend_handler(csilk_ctx_t* c)
     if (report_ctx_resolve(c, &q) != 0) {
         return;
     }
-    report_ctx_resolve_days(c, &q);
+    if (report_ctx_resolve_days(c, &q) != 0) {
+        return;
+    }
     report_usecase_expense_trend(db_get_pool(), &q, &res);
     report_respond(c, &res, true);
 }

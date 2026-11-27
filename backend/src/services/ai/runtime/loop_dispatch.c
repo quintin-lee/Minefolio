@@ -140,10 +140,23 @@ ai_tools_execute_parallel_batch(int64_t             user_id,
     tasks[1].args = (csilk_json_t*)a2;
 
     pthread_t threads[2];
-    pthread_create(&threads[0], NULL, ai_parallel_tool_worker, &tasks[0]);
-    pthread_create(&threads[1], NULL, ai_parallel_tool_worker, &tasks[1]);
-    pthread_join(threads[0], NULL);
-    pthread_join(threads[1], NULL);
+    bool      started[2] = {false, false};
+    if (pthread_create(&threads[0], NULL, ai_parallel_tool_worker, &tasks[0]) == 0) {
+        started[0] = true;
+    } else {
+        ai_parallel_tool_worker(&tasks[0]);
+    }
+    if (pthread_create(&threads[1], NULL, ai_parallel_tool_worker, &tasks[1]) == 0) {
+        started[1] = true;
+    } else {
+        ai_parallel_tool_worker(&tasks[1]);
+    }
+    if (started[0]) {
+        pthread_join(threads[0], NULL);
+    }
+    if (started[1]) {
+        pthread_join(threads[1], NULL);
+    }
 
     if (out1) {
         *out1 = tasks[0].result_str;

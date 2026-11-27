@@ -67,10 +67,109 @@ quote_engine_get_proxy(void)
     return tls_proxy;
 }
 
+typedef struct {
+    char location[2049];
+} quote_header_state_t;
+
+static size_t
+quote_header_location_cb(char* buffer, size_t size, size_t nitems, void* userdata)
+{
+    size_t                total = size * nitems;
+    quote_header_state_t* state = (quote_header_state_t*)userdata;
+    if (!state || total < 9) {
+        return total;
+    }
+    if (strncasecmp(buffer, "location:", 9) == 0) {
+        const char* p = buffer + 9;
+        size_t      rem = total - 9;
+        while (rem > 0 && (*p == ' ' || *p == '\t')) {
+            p++;
+            rem--;
+        }
+        while (rem > 0 && (p[rem - 1] == '\r' || p[rem - 1] == '\n' || p[rem - 1] == ' ' ||
+                           p[rem - 1] == '\t')) {
+            rem--;
+        }
+        if (rem > 0 && rem < sizeof(state->location)) {
+            memcpy(state->location, p, rem);
+            state->location[rem] = '\0';
+        } else if (rem >= sizeof(state->location)) {
+            state->location[0] = '\0';
+        }
+    }
+    return total;
+}
+
+static bool
+quote_resolve_redirect_url(const char* current_url,
+                           const char* location,
+                           char*       out_url,
+                           size_t      out_cap)
+{
+    if (!current_url || !location || !location[0] || !out_url || out_cap == 0) {
+        return false;
+    }
+    if (strncasecmp(location, "http://", 7) == 0 || strncasecmp(location, "https://", 8) == 0) {
+        int n = snprintf(out_url, out_cap, "%s", location);
+        return n > 0 && (size_t)n < out_cap;
+    }
+    if (location[0] == '/' && location[1] == '/') {
+        const char* scheme_end = strstr(current_url, "://");
+        if (!scheme_end) {
+            return false;
+        }
+        size_t scheme_len = (size_t)(scheme_end - current_url) + 1; /* include ':' */
+        int    n = snprintf(out_url, out_cap, "%.*s%s", (int)scheme_len, current_url, location);
+        return n > 0 && (size_t)n < out_cap;
+    }
+    /* Reject non-http(s) explicit schemes like file://, gopher://, etc. */
+    const char* colon = strchr(location, ':');
+    const char* slash = strchr(location, '/');
+    const char* qmark = strchr(location, '?');
+    if (colon && (!slash || colon < slash) && (!qmark || colon < qmark)) {
+        return false;
+    }
+    if (location[0] == '/') {
+        const char* p = strstr(current_url, "://");
+        if (!p) {
+            return false;
+        }
+        const char* host_end = strchr(p + 3, '/');
+        size_t      len = host_end ? (size_t)(host_end - current_url) : strlen(current_url);
+        int         n = snprintf(out_url, out_cap, "%.*s%s", (int)len, current_url, location);
+        return n > 0 && (size_t)n < out_cap;
+    }
+    if (location[0] == '?') {
+        const char* qpos = strchr(current_url, '?');
+        size_t      base_len = qpos ? (size_t)(qpos - current_url) : strlen(current_url);
+        int         n = snprintf(out_url, out_cap, "%.*s%s", (int)base_len, current_url, location);
+        return n > 0 && (size_t)n < out_cap;
+    }
+    const char* scheme_end = strstr(current_url, "://");
+    if (!scheme_end) {
+        return false;
+    }
+    const char* qpos = strchr(current_url, '?');
+    size_t      path_end = qpos ? (size_t)(qpos - current_url) : strlen(current_url);
+    const char* last_slash = NULL;
+    for (size_t i = (size_t)(scheme_end - current_url) + 3; i < path_end; i++) {
+        if (current_url[i] == '/') {
+            last_slash = &current_url[i];
+        }
+    }
+    if (!last_slash) {
+        int n = snprintf(out_url, out_cap, "%.*s/%s", (int)path_end, current_url, location);
+        return n > 0 && (size_t)n < out_cap;
+    }
+    size_t dir_len = (size_t)(last_slash - current_url) + 1;
+    int    n = snprintf(out_url, out_cap, "%.*s%s", (int)dir_len, current_url, location);
+    return n > 0 && (size_t)n < out_cap;
+}
+
 char*
 quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_t* out_len)
 {
-    if (!url || atomic_load(&g_quote_stop)) {
+    if (!url || atomic_load(&g_quote_stop) || strlen(url) > 2048) {
         return NULL;
     }
 
@@ -87,78 +186,114 @@ quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_
         pthread_mutex_unlock(&g_proxy_mutex);
     }
 
-    char resolve_entry[320] = {0};
-    if (mf_http_validate_and_resolve_url(
-            url, 2048, false, (px && px[0]), resolve_entry, sizeof(resolve_entry)) != 0) {
-        return NULL;
-    }
+    char current_url[2049];
+    snprintf(current_url, sizeof(current_url), "%s", url);
 
-    CURL* curl = curl_easy_init();
-    if (!curl) {
-        return NULL;
-    }
-
-    mf_curl_buf_t      buf = {.data = NULL, .size = 0, .cap = 0, .max_bytes = MF_CURL_MAX_4MB};
-    struct curl_slist* resolve_list = mf_http_curl_apply_security(curl, resolve_entry, px, true);
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, quote_curl_xferinfo_cb);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_sec > 0 ? (long)timeout_sec : 3L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, mf_curl_bounded_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-
-    /* SSL / TLS Verification: strict peer and host verification by default */
-    long verify_peer = 1L;
-    long verify_host = 2L;
-
-    const char* insecure_env = getenv("MINEFOLIO_ALLOW_INSECURE_SSL");
-    if (insecure_env && (strcmp(insecure_env, "1") == 0 || strcasecmp(insecure_env, "true") == 0)) {
-        verify_peer = 0L;
-        verify_host = 0L;
-        static atomic_bool s_warned_insecure_ssl = false;
-        if (!atomic_exchange(&s_warned_insecure_ssl, true)) {
-            fprintf(stderr,
-                    "[SECURITY WARNING] quote_engine: Insecure SSL verification is explicitly "
-                    "enabled via MINEFOLIO_ALLOW_INSECURE_SSL!\n");
+    const int max_hops = 3;
+    for (int hop = 0; hop <= max_hops; hop++) {
+        if (atomic_load(&g_quote_stop)) {
+            return NULL;
         }
-    }
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, verify_peer);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, verify_host);
 
-    /* Optional custom CA bundle path (e.g. for enterprise proxy or self-hosted CA) */
-    const char* custom_ca = getenv("MINEFOLIO_CA_BUNDLE");
-    if (!custom_ca || !custom_ca[0]) {
-        custom_ca = getenv("SSL_CERT_FILE");
-    }
-    if (custom_ca && custom_ca[0]) {
-        curl_easy_setopt(curl, CURLOPT_CAINFO, custom_ca);
-    }
+        char resolve_entry[320] = {0};
+        if (mf_http_validate_and_resolve_url(
+                current_url, 2048, false, (px && px[0]), resolve_entry, sizeof(resolve_entry)) !=
+            0) {
+            return NULL;
+        }
 
-    if (px && px[0]) {
-        curl_easy_setopt(curl, CURLOPT_PROXY, px);
-    }
+        CURL* curl = curl_easy_init();
+        if (!curl) {
+            return NULL;
+        }
 
-    CURLcode res = curl_easy_perform(curl);
-    long     http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-    if (resolve_list) {
-        curl_slist_free_all(resolve_list);
-    }
-    curl_easy_cleanup(curl);
+        mf_curl_buf_t buf = {.data = NULL, .size = 0, .cap = 0, .max_bytes = MF_CURL_MAX_4MB};
+        quote_header_state_t hdr_state = {0};
+        struct curl_slist*   resolve_list =
+            mf_http_curl_apply_security(curl, resolve_entry, px, false);
+        curl_easy_setopt(curl, CURLOPT_URL, current_url);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, quote_curl_xferinfo_cb);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_sec > 0 ? (long)timeout_sec : 3L);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, mf_curl_bounded_write_cb);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, quote_header_location_cb);
+        curl_easy_setopt(curl, CURLOPT_HEADERDATA, &hdr_state);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
 
-    if (res != CURLE_OK || http_code < 200 || http_code >= 400) {
-        if (buf.data) {
+        /* SSL / TLS Verification: strict peer and host verification by default */
+        long verify_peer = 1L;
+        long verify_host = 2L;
+
+        const char* insecure_env = getenv("MINEFOLIO_ALLOW_INSECURE_SSL");
+        if (insecure_env &&
+            (strcmp(insecure_env, "1") == 0 || strcasecmp(insecure_env, "true") == 0)) {
+            verify_peer = 0L;
+            verify_host = 0L;
+            static atomic_bool s_warned_insecure_ssl = false;
+            if (!atomic_exchange(&s_warned_insecure_ssl, true)) {
+                fprintf(stderr,
+                        "[SECURITY WARNING] quote_engine: Insecure SSL verification is explicitly "
+                        "enabled via MINEFOLIO_ALLOW_INSECURE_SSL!\n");
+            }
+        }
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, verify_peer);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, verify_host);
+
+        /* Optional custom CA bundle path (e.g. for enterprise proxy or self-hosted CA) */
+        const char* custom_ca = getenv("MINEFOLIO_CA_BUNDLE");
+        if (!custom_ca || !custom_ca[0]) {
+            custom_ca = getenv("SSL_CERT_FILE");
+        }
+        if (custom_ca && custom_ca[0]) {
+            curl_easy_setopt(curl, CURLOPT_CAINFO, custom_ca);
+        }
+
+        if (px && px[0]) {
+            curl_easy_setopt(curl, CURLOPT_PROXY, px);
+        }
+
+        CURLcode res = curl_easy_perform(curl);
+        long     http_code = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+        if (resolve_list) {
+            curl_slist_free_all(resolve_list);
+        }
+        curl_easy_cleanup(curl);
+
+        if (res != CURLE_OK) {
             free(buf.data);
+            return NULL;
         }
-        return NULL;
+
+        if (http_code == 301 || http_code == 302 || http_code == 303 || http_code == 307 ||
+            http_code == 308) {
+            free(buf.data);
+            if (!hdr_state.location[0] || hop == max_hops) {
+                return NULL;
+            }
+            char next_url[2049];
+            if (!quote_resolve_redirect_url(
+                    current_url, hdr_state.location, next_url, sizeof(next_url))) {
+                return NULL;
+            }
+            snprintf(current_url, sizeof(current_url), "%s", next_url);
+            continue;
+        }
+
+        if (http_code < 200 || http_code >= 400) {
+            free(buf.data);
+            return NULL;
+        }
+
+        if (out_len) {
+            *out_len = buf.size;
+        }
+        return buf.data;
     }
 
-    if (out_len) {
-        *out_len = buf.size;
-    }
-    return buf.data;
+    return NULL;
 }
 
 int

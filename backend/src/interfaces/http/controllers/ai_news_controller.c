@@ -12,6 +12,7 @@
 #include "common/response.h"
 #include "common/db.h"
 #include <csilk/csilk.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,19 +33,23 @@ api_ai_news_list(csilk_ctx_t* c)
     int         limit = 7;
     const char* limit_str = csilk_get_query(c, "limit");
     if (limit_str && limit_str[0]) {
-        int parsed = atoi(limit_str);
-        if (parsed > 0 && parsed <= 30) {
-            limit = parsed;
+        int64_t parsed = parse_query_int_strict(limit_str, -1);
+        if (parsed <= 0) {
+            respond_bad_request(c, "Invalid limit parameter");
+            return;
         }
+        limit = (parsed <= 30) ? (int)parsed : 30;
     }
 
     int         offset = 0;
     const char* offset_str = csilk_get_query(c, "offset");
     if (offset_str && offset_str[0]) {
-        int parsed = atoi(offset_str);
-        if (parsed > 0) {
-            offset = parsed;
+        int64_t parsed = parse_query_int_strict(offset_str, -1);
+        if (parsed < 0 || parsed > INT_MAX) {
+            respond_bad_request(c, "Invalid offset parameter");
+            return;
         }
+        offset = (int)parsed;
     }
 
     csilk_db_pool_t* pool = db_get_pool();

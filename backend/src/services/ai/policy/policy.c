@@ -172,6 +172,7 @@ ai_policy_evaluate_ex(int64_t             user_id,
     int    max_freq = s_rules.max_frequency_per_minute;
     double single_limit = s_rules.single_amount_limit;
     double large_threshold = s_rules.large_amount_threshold;
+    bool   enforce_confirm = s_rules.enforce_confirmation;
     bool   freq_ok = check_frequency_locked(user_id, max_freq, count);
     pthread_mutex_unlock(&s_policy_lock);
 
@@ -214,7 +215,7 @@ ai_policy_evaluate_ex(int64_t             user_id,
              ai_risk_level_to_string(dec->risk_level));
 
     /* 5. 确认要求评估 (Confirmation Requirement) */
-    if (s_rules.enforce_confirmation && (dec->risk_level >= AI_RISK_MEDIUM)) {
+    if (enforce_confirm && (dec->risk_level >= AI_RISK_MEDIUM)) {
         dec->requires_confirmation = true;
     }
 

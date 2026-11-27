@@ -1,4 +1,5 @@
 #include "common/http_safety.h"
+#include "common/config.h"
 #include "common/ai_trace.h"
 #include "common/ai_config.h"
 #include "common/db.h"
@@ -638,6 +639,72 @@ test_receipt_base64_padding(void)
     free(bin_enc);
 }
 
+static void
+test_config_get_str_oob_regression(void)
+{
+    printf("[7] config_get_str bare key EOF OOB regression...\n");
+
+    const char* cfg_path = "/tmp/test_mf_config_oob.json";
+    char        out[64] = {0};
+
+    /* Case 1: file ends immediately after bare key without colon or quotes */
+    {
+        FILE* f = fopen(cfg_path, "wb");
+        assert(f != NULL);
+        fputs("{\"bare_key\"", f);
+        fclose(f);
+
+        memset(out, 'X', sizeof(out));
+        int rc = config_get_str(cfg_path, "bare_key", out, sizeof(out));
+        assert(rc == -1);
+        assert(out[0] == '\0');
+    }
+
+    /* Case 2: file ends right after colon/whitespace without opening quote */
+    {
+        FILE* f = fopen(cfg_path, "wb");
+        assert(f != NULL);
+        fputs("{\"bare_key\":   ", f);
+        fclose(f);
+
+        memset(out, 'X', sizeof(out));
+        int rc = config_get_str(cfg_path, "bare_key", out, sizeof(out));
+        assert(rc == -1);
+        assert(out[0] == '\0');
+    }
+
+    /* Case 2b: 4095-byte file ending right at buf[4095] NUL after bare key (strict ASan OOB check) */
+    {
+        FILE* f = fopen(cfg_path, "wb");
+        assert(f != NULL);
+        for (int i = 0; i < 4084; i++) {
+            fputc(' ', f);
+        }
+        fputs("{\"bare_key\"", f);
+        fclose(f);
+
+        memset(out, 'X', sizeof(out));
+        int rc = config_get_str(cfg_path, "bare_key", out, sizeof(out));
+        assert(rc == -1);
+        assert(out[0] == '\0');
+    }
+
+    /* Case 3: valid quoted value after a bare key prefix still parses */
+    {
+        FILE* f = fopen(cfg_path, "wb");
+        assert(f != NULL);
+        fputs("{\"bare_key\": \"ok_val\"}", f);
+        fclose(f);
+
+        memset(out, 0, sizeof(out));
+        int rc = config_get_str(cfg_path, "bare_key", out, sizeof(out));
+        assert(rc == 0);
+        assert(strcmp(out, "ok_val") == 0);
+    }
+
+    unlink(cfg_path);
+}
+
 int
 main(void)
 {
@@ -650,6 +717,7 @@ main(void)
     test_db_backed_regressions(pool);
     test_secret_path_traversal_and_mcp_crlf();
     test_receipt_base64_padding();
+    test_config_get_str_oob_regression();
 
     cleanup_db_files();
     printf("=== All Security & Audit Regression Tests Passed ===\n");

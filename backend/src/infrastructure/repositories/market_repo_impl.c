@@ -3,6 +3,7 @@
  */
 
 #include "infrastructure/repositories/market_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
@@ -116,11 +117,14 @@ mf_market_repo_price_history_range(
         "    SELECT 1 FROM ledger_members lm WHERE lm.ledger_id = a.ledger_id AND lm.user_id = ?"
         "  ))"
         ") "
-        "AND h.price_date >= ? AND h.price_date <= ? "
-        "ORDER BY h.price_date ASC";
+        "AND " MF_RBAC_ASSET_VISIBLE_SQL("a") " "
+                                              "AND h.price_date >= ? AND h.price_date <= ? "
+                                              "ORDER BY h.price_date ASC";
     return csilk_db_query_param_json((csilk_db_pool_t*)pool,
                                      sql,
                                      (const char*[]){aid_str,
+                                                     uid_str,
+                                                     uid_str,
                                                      uid_str,
                                                      uid_str,
                                                      start_date ? start_date : "1970-01-01",
