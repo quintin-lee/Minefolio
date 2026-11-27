@@ -32,6 +32,7 @@ services:
       MINEFOLIO_DB_USER: ${MINEFOLIO_DB_USER:-minefolio}
       MINEFOLIO_DB_NAME: ${MINEFOLIO_DB_NAME:-minefolio}
       MINEFOLIO_ENABLE_CSRF: "1"
+      TRUST_PROXY: "1"
       TZ: "Asia/Shanghai"
       npm_config_cache: "/app/data/.npm"
     # 启动前检查: 驱动为 postgres 时等待 DB 就绪并推导 DSN; sqlite 时直接放行。
@@ -57,7 +58,7 @@ services:
       - postgres
     environment:
       POSTGRES_USER: ${MINEFOLIO_DB_USER:-minefolio}
-      POSTGRES_PASSWORD: ${MINEFOLIO_DB_PASSWORD:-minefolio}
+      POSTGRES_PASSWORD: ${MINEFOLIO_DB_PASSWORD:-}
       POSTGRES_DB: ${MINEFOLIO_DB_NAME:-minefolio}
       POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C.UTF-8"
       TZ: "Asia/Shanghai"
@@ -97,12 +98,12 @@ services:
       - im
     environment:
       MODE: "ws"
-      WEBUI_TOKEN: "${NAPCAT_WEBUI_TOKEN:-minefolio123}"
+      WEBUI_TOKEN: "${NAPCAT_WEBUI_TOKEN:-}"
       ACCOUNT: "${NAPCAT_QQ:-}"
     ports:
-      - "3002:3000"   # OneBot v11 HTTP API
-      - "3001:3001"   # OneBot v11 WebSocket
-      - "6099:6099"   # NapCat WebUI 控制台 (扫码登录)
+      - "127.0.0.1:3002:3000"   # OneBot v11 HTTP API
+      - "127.0.0.1:3001:3001"   # OneBot v11 WebSocket
+      - "127.0.0.1:6099:6099"   # NapCat WebUI 控制台 (扫码登录)
     volumes:
       - napcat-qq:/root/.config/QQ
       - napcat-config:/app/napcat/config
@@ -117,7 +118,7 @@ services:
 
   # IM 网关服务 (桥接 NapCat 与 Minefolio)
   im-gateway:
-    image: docker.1ms.run/library/node:22-alpine
+    image: node:22-alpine
     container_name: minefolio-im-gateway
     profiles:
       - im
@@ -139,7 +140,7 @@ services:
 
   # 微信 iLink 用户级独立实例网关 (每实例独立子进程与 state 目录)
   ilink-gateway:
-    image: docker.1ms.run/library/node:22-alpine
+    image: node:22-alpine
     container_name: minefolio-ilink-gateway
     profiles:
       - im
