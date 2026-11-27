@@ -171,17 +171,20 @@ main(int argc, char** argv)
         fprintf(stderr,
                 "FATAL: JWT_SECRET is required and must not be empty or a forbidden default "
                 "placeholder\n");
+        curl_global_cleanup();
         return 1;
     }
 
     csilk_db_pool_t* pool;
     if (db_init(&pool) != 0) {
         fprintf(stderr, "Failed to initialize database\n");
+        curl_global_cleanup();
         return 1;
     }
     if (db_run_migrations(pool) != 0) {
         fprintf(stderr, "Failed to run migrations\n");
         csilk_db_pool_free(pool);
+        curl_global_cleanup();
         return 1;
     }
     printf("Database initialized and migrations applied.\n");
@@ -198,6 +201,7 @@ main(int argc, char** argv)
     if (auth_key_init() != 0) {
         fprintf(stderr, "Failed to initialize RSA key pair\n");
         csilk_db_pool_free(pool);
+        curl_global_cleanup();
         return 1;
     }
     ledger_register_balance_hooks();
@@ -206,6 +210,7 @@ main(int argc, char** argv)
         fprintf(stderr, "Failed to initialize async task manager\n");
         ai_shutdown();
         csilk_db_pool_free(pool);
+        curl_global_cleanup();
         return 1;
     }
     printf("RSA-2048 key pair generated for password encryption.\n");
@@ -216,6 +221,7 @@ main(int argc, char** argv)
         task_controller_shutdown();
         ai_shutdown();
         csilk_db_pool_free(pool);
+        curl_global_cleanup();
         return 1;
     }
     {

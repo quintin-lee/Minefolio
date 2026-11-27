@@ -414,19 +414,21 @@ api_ai_action_confirm_batch_handler(csilk_ctx_t* c)
         return;
     }
 
+    int64_t       effective_ledger_id = (body_lid > 0) ? body_lid : ledger_id;
     int64_t       session_id = (int64_t)csilk_json_get_number(body, "session_id");
     csilk_json_t* out_data = NULL;
     int           code = 0;
     char          err_buf[256] = {0};
-    int           rc = ai_batch_actions_execute_for_session(db_get_pool(),
-                                                            user_id,
-                                                            session_id,
-                                                            actions,
-                                                            token_buf,
-                                                            &out_data,
-                                                            &code,
-                                                            err_buf,
-                                                            sizeof(err_buf));
+    int           rc = ai_batch_actions_execute_in_ledger(db_get_pool(),
+                                                          user_id,
+                                                          session_id,
+                                                          effective_ledger_id,
+                                                          actions,
+                                                          token_buf,
+                                                          &out_data,
+                                                          &code,
+                                                          err_buf,
+                                                          sizeof(err_buf));
     csilk_json_free(body);
 
     if (rc == 0 && out_data) {

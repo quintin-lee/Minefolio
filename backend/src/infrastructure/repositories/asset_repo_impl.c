@@ -808,6 +808,41 @@ asset_get_ledger_and_account(csilk_db_pool_t* pool,
     return 0;
 }
 
+int
+asset_get_currency_for_user(csilk_db_pool_t* pool,
+                            int64_t          user_id,
+                            int64_t          asset_id,
+                            char*            out_currency,
+                            size_t           out_cap)
+{
+    if (!pool || user_id <= 0 || asset_id <= 0 || !out_currency || out_cap == 0) {
+        return -1;
+    }
+    char aid_str[32], uid_str[32];
+    snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "SELECT a.currency FROM assets a "
+        "WHERE a.id=? AND (a.user_id=? OR (a.ledger_id > 0 AND EXISTS ("
+        "  SELECT 1 FROM ledger_members lm WHERE lm.ledger_id=a.ledger_id AND lm.user_id=?)))",
+        (const char*[]){aid_str, uid_str, uid_str, NULL});
+    if (!res || csilk_json_array_size(res) == 0) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        return -1;
+    }
+    const char* cur = csilk_json_get_string(csilk_json_array_get(res, 0), "currency");
+    int         rc = -1;
+    if (cur && cur[0]) {
+        snprintf(out_currency, out_cap, "%s", cur);
+        rc = 0;
+    }
+    csilk_json_free(res);
+    return rc;
+}
+
 char*
 asset_get_category_type(csilk_db_pool_t* pool, int64_t user_id, int64_t category_id)
 {

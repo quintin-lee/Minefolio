@@ -125,33 +125,20 @@ parse_csv(const char* data, size_t len, char* out, size_t out_len)
 }
 
 static void
-close_inherited_fds_child(void)
+close_inherited_fds_child(long max_fd)
 {
-    DIR* dir = opendir("/proc/self/fd");
-    if (dir) {
-        int            dfd = dirfd(dir);
-        struct dirent* ent;
-        while ((ent = readdir(dir)) != NULL) {
-            if (ent->d_name[0] == '.') {
-                continue;
-            }
-            char* endp = NULL;
-            long  fd = strtol(ent->d_name, &endp, 10);
-            if (endp && *endp == '\0' && fd >= 3 && fd != dfd) {
-                close((int)fd);
-            }
-        }
-        closedir(dir);
-        return;
-    }
-
-    long max_fd = sysconf(_SC_OPEN_MAX);
-    if (max_fd < 0 || max_fd > 65536) {
+#if defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 34))
+    (void)max_fd;
+    closefrom(3);
+#else
+    /* Fallback strictly bounded to pre-fork max_fd; never call opendir() after fork(). */
+    if (max_fd < 3 || max_fd > 65536) {
         max_fd = 65536;
     }
     for (int fd = 3; fd < (int)max_fd; fd++) {
         close(fd);
     }
+#endif
 }
 
 static int64_t
@@ -173,6 +160,11 @@ file_parser_run_tool_capture_timeout(const char* prog,
 {
     if (!prog || !argv || !out || out_len == 0) {
         return -1;
+    }
+
+    long max_fd = sysconf(_SC_OPEN_MAX);
+    if (max_fd < 0 || max_fd > 65536) {
+        max_fd = 65536;
     }
 
     int pipefd[2];
@@ -207,7 +199,7 @@ file_parser_run_tool_capture_timeout(const char* prog,
         if (pipefd[1] > STDERR_FILENO) {
             close(pipefd[1]);
         }
-        close_inherited_fds_child();
+        close_inherited_fds_child(max_fd);
         execvp(prog, argv);
         _exit(127);
     }
@@ -223,6 +215,7 @@ file_parser_run_tool_capture_timeout(const char* prog,
     size_t  total = 0;
     size_t  lines = 0;
     bool    timed_out = false;
+    bool    eof_reached = false;
     bool    done = false;
 
     while (!done && total < out_len - 1 && (max_lines == 0 || lines < max_lines)) {
@@ -270,6 +263,7 @@ file_parser_run_tool_capture_timeout(const char* prog,
                         break;
                     }
                 } else if (r == 0) {
+                    eof_reached = true;
                     done = true;
                     break;
                 } else {
@@ -289,14 +283,40 @@ file_parser_run_tool_capture_timeout(const char* prog,
     }
 
     close(pipefd[0]);
+    int st = 0;
     if (timed_out) {
         kill(pid, SIGKILL);
-    }
-
-    int st = 0;
-    while (waitpid(pid, &st, 0) < 0) {
-        if (errno != EINTR) {
-            break;
+        while (waitpid(pid, &st, 0) < 0) {
+            if (errno != EINTR) {
+                break;
+            }
+        }
+    } else if (!eof_reached) {
+        /* Early exit (e.g. out_len / max_lines cap): bound child wait so parent never blocks indefinitely. */
+        kill(pid, SIGTERM);
+        bool reaped = false;
+        for (int i = 0; i < 20; i++) {
+            pid_t w = waitpid(pid, &st, WNOHANG);
+            if (w == pid || (w < 0 && errno != EINTR)) {
+                reaped = true;
+                break;
+            }
+            struct timespec ts = {0, 10000000L}; /* 10ms */
+            nanosleep(&ts, NULL);
+        }
+        if (!reaped) {
+            kill(pid, SIGKILL);
+            while (waitpid(pid, &st, 0) < 0) {
+                if (errno != EINTR) {
+                    break;
+                }
+            }
+        }
+    } else {
+        while (waitpid(pid, &st, 0) < 0) {
+            if (errno != EINTR) {
+                break;
+            }
         }
     }
 

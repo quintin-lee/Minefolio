@@ -5,6 +5,7 @@
 #include "common/jwt.h"
 #include "common/db.h"
 #include "services/ai_tools.h"
+#include "services/ai/policy/policy.h"
 #include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/registry.h"
 #include "services/ai/tools/validation.h"
@@ -150,6 +151,24 @@ mcp_handle_tools_call(csilk_ctx_t* c, const csilk_json_t* body, int64_t user_id)
         mcp_send_response(c, mcp_req_id(body), NULL, -32602, verr[0] ? verr : "invalid arguments");
         return;
     }
+
+    ai_policy_decision_t* decision =
+        ai_policy_evaluate(user_id, 0, name, args_json, AI_RISK_NO_OVERRIDE);
+    if (!decision || !decision->allowed || decision->requires_confirmation) {
+        const char* deny_msg = (decision && decision->reason[0])
+                                   ? decision->reason
+                                   : ((decision && decision->requires_confirmation)
+                                          ? "confirmation required"
+                                          : "tool blocked by policy");
+        mcp_send_response(c, mcp_req_id(body), NULL, -32003, deny_msg);
+        if (decision) {
+            ai_policy_decision_free(decision);
+        }
+        csilk_json_free(args_json);
+        csilk_json_free(params);
+        return;
+    }
+    ai_policy_decision_free(decision);
 
     char* result_str = ai_tools_execute_parsed(db_get_pool(), user_id, 0, args_json, name);
 

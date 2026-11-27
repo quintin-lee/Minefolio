@@ -817,6 +817,51 @@ main(int argc, char** argv)
             csilk_json_free(b_tf_row);
             printf("  ✅ Shared-ledger operator batch confirm updated balances & stamped ledger_id=%lld\n",
                    (long long)sh_lid);
+
+            /* 14d: Explicit ledger mismatch rejected (1004) & asset non-CNY currency preserved */
+            csilk_json_free(csilk_db_query_param_json(
+                pool,
+                "INSERT INTO assets (id, user_id, category_id, account_id, name, current_value, currency, ledger_id) VALUES "
+                "(204, 2002, 20, 22, 'UsdAsset', 500.0, 'USD', 2)",
+                (const char*[]){NULL}));
+            csilk_json_t* usd_batch = csilk_json_array();
+            csilk_json_t* ub = csilk_json_object();
+            csilk_json_add_string(ub, "action_type", "daily_expense");
+            csilk_json_add_number(ub, "amount", 25.0);
+            csilk_json_add_string(ub, "type", "expense");
+            csilk_json_add_number(ub, "category_id", 20.0);
+            csilk_json_add_number(ub, "asset_id", 204.0);
+            csilk_json_add_string(ub, "date", "2026-11-21");
+            csilk_json_array_append(usd_batch, ub);
+
+            char* mis_tok = ai_confirmation_create_batch_token(sh_editor, 14, usd_batch, AI_RISK_HIGH, 300);
+            csilk_json_t* mis_out = NULL;
+            int mis_code = 0;
+            char mis_err[256] = {0};
+            assert(ai_batch_actions_execute_in_ledger(
+                       pool, sh_editor, 14, 1, usd_batch, mis_tok, &mis_out, &mis_code, mis_err, sizeof(mis_err)) < 0);
+            assert(mis_code == 1004);
+            free(mis_tok);
+
+            char* ok_usd_tok = ai_confirmation_create_batch_token(sh_editor, 15, usd_batch, AI_RISK_HIGH, 300);
+            csilk_json_t* ok_usd_out = NULL;
+            int ok_usd_code = 0;
+            char ok_usd_err[256] = {0};
+            assert(ai_batch_actions_execute_in_ledger(
+                       pool, sh_editor, 15, sh_lid, usd_batch, ok_usd_tok, &ok_usd_out, &ok_usd_code, ok_usd_err, sizeof(ok_usd_err)) == 0);
+            assert(ok_usd_code == 0);
+            csilk_json_free(ok_usd_out);
+            free(ok_usd_tok);
+            csilk_json_free(usd_batch);
+
+            csilk_json_t* usd_de = csilk_db_query_param_json(
+                pool,
+                "SELECT currency FROM daily_expenses WHERE asset_id=204 ORDER BY id DESC LIMIT 1",
+                (const char*[]){NULL});
+            assert(usd_de != NULL && csilk_json_array_size(usd_de) == 1);
+            assert(strcmp(csilk_json_get_string(csilk_json_array_get(usd_de, 0), "currency"), "USD") == 0);
+            csilk_json_free(usd_de);
+            printf("  ✅ Batch explicit ledger mismatch rejected (1004) & USD currency preserved\n");
         }
 
         free(token);

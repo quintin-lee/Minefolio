@@ -330,13 +330,23 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
         return strdup("{\"error\":\"failed to begin transaction\"}");
     }
 
+    const char* arg_cur = args ? csilk_json_get_string(args, "currency") : NULL;
+    char        eff_cur[16] = "CNY";
+    if (asset_id <= 0 ||
+        asset_get_currency_for_user(ctx->pool, ctx->user_id, asset_id, eff_cur, sizeof(eff_cur)) !=
+            0) {
+        if (arg_cur && arg_cur[0]) {
+            snprintf(eff_cur, sizeof(eff_cur), "%s", arg_cur);
+        }
+    }
+
     int64_t de_id = mf_ai_repo_daily_expense_insert(ctx->pool,
                                                     ctx->user_id,
                                                     ledger_id,
                                                     date,
                                                     type,
                                                     amount,
-                                                    "CNY",
+                                                    eff_cur,
                                                     category_id,
                                                     asset_id,
                                                     note ? note : "");
@@ -348,7 +358,7 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
     if (asset_id > 0) {
         int     is_income = (strcmp(type, "income") == 0);
         money_t amt_m;
-        money_from_double(amount, CURRENCY_CNY, &amt_m);
+        money_from_double(amount, currency_from_str(eff_cur), &amt_m);
         int rc = ledger_apply_expense_dated(ctx->pool,
                                             ctx->user_id,
                                             asset_id,

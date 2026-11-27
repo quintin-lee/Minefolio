@@ -36,6 +36,11 @@ int           asset_get_ledger_and_account(csilk_db_pool_t* pool,
                                            int64_t          asset_id,
                                            int64_t*         out_ledger_id,
                                            int64_t*         out_account_id);
+int           asset_get_currency_for_user(csilk_db_pool_t* pool,
+                                          int64_t          user_id,
+                                          int64_t          asset_id,
+                                          char*            out_currency,
+                                          size_t           out_cap);
 int64_t       asset_insert(csilk_db_pool_t* pool,
                            int64_t          user_id,
                            int64_t          category_id,

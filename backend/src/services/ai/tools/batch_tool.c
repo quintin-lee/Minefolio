@@ -583,15 +583,16 @@ ai_tool_batch_register_all(void)
 }
 
 int
-ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
-                                     int64_t             user_id,
-                                     int64_t             session_id,
-                                     const csilk_json_t* actions,
-                                     const char*         draft_token,
-                                     csilk_json_t**      out_data,
-                                     int*                out_code,
-                                     char*               err_buf,
-                                     size_t              err_len)
+ai_batch_actions_execute_in_ledger(csilk_db_pool_t*    pool,
+                                   int64_t             user_id,
+                                   int64_t             session_id,
+                                   int64_t             explicit_ledger_id,
+                                   const csilk_json_t* actions,
+                                   const char*         draft_token,
+                                   csilk_json_t**      out_data,
+                                   int*                out_code,
+                                   char*               err_buf,
+                                   size_t              err_len)
 {
     if (out_data) {
         *out_data = NULL;
@@ -748,6 +749,18 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
             }
 
             int64_t arg_lid = (int64_t)db_get_num(it, "ledger_id");
+            if (explicit_ledger_id > 0 && ((acct_lid > 0 && acct_lid != explicit_ledger_id) ||
+                                           (arg_lid > 0 && arg_lid != explicit_ledger_id))) {
+                db_tx_scope_rollback(pool, &scope);
+                csilk_json_free(results_arr);
+                if (out_code) {
+                    *out_code = 1004;
+                }
+                if (err_buf && err_len > 0) {
+                    snprintf(err_buf, err_len, "动作 #%zu 账本与请求账本不一致", i + 1);
+                }
+                return -1;
+            }
             if (arg_lid > 0 && acct_lid > 0 && arg_lid != acct_lid) {
                 db_tx_scope_rollback(pool, &scope);
                 csilk_json_free(results_arr);
@@ -759,7 +772,8 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
                 }
                 return -1;
             }
-            int64_t ledger_id = (acct_lid > 0) ? acct_lid : arg_lid;
+            int64_t ledger_id =
+                (explicit_ledger_id > 0) ? explicit_ledger_id : ((acct_lid > 0) ? acct_lid : arg_lid);
             int64_t chk_lid = ledger_id;
             if (chk_lid <= 0) {
                 chk_lid = ledger_get_default(pool, user_id);
@@ -782,22 +796,10 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
 
             const char* item_cur = csilk_json_get_string(it, "currency");
             char        eff_cur[16] = "CNY";
-            {
-                char aid_s[32];
-                snprintf(aid_s, sizeof(aid_s), "%lld", (long long)asset_id);
-                csilk_json_t* ac_rows = csilk_db_query_param_json(
-                    pool, "SELECT currency FROM assets WHERE id=?", (const char*[]){aid_s, NULL});
-                const char* db_cur =
-                    (ac_rows && csilk_json_array_size(ac_rows) > 0)
-                        ? csilk_json_get_string(csilk_json_array_get(ac_rows, 0), "currency")
-                        : NULL;
-                if (db_cur && db_cur[0]) {
-                    snprintf(eff_cur, sizeof(eff_cur), "%s", db_cur);
-                } else if (item_cur && item_cur[0]) {
+            if (asset_get_currency_for_user(pool, user_id, asset_id, eff_cur, sizeof(eff_cur)) !=
+                0) {
+                if (item_cur && item_cur[0]) {
                     snprintf(eff_cur, sizeof(eff_cur), "%s", item_cur);
-                }
-                if (ac_rows) {
-                    csilk_json_free(ac_rows);
                 }
             }
 
@@ -870,6 +872,20 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
             int64_t     from_lid = 0, to_lid = 0;
             if (asset_get_ledger_and_account(pool, from_id, &from_lid, NULL) == 0 &&
                 asset_get_ledger_and_account(pool, to_id, &to_lid, NULL) == 0) {
+                if (explicit_ledger_id > 0 &&
+                    ((from_lid > 0 && explicit_ledger_id != from_lid) ||
+                     (to_lid > 0 && explicit_ledger_id != to_lid) ||
+                     (arg_lid > 0 && explicit_ledger_id != arg_lid))) {
+                    db_tx_scope_rollback(pool, &scope);
+                    csilk_json_free(results_arr);
+                    if (out_code) {
+                        *out_code = 1004;
+                    }
+                    if (err_buf && err_len > 0) {
+                        snprintf(err_buf, err_len, "动作 #%zu 账本与请求账本不一致", i + 1);
+                    }
+                    return -1;
+                }
                 if (arg_lid > 0 &&
                     ((from_lid > 0 && arg_lid != from_lid) || (to_lid > 0 && arg_lid != to_lid))) {
                     db_tx_scope_rollback(pool, &scope);
@@ -883,7 +899,9 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
                     return -1;
                 }
             }
-            int64_t ledger_id = (from_lid > 0) ? from_lid : ((to_lid > 0) ? to_lid : arg_lid);
+            int64_t ledger_id = (explicit_ledger_id > 0)
+                                    ? explicit_ledger_id
+                                    : ((from_lid > 0) ? from_lid : ((to_lid > 0) ? to_lid : arg_lid));
             create_transfer_cmd_t tcmd = {
                 .user_id = user_id,
                 .from_asset_id = from_id,
@@ -956,6 +974,21 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
 }
 
 int
+ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
+                                     int64_t             user_id,
+                                     int64_t             session_id,
+                                     const csilk_json_t* actions,
+                                     const char*         draft_token,
+                                     csilk_json_t**      out_data,
+                                     int*                out_code,
+                                     char*               err_buf,
+                                     size_t              err_len)
+{
+    return ai_batch_actions_execute_in_ledger(
+        pool, user_id, session_id, 0, actions, draft_token, out_data, out_code, err_buf, err_len);
+}
+
+int
 ai_batch_actions_execute(csilk_db_pool_t*    pool,
                          int64_t             user_id,
                          const csilk_json_t* actions,
@@ -965,6 +998,6 @@ ai_batch_actions_execute(csilk_db_pool_t*    pool,
                          char*               err_buf,
                          size_t              err_len)
 {
-    return ai_batch_actions_execute_for_session(
-        pool, user_id, 0, actions, draft_token, out_data, out_code, err_buf, err_len);
+    return ai_batch_actions_execute_in_ledger(
+        pool, user_id, 0, 0, actions, draft_token, out_data, out_code, err_buf, err_len);
 }

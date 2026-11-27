@@ -304,19 +304,18 @@ loop_dispatch_parallel_tools(ai_runtime_context_t*         ctx,
                                                                 tasks[t].args,
                                                                 AI_RISK_NO_OVERRIDE);
 
-            if (decision && !decision->allowed) {
+            if (!decision || !decision->allowed) {
                 csilk_json_t* err_obj = csilk_json_object();
                 csilk_json_add_string(err_obj, "error", "policy_denied");
                 csilk_json_add_string(err_obj,
                                       "reason",
-                                      decision->reason[0] ? decision->reason
-                                                          : "Tool blocked by policy");
+                                      (decision && decision->reason[0]) ? decision->reason
+                                                                        : "Tool blocked by policy");
                 size_t elen = 0;
                 tasks[t].result_str = csilk_json_serialize(err_obj, &elen);
                 csilk_json_free(err_obj);
                 tasks[t].executed = false;
-            } else if (decision && decision->requires_confirmation &&
-                       !ai_tool_requires_id(tasks[t].tool_name)) {
+            } else if (decision->requires_confirmation && !ai_tool_requires_id(tasks[t].tool_name)) {
                 tasks[t].result_str =
                     strdup("{\"error\":\"confirmation_required\",\"note\":\"this action needs "
                            "explicit user approval before it can run\"}");
@@ -475,14 +474,14 @@ loop_dispatch_sequential_tools(csilk_db_pool_t*              pool,
         struct timespec t0, t1;
         clock_gettime(CLOCK_MONOTONIC, &t0);
 
-        if (decision && !decision->allowed) {
+        if (!decision || !decision->allowed) {
             csilk_json_t* err_obj = csilk_json_object();
             csilk_json_add_string(err_obj, "error", "policy_denied");
             csilk_json_add_string(err_obj,
                                   "reason",
-                                  decision->reason[0] ? decision->reason
-                                                      : "Tool blocked by policy");
-            if (decision->requires_confirmation && decision->draft) {
+                                  (decision && decision->reason[0]) ? decision->reason
+                                                                    : "Tool blocked by policy");
+            if (decision && decision->requires_confirmation && decision->draft) {
                 csilk_json_add_string(err_obj, "confirmation_required", "true");
                 csilk_json_add_string(err_obj, "draft_id", decision->draft->draft_id);
             }
@@ -551,11 +550,13 @@ loop_dispatch_sequential_tools(csilk_db_pool_t*              pool,
         }
 
         csilk_json_t* rec = csilk_json_object();
-        csilk_json_add_string(rec, "id", tc->id ? tc->id : "");
-        csilk_json_add_string(rec, "name", tc->name ? tc->name : "");
-        csilk_json_add_string(rec, "arguments", tc->arguments ? tc->arguments : "");
-        csilk_json_add_string(rec, "result", result_str ? result_str : "");
-        csilk_json_array_append(tc_record, rec);
+        if (rec) {
+            csilk_json_add_string(rec, "id", tc->id ? tc->id : "");
+            csilk_json_add_string(rec, "name", tc->name ? tc->name : "");
+            csilk_json_add_string(rec, "arguments", tc->arguments ? tc->arguments : "");
+            csilk_json_add_string(rec, "result", result_str ? result_str : "");
+            csilk_json_array_append(tc_record, rec);
+        }
 
         char* clamped = loop_clamp_tool_result_export(result_str);
         char* isolated = ai_sanitize_untrusted_content(tc->name, clamped);

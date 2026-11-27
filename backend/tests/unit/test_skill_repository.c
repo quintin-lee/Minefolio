@@ -7,6 +7,7 @@
 #include "csilk/csilk.h"
 #include "common/db.h"
 #include "config/secret.h"
+#include "application/skill/usecases.h"
 #include "domain/auth/repository.h"
 #include "domain/skill/entity.h"
 #include "infrastructure/repositories/skill_repo_impl.h"
@@ -129,6 +130,36 @@ int main(void) {
     assert(skill_repo_update(pool, user_id, 999999, &sk) == -1);
     assert(skill_repo_toggle(pool, user_id, 999999, 1) == -1);
     printf("  [OK] skill_repo_delete and non-existent id guards\n");
+
+    // 9. L3 skill_usecase_test_execute security gates: non-admin rejected (1004), empty/root exec_root rejected (1002)
+    mf_skill_t l3_sk = {0};
+    snprintf(l3_sk.name, sizeof(l3_sk.name), "l3-sec-skill");
+    snprintf(l3_sk.description, sizeof(l3_sk.description), "L3 execution test");
+    snprintf(l3_sk.category, sizeof(l3_sk.category), "tools");
+    snprintf(l3_sk.exec_cfg.path, sizeof(l3_sk.exec_cfg.path), "/bin/echo");
+    l3_sk.exec_cfg.root[0] = '\0';
+    l3_sk.enabled = 1;
+    l3_sk.backend = MF_SKILL_BACKEND_LOCAL;
+
+    int64_t l3_admin_id = skill_repo_insert(pool, user_id, &l3_sk);
+    assert(l3_admin_id > 0);
+    csilk_json_t* l3_res = NULL;
+    assert(skill_usecase_test_execute(pool, user_id, l3_admin_id, "hi", &l3_res) == 1002);
+    assert(l3_res == NULL);
+
+    snprintf(l3_sk.exec_cfg.root, sizeof(l3_sk.exec_cfg.root), "/");
+    assert(skill_repo_update(pool, user_id, l3_admin_id, &l3_sk) == 0);
+    assert(skill_usecase_test_execute(pool, user_id, l3_admin_id, "hi", &l3_res) == 1002);
+    assert(l3_res == NULL);
+
+    int64_t bob_id = 0;
+    assert(mf_auth_repo_create(pool, "bob_non_admin", "hash_bob_123", &bob_id) == 0 && bob_id > 0);
+    snprintf(l3_sk.exec_cfg.root, sizeof(l3_sk.exec_cfg.root), "/tmp");
+    int64_t l3_bob_id = skill_repo_insert(pool, bob_id, &l3_sk);
+    assert(l3_bob_id > 0);
+    assert(skill_usecase_test_execute(pool, bob_id, l3_bob_id, "hi", &l3_res) == 1004);
+    assert(l3_res == NULL);
+    printf("  [OK] skill_usecase_test_execute admin and exec_root gates\n");
 
     printf("=== ALL SKILL REPO TESTS PASSED ===\n");
     unlink(TEST_DB_PATH);

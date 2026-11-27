@@ -151,6 +151,36 @@ int main(void) {
         assert(kill((pid_t)child_pid, 0) == -1 && errno == ESRCH);
     }
 
+    /* 8. Early max_lines truncation terminates long-running child cleanly without hanging */
+    {
+        char pid_path[256] = {0};
+        assert(file_parser_write_temp("", 0, ".pid", pid_path, sizeof(pid_path)) == 0);
+
+        char      out[256] = {0};
+        char*     argv[] = {"sh",
+                            "-c",
+                            "echo $$ > \"$1\"; printf 'line1\\nline2\\nline3\\n'; exec sleep 10",
+                            "_",
+                            pid_path,
+                            NULL};
+        long long t0 = now_ms();
+        rc = file_parser_run_tool_capture_timeout("sh", argv, out, sizeof(out), 2, false, 5000);
+        long long elapsed = now_ms() - t0;
+
+        assert(rc == 0);
+        assert(strcmp(out, "line1\nline2\n") == 0);
+        assert(elapsed < 2000);
+
+        FILE* pf = fopen(pid_path, "r");
+        assert(pf != NULL);
+        long child_pid = 0;
+        int  scanned = fscanf(pf, "%ld", &child_pid);
+        fclose(pf);
+        unlink(pid_path);
+        assert(scanned == 1 && child_pid > 0);
+        assert(kill((pid_t)child_pid, 0) == -1 && errno == ESRCH);
+    }
+
     printf("PASS: test_file_parser_mkstemps completed successfully\n");
     return 0;
 }

@@ -49,6 +49,17 @@ int ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
                                          char*               err_buf,
                                          size_t              err_len);
 
+int ai_batch_actions_execute_in_ledger(csilk_db_pool_t*    pool,
+                                       int64_t             user_id,
+                                       int64_t             session_id,
+                                       int64_t             explicit_ledger_id,
+                                       const csilk_json_t* actions,
+                                       const char*         draft_token,
+                                       csilk_json_t**      out_data,
+                                       int*                out_code,
+                                       char*               err_buf,
+                                       size_t              err_len);
+
 #ifdef __cplusplus
 }
 #endif

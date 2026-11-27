@@ -1,4 +1,5 @@
 #include "application/skill/usecases.h"
+#include "application/auth/usecases.h"
 #include "domain/skill/entity.h"
 #include "domain/skill/rules.h"
 #include "infrastructure/repositories/skill_repo_impl.h"
@@ -264,6 +265,16 @@ skill_usecase_test_execute(
     csilk_json_t* res = csilk_json_object();
 
     if (path && path[0] != '\0') {
+        if (!auth_usecase_is_instance_admin(pool, user_id)) {
+            csilk_json_free(res);
+            csilk_json_free(sk);
+            return 1004;
+        }
+        if (!root || !root[0] || strcmp(root, "/") == 0) {
+            csilk_json_free(res);
+            csilk_json_free(sk);
+            return 1002;
+        }
         // L3 script execution
         csilk_skill_meta_t meta = {0};
         if (name) {
@@ -313,7 +324,7 @@ skill_usecase_test_execute(
                 eff_args = def_args;
             }
 
-            csilk_skill_exec_cfg_t cfg = {.root = (char*)(root && root[0] ? root : "/"),
+            csilk_skill_exec_cfg_t cfg = {.root = (char*)root,
                                           .timeout_ms = timeout > 0 ? timeout : 5000,
                                           .max_output_bytes = max_out > 0 ? max_out : 65536,
                                           .env = norm_env};
