@@ -1,9 +1,27 @@
 #include "core/scheduler/cron_parser.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int
+parse_strict_cron_int(const char* s, int* out_val)
+{
+    if (!s || !isdigit((unsigned char)s[0])) {
+        return -1;
+    }
+    errno = 0;
+    char* end = NULL;
+    long  v = strtol(s, &end, 10);
+    if (errno == ERANGE || !end || *end != '\0' || v < 0 || v > INT_MAX) {
+        return -1;
+    }
+    *out_val = (int)v;
+    return 0;
+}
 
 static int
 parse_subtoken(const char* s, int min_val, int max_val, uint64_t* mask, bool is_dow, bool* is_star)
@@ -23,8 +41,8 @@ parse_subtoken(const char* s, int min_val, int max_val, uint64_t* mask, bool is_
             }
             return 0;
         } else if (s[1] == '/') {
-            int step = atoi(s + 2);
-            if (step <= 0) {
+            int step = 0;
+            if (parse_strict_cron_int(s + 2, &step) != 0 || step <= 0) {
                 return -1;
             }
             for (int i = min_val; i <= max_val; i += step) {
@@ -38,14 +56,16 @@ parse_subtoken(const char* s, int min_val, int max_val, uint64_t* mask, bool is_
 
     /* Not starting with '*' */
     char buf[64];
+    if (strlen(s) >= sizeof(buf)) {
+        return -1;
+    }
     snprintf(buf, sizeof(buf), "%s", s);
 
     int   step = 1;
     char* slash = strchr(buf, '/');
     if (slash) {
         *slash = '\0';
-        step = atoi(slash + 1);
-        if (step <= 0) {
+        if (parse_strict_cron_int(slash + 1, &step) != 0 || step <= 0) {
             return -1;
         }
     }
@@ -55,19 +75,17 @@ parse_subtoken(const char* s, int min_val, int max_val, uint64_t* mask, bool is_
     char* dash = strchr(buf, '-');
     if (dash) {
         *dash = '\0';
-        if (!isdigit((unsigned char)buf[0]) || !isdigit((unsigned char)dash[1])) {
+        if (parse_strict_cron_int(buf, &start_val) != 0 ||
+            parse_strict_cron_int(dash + 1, &end_val) != 0) {
             return -1;
         }
-        start_val = atoi(buf);
-        end_val = atoi(dash + 1);
         if (start_val > end_val) {
             return -1;
         }
     } else {
-        if (!isdigit((unsigned char)buf[0])) {
+        if (parse_strict_cron_int(buf, &start_val) != 0) {
             return -1;
         }
-        start_val = atoi(buf);
         end_val = slash ? max_val : start_val;
     }
 

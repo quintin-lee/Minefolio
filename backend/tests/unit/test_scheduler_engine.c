@@ -174,6 +174,59 @@ main(void)
     assert(strstr(csilk_json_get_string(ml0, "trigger_reason"), "price_spike") != NULL);
     csilk_json_free(mkt_logs);
 
+    /* 4a-2. Test string threshold parsing and <=0 threshold fallback to default 5.0 */
+    int64_t str_thresh_job_id = mf_scheduler_repo_job_create(pool,
+                                                             1,
+                                                             "String Threshold Alert",
+                                                             "Detect spike with string threshold",
+                                                             "ai_prompt",
+                                                             "market_event",
+                                                             "{\"event\":\"price_spike\",\"threshold\":\"3.5\"}",
+                                                             "{\"prompt\":\"Analyze MSFT spike\"}",
+                                                             "silent_db",
+                                                             "{}",
+                                                             "");
+    int64_t zero_thresh_job_id = mf_scheduler_repo_job_create(pool,
+                                                              1,
+                                                              "Zero Threshold Alert",
+                                                              "Fallback to 5.0 when threshold <= 0",
+                                                              "ai_prompt",
+                                                              "market_event",
+                                                              "{\"event\":\"price_spike\",\"threshold\":0}",
+                                                              "{\"prompt\":\"Analyze GOOG spike\"}",
+                                                              "silent_db",
+                                                              "{}",
+                                                              "");
+    assert(str_thresh_job_id > 0 && zero_thresh_job_id > 0);
+    scheduler_event_publish_price_spike(1002, "MSFT", 4.0);
+    waited_ms = 0;
+    while (waited_ms < 2000) {
+        total_logs = 0;
+        csilk_json_t* check_logs =
+            mf_scheduler_repo_log_list(pool, 1, false, str_thresh_job_id, 1, 10, &total_logs);
+        if (check_logs) {
+            if (total_logs >= 1) {
+                csilk_json_free(check_logs);
+                break;
+            }
+            csilk_json_free(check_logs);
+        }
+        usleep(20000);
+        waited_ms += 20;
+    }
+    total_logs = 0;
+    csilk_json_t* st_logs =
+        mf_scheduler_repo_log_list(pool, 1, false, str_thresh_job_id, 1, 10, &total_logs);
+    assert(st_logs && total_logs >= 1);
+    csilk_json_free(st_logs);
+
+    /* 4.0 < default 5.0, so threshold:0 job must NOT have fired */
+    total_logs = 0;
+    csilk_json_t* zt_logs =
+        mf_scheduler_repo_log_list(pool, 1, false, zero_thresh_job_id, 1, 10, &total_logs);
+    assert(zt_logs && total_logs == 0);
+    csilk_json_free(zt_logs);
+
     /* 4b. Test Built-in Broadcast with wechat_ilink Outbox Rollup */
     const char* u_names[2] = {"bc_u1", "bc_u2"};
     int64_t     u_ids[2] = {0, 0};

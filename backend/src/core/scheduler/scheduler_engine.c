@@ -903,8 +903,9 @@ on_market_event_received(int event_type, const char* key, double val, void* user
                 if (event_type == SCHEDULER_EVENT_PRICE_SPIKE && ev_name &&
                     strcmp(ev_name, "price_spike") == 0) {
                     double threshold = 5.0;
-                    if (csilk_json_get(cfg, "threshold")) {
-                        threshold = csilk_json_get_number(cfg, "threshold");
+                    double t = db_get_num(cfg, "threshold");
+                    if (t > 0.0) {
+                        threshold = t;
                     }
                     if (val >= threshold || val <= -threshold) {
                         should_trigger = true;

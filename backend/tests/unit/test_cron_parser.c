@@ -103,6 +103,16 @@ main(void)
     assert(cron_format_next_str("0 9 * * 1-5", make_time(2026, 11, 18, 8, 0, 0), buf, sizeof(buf)) == 0);
     assert(strcmp(buf, "2026-11-18 09:00:00") == 0);
 
+    /* 10. Reject malformed / trailing-garbage / overflow integer subtokens */
+    assert(cron_parse_expr("*/abc * * * *", &expr) == -1);
+    assert(cron_parse_expr("*/2x * * * *", &expr) == -1);
+    assert(cron_parse_expr("*/-2 * * * *", &expr) == -1);
+    assert(cron_parse_expr("12x * * * *", &expr) == -1);
+    assert(cron_parse_expr("1-5y * * * *", &expr) == -1);
+    assert(cron_parse_expr("1-5/2z * * * *", &expr) == -1);
+    assert(cron_parse_expr("99999999999999999999 * * * *", &expr) == -1);
+    assert(cron_parse_expr("*/99999999999999999999 * * * *", &expr) == -1);
+
     printf("=== Cron Parser Unit Tests Passed! ===\n");
     return 0;
 }

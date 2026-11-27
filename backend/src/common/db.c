@@ -705,6 +705,12 @@ static void*            g_tx_pinned_conn = NULL;
 static csilk_db_pool_t* g_tx_pinned_pool = NULL;
 static int              g_tx_pin_depth = 0;
 
+/* PostgreSQL supports independent multi-connection concurrency via its pool:
+ * keep transaction pinning per-thread instead of serializing all writers on g_tx_mutex. */
+static _Thread_local void*            tls_pg_pinned_conn = NULL;
+static _Thread_local csilk_db_pool_t* tls_pg_pinned_pool = NULL;
+static _Thread_local int              tls_pg_pin_depth = 0;
+
 static void
 init_tx_mutex(void)
 {
@@ -752,6 +758,19 @@ tx_release_pinned_conn_locked(void)
     }
 }
 
+static void
+pg_release_pinned_conn(void)
+{
+    if (tls_pg_pin_depth > 0) {
+        tls_pg_pin_depth--;
+    }
+    if (tls_pg_pin_depth == 0 && tls_pg_pinned_pool && tls_pg_pinned_conn) {
+        csilk_db_pool_put(tls_pg_pinned_pool, tls_pg_pinned_conn);
+        tls_pg_pinned_conn = NULL;
+        tls_pg_pinned_pool = NULL;
+    }
+}
+
 int
 db_in_transaction(csilk_db_pool_t* pool)
 {
@@ -771,6 +790,30 @@ db_tx_scope_begin(csilk_db_pool_t* pool, const char* name, db_tx_scope_t* scope)
     if (!pool || !scope) {
         return -1;
     }
+
+    if (g_is_postgres) {
+        if (tls_pg_pin_depth == 0) {
+            void* conn = NULL;
+            if (csilk_db_pool_acquire_timeout(pool, &conn, 5000) != 0 || !conn) {
+                return -1;
+            }
+            tls_pg_pinned_pool = pool;
+            tls_pg_pinned_conn = conn;
+            tls_pg_pin_depth = 1;
+        } else if (tls_pg_pinned_pool != pool) {
+            return -1;
+        } else {
+            tls_pg_pin_depth++;
+        }
+
+        tx_with_conn_ctx_t tc = {.pool = pool, .name = name, .scope = scope};
+        int                rc = csilk_db_with_conn(pool, tx_begin_with_conn_cb, &tc);
+        if (rc != 0) {
+            pg_release_pinned_conn();
+        }
+        return rc;
+    }
+
     pthread_once(&g_tx_mutex_once, init_tx_mutex);
     if (pthread_mutex_lock(&g_tx_mutex) != 0) {
         return -1;
@@ -826,8 +869,12 @@ db_tx_scope_commit(csilk_db_pool_t* pool, db_tx_scope_t* scope)
                 (void)csilk_db_exec(pool, "ROLLBACK;");
             }
         }
-        tx_release_pinned_conn_locked();
-        pthread_mutex_unlock(&g_tx_mutex);
+        if (g_is_postgres) {
+            pg_release_pinned_conn();
+        } else {
+            tx_release_pinned_conn_locked();
+            pthread_mutex_unlock(&g_tx_mutex);
+        }
     }
     return rc;
 }
@@ -838,8 +885,12 @@ db_tx_scope_rollback(csilk_db_pool_t* pool, db_tx_scope_t* scope)
     bool was_active = (pool != NULL && scope != NULL && scope->active);
     int  rc = csilk_db_tx_scope_rollback(pool, scope);
     if (was_active) {
-        tx_release_pinned_conn_locked();
-        pthread_mutex_unlock(&g_tx_mutex);
+        if (g_is_postgres) {
+            pg_release_pinned_conn();
+        } else {
+            tx_release_pinned_conn_locked();
+            pthread_mutex_unlock(&g_tx_mutex);
+        }
     }
     return rc;
 }
