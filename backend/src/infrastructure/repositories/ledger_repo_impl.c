@@ -12,14 +12,45 @@
 #include <string.h>
 
 int
-mf_ledger_repo_list_by_user(void*                   db_pool,
-                            int64_t                 user_id,
-                            mf_ledger_list_item_t** out_list,
-                            size_t*                 out_count)
+mf_ledger_repo_list_by_user_paged(void*                   db_pool,
+                                  int64_t                 user_id,
+                                  int64_t                 page,
+                                  int64_t                 page_size,
+                                  mf_ledger_list_item_t** out_list,
+                                  size_t*                 out_count,
+                                  int64_t*                out_total)
 {
     csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    char             uid[32];
+    if (page < 1) {
+        page = 1;
+    }
+    if (page_size < 1) {
+        page_size = 20;
+    }
+    if (page_size > 500) {
+        page_size = 500;
+    }
+    int64_t offset = (page - 1) * page_size;
+
+    char uid[32], lim_s[32], off_s[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lim_s, sizeof(lim_s), "%lld", (long long)page_size);
+    snprintf(off_s, sizeof(off_s), "%lld", (long long)offset);
+
+    if (out_total) {
+        const char* count_sql =
+            "SELECT COUNT(*) AS cnt "
+            "FROM ledgers l "
+            "JOIN ledger_members m ON m.ledger_id = l.id AND m.user_id = ? "
+            "JOIN users u ON u.id = l.owner_id";
+        csilk_json_t* c_rows = csilk_db_query_param_json(pool, count_sql, (const char*[]){uid, NULL});
+        *out_total = (c_rows && csilk_json_array_size(c_rows) > 0)
+                         ? db_get_int(csilk_json_array_get(c_rows, 0), "cnt")
+                         : 0;
+        if (c_rows) {
+            csilk_json_free(c_rows);
+        }
+    }
 
     const char* sql =
         "SELECT l.id, l.owner_id, l.name, l.description, l.currency, l.icon, l.color, "
@@ -35,9 +66,10 @@ mf_ledger_repo_list_by_user(void*                   db_pool,
         "FROM ledgers l "
         "JOIN ledger_members m ON m.ledger_id = l.id AND m.user_id = ? "
         "JOIN users u ON u.id = l.owner_id "
-        "ORDER BY l.is_default DESC, l.id ASC";
+        "ORDER BY l.is_default DESC, l.id ASC LIMIT ? OFFSET ?";
 
-    csilk_json_t* rows = csilk_db_query_param_json(pool, sql, (const char*[]){uid, NULL});
+    csilk_json_t* rows =
+        csilk_db_query_param_json(pool, sql, (const char*[]){uid, lim_s, off_s, NULL});
     if (!rows) {
         *out_list = NULL;
         *out_count = 0;
@@ -105,6 +137,15 @@ mf_ledger_repo_list_by_user(void*                   db_pool,
     *out_list = list;
     *out_count = n;
     return 0;
+}
+
+int
+mf_ledger_repo_list_by_user(void*                   db_pool,
+                            int64_t                 user_id,
+                            mf_ledger_list_item_t** out_list,
+                            size_t*                 out_count)
+{
+    return mf_ledger_repo_list_by_user_paged(db_pool, user_id, 1, 500, out_list, out_count, NULL);
 }
 
 int

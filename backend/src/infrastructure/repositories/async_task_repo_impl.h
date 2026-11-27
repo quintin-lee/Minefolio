@@ -61,6 +61,14 @@ csilk_json_t* mf_async_task_repo_list(csilk_db_pool_t* pool,
                                       const char*      type_filter,
                                       int              limit);
 
+csilk_json_t* mf_async_task_repo_list_paged(csilk_db_pool_t* pool,
+                                            int64_t          user_id,
+                                            const char*      status_filter,
+                                            const char*      type_filter,
+                                            int64_t          page,
+                                            int64_t          page_size,
+                                            int64_t*         out_total);
+
 #ifdef __cplusplus
 }
 #endif

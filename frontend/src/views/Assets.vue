@@ -116,6 +116,19 @@
       <el-button v-if="groupedAccounts.length > 0" class="add-account-cta" plain @click="openAccountDialog()">
         <el-icon><Wallet /></el-icon> 新建账户
       </el-button>
+      <div v-if="accountTotal > 0" class="pagination-bar">
+        <el-pagination
+          v-model:current-page="accountPage"
+          v-model:page-size="accountPageSize"
+          :total="accountTotal"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          background
+          size="small"
+          @current-change="loadAccounts"
+          @size-change="handleAccountSizeChange"
+        />
+      </div>
     </div>
 
     <!-- 新增/编辑对话框 -->
@@ -134,7 +147,7 @@
 
         <el-form-item label="归属账户">
           <el-select v-model="form.account_id" style="width: 100%" clearable placeholder="默认账户">
-            <el-option v-for="acc in accounts" :key="acc.id" :label="`${acc.name}${acc.account_no ? '（' + acc.account_no + '）' : ''}`" :value="acc.id" />
+            <el-option v-for="acc in (allActiveAccounts.length ? allActiveAccounts : accounts)" :key="acc.id" :label="`${acc.name}${acc.account_no ? '（' + acc.account_no + '）' : ''}`" :value="acc.id" />
           </el-select>
         </el-form-item>
 
@@ -256,6 +269,7 @@ import { formatCurrency } from '@/utils/format'
 import { findCategoryPath, prepareCategoryTree } from '@/utils/category-tree'
 import { detectSuspiciousUnitCostInput, resolveTotalCostBasis, type CostInputMode } from '@/utils/investment-cost'
 import { Icon } from '@iconify/vue'
+import { fetchAllPages } from '@/utils/pagination'
 
 const ASSET_TYPE_ICONS: Record<string, string> = {
   bank: 'ph:bank',
@@ -288,6 +302,10 @@ const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth:
 
 /* 账户维度 */
 const accounts = ref<Account[]>([])
+const allActiveAccounts = ref<Account[]>([])
+const accountPage = ref(1)
+const accountPageSize = ref(20)
+const accountTotal = ref(0)
 const accountDialogVisible = ref(false)
 const editingAccount = ref<Account | null>(null)
 const expandedGroups = ref<Set<string>>(new Set())
@@ -345,10 +363,32 @@ async function loadAssets() {
 
 async function loadAccounts() {
   try {
-    accounts.value = await accountsApi.list({ include_archived: 1 })
+    const res: any = await accountsApi.list({
+      include_archived: 1,
+      page: accountPage.value,
+      page_size: accountPageSize.value,
+    })
+    const list: Account[] = Array.isArray(res) ? res : (Array.isArray(res?.list) ? res.list : [])
+    const total = Array.isArray(res) ? res.length : (typeof res?.total === 'number' ? res.total : list.length)
+    accounts.value = list
+    accountTotal.value = total
+    if (total <= list.length && accountPage.value === 1) {
+      allActiveAccounts.value = list
+    } else if (allActiveAccounts.value.length === 0) {
+      fetchAllPages((p, ps) => accountsApi.list({ include_archived: 1, page: p, page_size: ps }))
+        .then(all => {
+          if (!isUnmounted) allActiveAccounts.value = all
+        })
+        .catch(() => {})
+    }
   } catch (err) {
     console.error('[Assets] loadAccounts failed:', err)
   }
+}
+
+function handleAccountSizeChange() {
+  accountPage.value = 1
+  loadAccounts()
 }
 
 const groupedAccounts = computed(() => {
@@ -376,8 +416,15 @@ const groupedAccounts = computed(() => {
     })
   }
   for (const a of assets.value) {
-    const known = a.account_id && a.account_id > 0 ? byKey.get(`acct-${a.account_id}`) : undefined
+    const hasAccountId = Boolean(a.account_id && a.account_id > 0)
+    const known = hasAccountId ? byKey.get(`acct-${a.account_id}`) : undefined
+    if (hasAccountId && !known) {
+      continue
+    }
     const key = known ? known.key : 'ungrouped'
+    if (key === 'ungrouped' && accountPage.value > 1) {
+      continue
+    }
     let g = byKey.get(key)
     if (!g) {
       g = {
@@ -425,6 +472,7 @@ function openAccountDialog(acc?: Account | null) {
 }
 
 async function handleAccountSaved() {
+  allActiveAccounts.value = []
   await loadAccounts()
   await loadAssets()
   await loadSummary()
@@ -669,6 +717,23 @@ async function handleDeepLinkTarget() {
 
   if (!assetId && !accountId) return
   clearDeepLinkTimers()
+
+  const targetAccountId = accountId ?? assets.value.find(a => a.id === assetId)?.account_id ?? null
+  if (targetAccountId && !accounts.value.some(acc => acc.id === targetAccountId) && accountTotal.value > accounts.value.length) {
+    if (allActiveAccounts.value.length === 0) {
+      try {
+        allActiveAccounts.value = await fetchAllPages((p, ps) => accountsApi.list({ include_archived: 1, page: p, page_size: ps }))
+      } catch {
+        // ignore
+      }
+    }
+    const idx = allActiveAccounts.value.findIndex(acc => acc.id === targetAccountId)
+    if (idx >= 0) {
+      accountPage.value = Math.floor(idx / accountPageSize.value) + 1
+      await loadAccounts()
+    }
+  }
+  if (isUnmounted) return
 
   if (assetId) {
     for (const g of groupedAccounts.value) {

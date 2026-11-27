@@ -18,6 +18,14 @@
  */
 int mf_tag_repo_list(void* db_pool, int64_t user_id, mf_tag_t** out_list, size_t* out_count);
 
+int mf_tag_repo_list_paged(void*      db_pool,
+                           int64_t    user_id,
+                           int64_t    page,
+                           int64_t    page_size,
+                           mf_tag_t** out_list,
+                           size_t*    out_count,
+                           int64_t*   out_total);
+
 /**
  * @brief 根据 ID 查询单条标签
  * @return 0: 成功查到, 1: 不存在, -1: 数据库错误

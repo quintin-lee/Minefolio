@@ -10,6 +10,9 @@
 
 csilk_json_t* import_rule_usecase_list(void* pool, int64_t user_id);
 
+csilk_json_t* import_rule_usecase_list_paged(
+    void* pool, int64_t user_id, int64_t page, int64_t page_size, int64_t* out_total);
+
 csilk_json_t* import_rule_usecase_get(void* pool, int64_t user_id, int64_t id);
 
 int64_t import_rule_usecase_create(void*       pool,

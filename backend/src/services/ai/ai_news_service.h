@@ -42,6 +42,14 @@ csilk_json_t* ai_news_list_ledger(csilk_db_pool_t* pool,
                                   int              offset,
                                   int*             out_has_more);
 
+csilk_json_t* ai_news_list_ledger_paged(csilk_db_pool_t* pool,
+                                        int64_t          user_id,
+                                        int64_t          ledger_id,
+                                        int              limit,
+                                        int              offset,
+                                        int64_t*         out_total,
+                                        int*             out_has_more);
+
 /**
  * @brief 兼容旧版：获取用户最近 N 天的 AI 资讯分析报告
  */

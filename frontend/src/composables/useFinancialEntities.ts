@@ -8,6 +8,7 @@ import { ref } from 'vue'
 import { accountsApi } from '@/api/accounts'
 import { assetsApi } from '@/api/assets'
 import { reportsApi, type HoldingsItem } from '@/api/reports'
+import { fetchAllPages } from '@/utils/pagination'
 
 export interface EntityDetail {
   id: string | number
@@ -211,7 +212,7 @@ export function useFinancialEntities() {
     isLoading.value = true
     try {
       const [accRes, assetRes, holdingsRes] = await Promise.allSettled([
-        accountsApi.list(),
+        fetchAllPages((page, page_size) => accountsApi.list({ page, page_size })),
         assetsApi.list({ page_size: 100 }),
         reportsApi.holdings(),
       ])

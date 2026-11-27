@@ -485,7 +485,7 @@ describe('scheduler wechat_ilink channel', () => {
             }
           }
         })
-        .mockResolvedValueOnce({ items: [], total: 0, page: 1, page_size: 100 })
+        .mockResolvedValueOnce({ items: [], total: 0, page: 1, page_size: 20 })
 
       const wrapper = mount(Scheduler, {
         global: {
@@ -519,7 +519,7 @@ describe('scheduler wechat_ilink channel', () => {
             ilink_status: { has_instance: false }
           }
         })
-        .mockResolvedValueOnce({ items: [], total: 0, page: 1, page_size: 100 })
+        .mockResolvedValueOnce({ items: [], total: 0, page: 1, page_size: 20 })
 
       await (wrapper.vm as any).fetchDashboard()
       await flushPromises()

@@ -14,6 +14,13 @@
  */
 int mf_mcp_usecase_list(void* pool, int64_t user_id, csilk_json_t** out_list);
 
+int mf_mcp_usecase_list_paged(void*          pool,
+                              int64_t        user_id,
+                              int64_t        page,
+                              int64_t        page_size,
+                              csilk_json_t** out_list,
+                              int64_t*       out_total);
+
 /**
  * @brief 查询单个 MCP 服务器
  * @return 0 成功, -1 查询错误

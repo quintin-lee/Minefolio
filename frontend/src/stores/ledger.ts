@@ -16,8 +16,13 @@ const STORAGE_KEY = 'minefolio_active_ledger_id'
  * 账本协作与空间状态 Pinia Store
  */
 export const useLedgerStore = defineStore('ledger', () => {
-  /** 当前用户可访问的所有账本列表 */
+  /** 当前用户可访问的账本列表（已加载页） */
   const ledgers = ref<Ledger[]>([])
+  /** 账本总数（来自后端分页响应） */
+  const total = ref(0)
+  const page = ref(1)
+  const pageSize = ref(20)
+  const hasMore = computed(() => ledgers.value.length < total.value)
   /** 从本地持久化存储中读取上次激活的账本 ID */
   const saved = localStorage.getItem(STORAGE_KEY)
   /** 当前选中的激活账本 ID */
@@ -50,26 +55,65 @@ export const useLedgerStore = defineStore('ledger', () => {
   /** 账本列表加载请求序号：防止登出 reset() 或并发拉取后过期响应写回状态/localStorage */
   let fetchSeq = 0
 
+  function ensureActiveLedgerSelected() {
+    if (ledgers.value.length > 0) {
+      const found = ledgers.value.find((l) => l.id === currentLedgerId.value)
+      if (!found) {
+        const def = ledgers.value.find((l) => Boolean(l.is_default)) || ledgers.value[0]
+        if (def) {
+          currentLedgerId.value = def.id
+          localStorage.setItem(STORAGE_KEY, String(def.id))
+        }
+      }
+    }
+  }
+
   /**
-   * 从服务端拉取当前用户参与的所有账本列表，并初始化选中当前激活账本
+   * 从服务端分页拉取当前用户参与的账本列表，并初始化选中当前激活账本
    */
-  async function fetchLedgers() {
+  async function fetchLedgers(targetPage = 1, targetPageSize = pageSize.value) {
     const seq = ++fetchSeq
     loading.value = true
     try {
-      const data = await ledgerApi.list()
+      const res: any = await ledgerApi.list({ page: targetPage, page_size: targetPageSize })
       if (seq !== fetchSeq) return
-      ledgers.value = Array.isArray(data) ? data : []
-      if (ledgers.value.length > 0) {
-        const found = ledgers.value.find((l) => l.id === currentLedgerId.value)
-        if (!found) {
-          const def = ledgers.value.find((l) => Boolean(l.is_default)) || ledgers.value[0]
-          if (def) {
-            currentLedgerId.value = def.id
-            localStorage.setItem(STORAGE_KEY, String(def.id))
-          }
+      const list = Array.isArray(res) ? res : (Array.isArray(res?.list) ? res.list : [])
+      const serverTotal = Array.isArray(res) ? res.length : (typeof res?.total === 'number' ? res.total : list.length)
+      ledgers.value = list
+      total.value = serverTotal
+      page.value = targetPage
+      pageSize.value = targetPageSize
+      ensureActiveLedgerSelected()
+    } finally {
+      if (seq === fetchSeq) {
+        loading.value = false
+      }
+    }
+  }
+
+  /**
+   * 加载下一页账本并追加到列表
+   */
+  async function loadMoreLedgers() {
+    if (loading.value || !hasMore.value) return
+    const seq = fetchSeq
+    const nextPage = page.value + 1
+    loading.value = true
+    try {
+      const res: any = await ledgerApi.list({ page: nextPage, page_size: pageSize.value })
+      if (seq !== fetchSeq) return
+      const nextList: Ledger[] = Array.isArray(res) ? res : (Array.isArray(res?.list) ? res.list : [])
+      const serverTotal = Array.isArray(res) ? nextList.length : (typeof res?.total === 'number' ? res.total : total.value)
+      const seen = new Set(ledgers.value.map((l) => l.id))
+      for (const item of nextList) {
+        if (!seen.has(item.id)) {
+          ledgers.value.push(item)
+          seen.add(item.id)
         }
       }
+      total.value = serverTotal
+      page.value = nextPage
+      ensureActiveLedgerSelected()
     } finally {
       if (seq === fetchSeq) {
         loading.value = false
@@ -101,6 +145,8 @@ export const useLedgerStore = defineStore('ledger', () => {
   function reset() {
     fetchSeq++
     ledgers.value = []
+    total.value = 0
+    page.value = 1
     currentLedgerId.value = null
     loading.value = false
     if (typeof localStorage !== 'undefined') {
@@ -110,6 +156,10 @@ export const useLedgerStore = defineStore('ledger', () => {
 
   return {
     ledgers,
+    total,
+    page,
+    pageSize,
+    hasMore,
     currentLedgerId,
     currentLedger,
     loading,
@@ -117,6 +167,7 @@ export const useLedgerStore = defineStore('ledger', () => {
     isOwner,
     isEditor,
     fetchLedgers,
+    loadMoreLedgers,
     setCurrentLedger,
     reset,
   }

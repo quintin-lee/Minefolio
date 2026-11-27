@@ -30,37 +30,59 @@ api_ai_news_list(csilk_ctx_t* c)
         return;
     }
 
+    int64_t     page = 1;
+    int64_t     page_size = 7;
     int         limit = 7;
-    const char* limit_str = csilk_get_query(c, "limit");
-    if (limit_str && limit_str[0]) {
-        int64_t parsed = parse_query_int_strict(limit_str, -1);
-        if (parsed <= 0) {
-            respond_bad_request(c, "Invalid limit parameter");
-            return;
-        }
-        limit = (parsed <= 30) ? (int)parsed : 30;
-    }
-
     int         offset = 0;
-    const char* offset_str = csilk_get_query(c, "offset");
-    if (offset_str && offset_str[0]) {
-        int64_t parsed = parse_query_int_strict(offset_str, -1);
-        if (parsed < 0 || parsed > INT_MAX) {
-            respond_bad_request(c, "Invalid offset parameter");
-            return;
+    const char* page_str = csilk_get_query(c, "page");
+    const char* ps_str = csilk_get_query(c, "page_size");
+
+    if ((page_str && page_str[0]) || (ps_str && ps_str[0])) {
+        parse_page_params(c, &page, &page_size);
+        if (page_size > 30) {
+            page_size = 30;
         }
-        offset = (int)parsed;
+        limit = (int)page_size;
+        int64_t calc_offset = (page - 1) * page_size;
+        offset = (calc_offset > INT_MAX) ? INT_MAX : (int)calc_offset;
+    } else {
+        const char* limit_str = csilk_get_query(c, "limit");
+        if (limit_str && limit_str[0]) {
+            int64_t parsed = parse_query_int_strict(limit_str, -1);
+            if (parsed <= 0) {
+                respond_bad_request(c, "Invalid limit parameter");
+                return;
+            }
+            limit = (parsed <= 30) ? (int)parsed : 30;
+        }
+
+        const char* offset_str = csilk_get_query(c, "offset");
+        if (offset_str && offset_str[0]) {
+            int64_t parsed = parse_query_int_strict(offset_str, -1);
+            if (parsed < 0 || parsed > INT_MAX) {
+                respond_bad_request(c, "Invalid offset parameter");
+                return;
+            }
+            offset = (int)parsed;
+        }
+        page = (offset / limit) + 1;
+        page_size = limit;
     }
 
     csilk_db_pool_t* pool = db_get_pool();
+    int64_t          total = 0;
     int              has_more = 0;
-    csilk_json_t* result = ai_news_list_ledger(pool, user_id, ledger_id, limit, offset, &has_more);
+    csilk_json_t*    result =
+        ai_news_list_ledger_paged(pool, user_id, ledger_id, limit, offset, &total, &has_more);
     if (!result) {
         result = csilk_json_array();
     }
-    /* 包一层信封: { list, has_more } —— 分页加载需要 has_more 判断是否还有下一页 */
+    /* 包一层信封: { list, total, page, page_size, has_more } */
     csilk_json_t* envelope = csilk_json_object();
     csilk_json_add_array(envelope, "list", result);
+    csilk_json_add_number(envelope, "total", (double)total);
+    csilk_json_add_number(envelope, "page", (double)page);
+    csilk_json_add_number(envelope, "page_size", (double)page_size);
     csilk_json_add_int(envelope, "has_more", has_more);
     respond_ok(c, envelope);
 }

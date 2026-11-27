@@ -36,6 +36,14 @@ int mf_mcp_server_repo_list(void*             db_pool,
                             mf_mcp_server_t** out_list,
                             size_t*           out_count);
 
+int mf_mcp_server_repo_list_paged(void*             db_pool,
+                                  int64_t           user_id,
+                                  int64_t           page,
+                                  int64_t           page_size,
+                                  mf_mcp_server_t** out_list,
+                                  size_t*           out_count,
+                                  int64_t*          out_total);
+
 /**
  * @brief 根据 ID 查询单个 MCP 服务器
  * @return 0 成功查到, 1 不存在, -1 数据库错误

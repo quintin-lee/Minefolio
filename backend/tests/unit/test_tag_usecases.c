@@ -82,6 +82,17 @@ int main(void) {
     csilk_json_free(list);
     printf("  [OK] tag_usecase_list returned 3 tags\n");
 
+    csilk_json_t* p1 = NULL;
+    int64_t       t_total = 0;
+    rc = tag_usecase_list_paged(pool, user_id, 1, 2, &p1, &t_total);
+    assert(rc == 0 && p1 != NULL && t_total == 3 && csilk_json_array_size(p1) == 2);
+    csilk_json_free(p1);
+    csilk_json_t* p2 = NULL;
+    rc = tag_usecase_list_paged(pool, user_id, 2, 2, &p2, &t_total);
+    assert(rc == 0 && p2 != NULL && t_total == 3 && csilk_json_array_size(p2) == 1);
+    csilk_json_free(p2);
+    printf("  [OK] tag_usecase_list_paged pagination verified\n");
+
     // 4. tag_usecase_suggestions
     csilk_json_t* sugg = NULL;
     rc = tag_usecase_suggestions(pool, user_id, "餐", &sugg);

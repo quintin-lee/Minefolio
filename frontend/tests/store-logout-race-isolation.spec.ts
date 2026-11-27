@@ -193,7 +193,7 @@ describe('store logout race isolation (async epoch guards)', () => {
   })
 
   it('ledger store: discards stale fetchLedgers result and does not repopulate localStorage after reset()', async () => {
-    const d = deferred<any[]>()
+    const d = deferred<any>()
     ;(ledgerApi.list as any).mockReturnValueOnce(d.promise)
 
     const store = useLedgerStore()
@@ -206,9 +206,14 @@ describe('store logout race isolation (async epoch guards)', () => {
     expect(store.loading).toBe(false)
     expect(localStorage.getItem('minefolio_active_ledger_id')).toBeNull()
 
-    d.resolve([
-      { id: 99, name: '旧账号账本', currency: 'CNY', is_default: true, my_role: 'owner' },
-    ])
+    d.resolve({
+      list: [
+        { id: 99, name: '旧账号账本', currency: 'CNY', is_default: true, my_role: 'owner' },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    })
     await p
 
     expect(store.ledgers).toEqual([])
@@ -319,7 +324,7 @@ describe('store logout race isolation (async epoch guards)', () => {
   })
 
   it('useFinancialEntities: discards stale loadEntities after resetFinancialEntities() and lets new epoch load proceed', async () => {
-    const dAcc1 = deferred<any[]>()
+    const dAcc1 = deferred<any>()
     const dAsset1 = deferred<any>()
     const dHold1 = deferred<any>()
     ;(accountsApi.list as any).mockReturnValueOnce(dAcc1.promise)
@@ -333,7 +338,7 @@ describe('store logout race isolation (async epoch guards)', () => {
     resetFinancialEntities()
 
     // New user logs in and starts loadEntities() immediately while old request is still pending
-    const dAcc2 = deferred<any[]>()
+    const dAcc2 = deferred<any>()
     const dAsset2 = deferred<any>()
     const dHold2 = deferred<any>()
     ;(accountsApi.list as any).mockReturnValueOnce(dAcc2.promise)
@@ -343,13 +348,13 @@ describe('store logout race isolation (async epoch guards)', () => {
     const p2 = loadEntities()
 
     // New user's request resolves first
-    dAcc2.resolve([{ id: 2, name: '新用户招行卡', institution: 'bank_card' }])
+    dAcc2.resolve({ list: [{ id: 2, name: '新用户招行卡', institution: 'bank_card' }], total: 1, page: 1, page_size: 500 })
     dAsset2.resolve({ list: [{ id: 20, name: '新用户腾讯', asset_type: 'stock', currency: 'HKD', current_value: 5000 }], total: 1 })
     dHold2.resolve({ holdings: [] })
     await p2
 
     // Old user's stale request resolves late -> must be discarded
-    dAcc1.resolve([{ id: 1, name: '旧用户私密卡', institution: 'bank_card' }])
+    dAcc1.resolve({ list: [{ id: 1, name: '旧用户私密卡', institution: 'bank_card' }], total: 1, page: 1, page_size: 500 })
     dAsset1.resolve({ list: [{ id: 10, name: '旧用户茅台', asset_type: 'stock', currency: 'CNY', current_value: 9999 }], total: 1 })
     dHold1.resolve({ holdings: [] })
     await p1

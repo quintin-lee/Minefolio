@@ -8,6 +8,13 @@ extern "C" {
 
 csilk_json_t*
 skill_repo_list(csilk_db_pool_t* pool, int64_t user_id, const char* category, int enabled_only);
+csilk_json_t* skill_repo_list_paged(csilk_db_pool_t* pool,
+                                    int64_t          user_id,
+                                    const char*      category,
+                                    int              enabled_only,
+                                    int64_t          page,
+                                    int64_t          page_size,
+                                    int64_t*         out_total);
 csilk_json_t* skill_repo_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
 csilk_json_t* skill_repo_get_by_name(csilk_db_pool_t* pool, int64_t user_id, const char* name);
 int64_t       skill_repo_insert(csilk_db_pool_t* pool, int64_t user_id, const mf_skill_t* skill);

@@ -60,7 +60,7 @@ describe('useFinancialEntities', () => {
   it('clears cached entities on resetFinancialEntities so next load refetches', async () => {
     resetFinancialEntities()
     vi.clearAllMocks()
-    ;(accountsApi.list as any).mockResolvedValueOnce([{ id: 1, name: '招商银行', institution: 'bank_card' }])
+    ;(accountsApi.list as any).mockResolvedValueOnce({ list: [{ id: 1, name: '招商银行', institution: 'bank_card' }], total: 1, page: 1, page_size: 500 })
     ;(assetsApi.list as any).mockResolvedValueOnce({ list: [{ id: 10, name: '茅台', type: 'stock', currency: 'CNY', current_value: 1000 }] })
     ;(reportsApi.holdings as any).mockResolvedValueOnce({ list: [] })
 
@@ -73,7 +73,7 @@ describe('useFinancialEntities', () => {
     expect(getEntityDetail('account', 1)).toBeNull()
     expect(linkFinancialEntities('<p>茅台</p>')).not.toContain('mf-entity-badge')
 
-    ;(accountsApi.list as any).mockResolvedValueOnce([{ id: 2, name: '工商银行', institution: 'bank_card' }])
+    ;(accountsApi.list as any).mockResolvedValueOnce({ list: [{ id: 2, name: '工商银行', institution: 'bank_card' }], total: 1, page: 1, page_size: 500 })
     ;(assetsApi.list as any).mockResolvedValueOnce({ list: [] })
     ;(reportsApi.holdings as any).mockResolvedValueOnce({ list: [] })
     await loadEntities()
@@ -98,7 +98,7 @@ describe('useFinancialEntities', () => {
     const page2 = [
       { id: 101, name: '茅台定投基金', type: 'fund', currency: 'CNY', current_value: 2000 },
     ]
-    ;(accountsApi.list as any).mockResolvedValueOnce([])
+    ;(accountsApi.list as any).mockResolvedValueOnce({ list: [], total: 0, page: 1, page_size: 500 })
     ;(assetsApi.list as any)
       .mockResolvedValueOnce({ list: page1, total: 101 })
       .mockResolvedValueOnce({ list: page2, total: 101 })

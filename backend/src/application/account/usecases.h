@@ -70,6 +70,15 @@ int account_usecase_query(void*          pool,
                           csilk_json_t** out_list,
                           int64_t*       out_total);
 
+int account_usecase_query_paged(void*          pool,
+                                int64_t        user_id,
+                                int64_t        ledger_id,
+                                int            include_archived,
+                                int64_t        page,
+                                int64_t        page_size,
+                                csilk_json_t** out_list,
+                                int64_t*       out_total);
+
 /**
  * @brief 幂等创建「默认账户」（懒种子钩子，对齐 category_usecase_seed_defaults）
  */

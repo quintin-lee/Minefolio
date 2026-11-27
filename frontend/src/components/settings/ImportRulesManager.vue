@@ -50,6 +50,20 @@
       </el-table-column>
     </el-table>
 
+    <div v-if="total > 0" style="display: flex; justify-content: flex-end; margin-top: 12px;">
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        :page-sizes="[10, 20, 50]"
+        layout="total, sizes, prev, pager, next"
+        background
+        size="small"
+        @current-change="loadImportRules"
+        @size-change="handleSizeChange"
+      />
+    </div>
+
     <el-dialog
       v-model="ruleDialogVisible"
       :title="editingRule?.id ? t('settings.ruleEditDialog') : t('settings.ruleNewDialog')"
@@ -105,6 +119,9 @@ import { t } from '@/utils/locale'
 
 const categoryStore = useCategoryStore()
 const importRules = ref<ImportRule[]>([])
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const rulesLoading = ref(false)
 const ruleDialogVisible = ref(false)
 const ruleSaving = ref(false)
@@ -147,10 +164,23 @@ const flatCategories = computed(() => {
 async function loadImportRules() {
   rulesLoading.value = true
   try {
-    importRules.value = await importRulesApi.list() as unknown as ImportRule[]
+    const res: any = await importRulesApi.list({ page: page.value, page_size: pageSize.value })
+    const list: ImportRule[] = Array.isArray(res) ? res : (Array.isArray(res?.list) ? res.list : [])
+    const srvTotal = Array.isArray(res) ? res.length : (typeof res?.total === 'number' ? res.total : list.length)
+    importRules.value = list
+    total.value = srvTotal
+    if (list.length === 0 && page.value > 1 && srvTotal > 0) {
+      page.value = Math.max(1, Math.ceil(srvTotal / pageSize.value))
+      await loadImportRules()
+    }
   } catch { /* ignore */ } finally {
     rulesLoading.value = false
   }
+}
+
+function handleSizeChange() {
+  page.value = 1
+  loadImportRules()
 }
 
 function openRuleDialog(rule: ImportRule | null) {

@@ -209,6 +209,19 @@ mf_async_task_get(void* pool, int64_t user_id, int64_t task_id)
 }
 
 csilk_json_t*
+mf_async_task_list_paged(void*       pool,
+                         int64_t     user_id,
+                         const char* status,
+                         const char* task_type,
+                         int64_t     page,
+                         int64_t     page_size,
+                         int64_t*    out_total)
+{
+    return mf_async_task_repo_list_paged(
+        (csilk_db_pool_t*)pool, user_id, status, task_type, page, page_size, out_total);
+}
+
+csilk_json_t*
 mf_async_task_list(
     void* pool, int64_t user_id, const char* status, const char* task_type, int limit)
 {

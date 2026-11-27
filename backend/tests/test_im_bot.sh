@@ -113,6 +113,8 @@ check "bind: 幂等单行" "$DUP" "1"
 # --- Case 6: bindings 列表 (App 侧正常 token) ---
 LIST=$(req GET /im/bindings "" "$TOKEN")
 grep_check "bindings list: 含 im_user_id" "qq_user_001" "$LIST"
+check "bindings list: list 长度 1" "$(echo "$LIST" | jq -r '.data.list | length')" "1"
+check "bindings list: total=1" "$(echo "$LIST" | jq -r '.data.total | floor')" "1"
 
 # --- Case 7: im_bind token 不得访问非 /im 路径 (路径白名单 → 裸 401 {error}) ---
 LEAK=$(req GET /assets "" "$BIND_TOKEN")

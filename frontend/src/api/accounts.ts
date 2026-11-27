@@ -10,6 +10,7 @@ import type {
   AccountUpdate,
   AccountPermission,
   AccountPermissionBatchItem,
+  PageResult,
 } from '@/types'
 
 /**
@@ -17,13 +18,14 @@ import type {
  */
 export const accountsApi = {
   /**
-   * 查询当前账本下的全部账户（含 asset_count / total_value 聚合）
+   * 分页查询当前账本下的账户（含 asset_count / total_value 聚合）
    * @route GET /api/accounts
    * @param params.include_archived 是否包含已归档账户 (默认不含)
-   * @returns 账户列表（无分页，全集单次返回）
+   * @param params.page 页码 (默认 1)
+   * @param params.page_size 每页条数 (默认 20，最大 500)
    */
-  list: (params?: { include_archived?: number }) =>
-    http.get<Account[]>('/accounts', { params }),
+  list: (params?: { include_archived?: number; page?: number; page_size?: number }) =>
+    http.get<PageResult<Account>>('/accounts', { params }),
 
   /**
    * 获取指定账户详情

@@ -233,12 +233,17 @@ api_ai_mcp_servers_list(csilk_ctx_t* c)
         return;
     }
 
+    int64_t page = 1;
+    int64_t page_size = 20;
+    parse_page_params(c, &page, &page_size);
+
     csilk_json_t* list = NULL;
-    if (mf_mcp_usecase_list(db_get_pool(), user_id, &list) != 0) {
+    int64_t       total = 0;
+    if (mf_mcp_usecase_list_paged(db_get_pool(), user_id, page, page_size, &list, &total) != 0) {
         respond_error(c, 500, "查询 MCP 服务器列表失败");
         return;
     }
-    respond_ok(c, list ? list : csilk_json_array());
+    respond_page_ok(c, list ? list : csilk_json_array(), total, page, page_size);
 }
 
 /* 单个服务器 */

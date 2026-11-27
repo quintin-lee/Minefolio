@@ -843,6 +843,9 @@ export interface AiNewsReport {
 /** 市场脉搏列表分页响应信封 */
 export interface AiNewsListResponse {
   list: AiNewsReport[]
+  total: number
+  page: number
+  page_size: number
   has_more: boolean
 }
 

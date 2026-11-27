@@ -155,23 +155,41 @@ describe('mobile degraded localDb & online mutations', () => {
     const invalidateSpy = vi.spyOn(store, 'invalidate')
 
     ;(categoriesApi.list as any)
-      .mockResolvedValueOnce([
-        {
-          id: 1,
-          name: '餐饮',
-          type: 'expense',
-          sort_order: 1,
-          children: [{ id: 2, name: '外卖', type: 'expense', parent_id: 1, sort_order: 1 }],
-        },
-      ])
-      .mockResolvedValueOnce([
-        { id: 1, name: '餐饮', type: 'expense', sort_order: 1, children: [] },
-      ])
-      .mockResolvedValueOnce([
-        { id: 1, name: '餐饮', type: 'expense', sort_order: 1, children: [] },
-        { id: 3, name: '交通', type: 'expense', sort_order: 2, children: [] },
-      ])
-    ;(tagsApi.list as any).mockResolvedValue([{ id: 10, name: '刚需', color: '#ff0000' }])
+      .mockResolvedValueOnce({
+        list: [
+          {
+            id: 1,
+            name: '餐饮',
+            type: 'expense',
+            sort_order: 1,
+            children: [{ id: 2, name: '外卖', type: 'expense', parent_id: 1, sort_order: 1 }],
+          },
+        ],
+        total: 1,
+        page: 1,
+        page_size: 20,
+      })
+      .mockResolvedValueOnce({
+        list: [{ id: 1, name: '餐饮', type: 'expense', sort_order: 1, children: [] }],
+        total: 1,
+        page: 1,
+        page_size: 20,
+      })
+      .mockResolvedValueOnce({
+        list: [
+          { id: 1, name: '餐饮', type: 'expense', sort_order: 1, children: [] },
+          { id: 3, name: '交通', type: 'expense', sort_order: 2, children: [] },
+        ],
+        total: 2,
+        page: 1,
+        page_size: 20,
+      })
+    ;(tagsApi.list as any).mockResolvedValue({
+      list: [{ id: 10, name: '刚需', color: '#ff0000' }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    })
     ;(offlineApi.delete as any).mockResolvedValue({})
 
     const wrapper = mount(CategoryManageMobile, {
@@ -201,10 +219,10 @@ describe('mobile degraded localDb & online mutations', () => {
   })
 
   it('CategoryManageMobile handles online tag delete without throwing when localDb is uninitialized', async () => {
-    ;(categoriesApi.list as any).mockResolvedValue([])
+    ;(categoriesApi.list as any).mockResolvedValue({ list: [], total: 0, page: 1, page_size: 20 })
     ;(tagsApi.list as any)
-      .mockResolvedValueOnce([{ id: 10, name: '刚需', color: '#ff0000' }])
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ list: [{ id: 10, name: '刚需', color: '#ff0000' }], total: 1, page: 1, page_size: 20 })
+      .mockResolvedValueOnce({ list: [], total: 0, page: 1, page_size: 20 })
     ;(offlineApi.delete as any).mockResolvedValue({})
 
     const wrapper = mount(CategoryManageMobile, {

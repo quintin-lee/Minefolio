@@ -6,20 +6,19 @@
 // frontend/src/api/categories.ts
 import http from '@/utils/http'
 import type { AxiosRequestConfig } from 'axios'
-import type { Category, CategoryInput } from '@/types'
+import type { Category, CategoryInput, PageResult } from '@/types'
 
 /**
  * 分类管理 API 服务对象
  */
 export const categoriesApi = {
   /**
-   * 获取分类列表 (默认获取所有顶级根分类，或按类型筛选)
+   * 分页获取分类树列表 (按顶级根分类分页，携带完整子分类树)
    * @route GET /api/categories
-   * @param params 筛选参数
-   * @param params.type 分类用途类型 ('asset' 资产 | 'expense' 支出 | 'income' 收入 | 'transaction' 交易)
-   * @returns 分类实体对象数组
+   * @param params 筛选与分页参数
    */
-  list: (params?: { type?: string }) => http.get<Category[]>('/categories', { params }),
+  list: (params?: { type?: string; keyword?: string; page?: number; page_size?: number }) =>
+    http.get<PageResult<Category>>('/categories', { params }),
 
   /**
    * 按父分类 ID 懒加载获取直接子分类列表

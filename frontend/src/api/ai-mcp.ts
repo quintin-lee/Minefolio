@@ -14,16 +14,29 @@ import type {
   McpTestResult,
   McpServerInput,
   McpScriptItem,
+  PageResult,
 } from '@/types'
 
 /**
- * 获取当前用户配置的所有 MCP 服务器列表 (含工具缓存计数)
+ * 分页获取当前用户配置的 MCP 服务器列表 (含工具缓存计数)
  * @route GET /api/ai/mcp/servers
- * @returns MCP 服务器数组
  */
-export async function listMcpServers(): Promise<McpServer[]> {
-  const r = await http.get<McpServer[]>('/ai/mcp/servers')
-  return Array.isArray(r) ? r : []
+export async function listMcpServers(params?: {
+  page?: number
+  page_size?: number
+}): Promise<PageResult<McpServer>> {
+  const page = params?.page ?? 1
+  const page_size = params?.page_size ?? 20
+  const r = await http.get<PageResult<McpServer> | McpServer[]>('/ai/mcp/servers', { params })
+  if (Array.isArray(r)) {
+    return { list: r, total: r.length, page, page_size }
+  }
+  return {
+    list: Array.isArray(r?.list) ? r.list : [],
+    total: typeof r?.total === 'number' ? r.total : (Array.isArray(r?.list) ? r.list.length : 0),
+    page: typeof r?.page === 'number' ? r.page : page,
+    page_size: typeof r?.page_size === 'number' ? r.page_size : page_size,
+  }
 }
 
 /**

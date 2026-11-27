@@ -15,18 +15,29 @@ function buildNewsRequestConfig(ledgerId?: number, baseParams?: Record<string, n
   return config
 }
 
-/** 获取最近 N 天的 AI 资讯分析报告（轻量投影，分页） */
+/** 获取 AI 资讯分析报告（轻量投影，支持 page/page_size 分页） */
 export async function listNewsReports(
-  limit = 7,
-  offset = 0,
+  page = 1,
+  pageSize = 10,
   ledgerId?: number,
 ): Promise<AiNewsListResponse> {
-  const res = await http.get<AiNewsListResponse>('/ai/news', buildNewsRequestConfig(ledgerId, { limit, offset }))
+  const res = await http.get<AiNewsListResponse | AiNewsReport[]>(
+    '/ai/news',
+    buildNewsRequestConfig(ledgerId, { page, page_size: pageSize }),
+  )
   /* 兼容旧后端（无信封/has_more）: 若返回裸数组则包一层 */
   if (Array.isArray(res)) {
-    return { list: res as unknown as AiNewsReport[], has_more: false }
+    return { list: res, total: res.length, page, page_size: pageSize, has_more: false }
   }
-  return res || { list: [], has_more: false }
+  const list = Array.isArray(res?.list) ? res.list : []
+  const total = typeof res?.total === 'number' ? res.total : list.length
+  return {
+    list,
+    total,
+    page: typeof res?.page === 'number' ? res.page : page,
+    page_size: typeof res?.page_size === 'number' ? res.page_size : pageSize,
+    has_more: Boolean(res?.has_more),
+  }
 }
 
 /** 按需获取指定日期报告的完整正文（展开时单取 analysis/sources） */

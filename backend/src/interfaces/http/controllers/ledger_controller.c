@@ -27,8 +27,13 @@ ledger_service_list(csilk_ctx_t* c)
         return;
     }
 
-    csilk_json_t* list = ledger_usecase_list(db_get_pool(), user_id);
-    respond_ok(c, list ? list : csilk_json_array());
+    int64_t page = 1;
+    int64_t page_size = 20;
+    parse_page_params(c, &page, &page_size);
+
+    int64_t       total = 0;
+    csilk_json_t* list = ledger_usecase_list_paged(db_get_pool(), user_id, page, page_size, &total);
+    respond_page_ok(c, list ? list : csilk_json_array(), total, page, page_size);
 }
 
 void

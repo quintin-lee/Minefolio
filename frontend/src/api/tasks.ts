@@ -1,4 +1,5 @@
 import http from '@/utils/http'
+import type { PageResult } from '@/types'
 
 export type AsyncTaskStatus = 'pending' | 'running' | 'completed' | 'failed'
 
@@ -51,8 +52,8 @@ export class TaskCancelledError extends Error {
 export const tasksApi = {
   get: <T = unknown>(id: number, signal?: AbortSignal) =>
     signal ? http.get<AsyncTask<T>>(`/tasks/${id}`, { signal }) : http.get<AsyncTask<T>>(`/tasks/${id}`),
-  list: (params?: { status?: string; task_type?: string; limit?: number }) =>
-    http.get<AsyncTask[]>('/tasks', { params }),
+  list: (params?: { status?: string; task_type?: string; page?: number; page_size?: number; limit?: number }) =>
+    http.get<PageResult<AsyncTask>>('/tasks', { params }),
 }
 
 function waitWithSignal(ms: number, signal?: AbortSignal): Promise<void> {

@@ -5,7 +5,7 @@
 
 import QRCode from 'qrcode'
 import http from '@/utils/http'
-import type { ImBotInstance } from '@/types'
+import type { ImBotInstance, PageResult } from '@/types'
 
 export interface ImBindingItem {
   platform: 'qq' | 'wechat' | string
@@ -35,9 +35,10 @@ export async function renderQrContentToImage(content: string): Promise<string> {
 
 export const imApi = {
   /**
-   * 获取当前用户的 IM 账号绑定列表
+   * 分页获取当前用户的 IM 账号绑定列表
    */
-  getBindings: () => http.get<ImBindingItem[]>('/im/bindings'),
+  getBindings: (params?: { page?: number; page_size?: number }) =>
+    http.get<PageResult<ImBindingItem>>('/im/bindings', { params }),
 
   /**
    * 生成 300 秒有效期的受限 IM 绑定码
@@ -53,9 +54,10 @@ export const imApi = {
     }),
 
   /**
-   * 列出当前用户的 iLink 微信机器人实例
+   * 分页列出当前用户的 iLink 微信机器人实例
    */
-  listInstances: () => http.get<ImBotInstance[]>('/im/instances'),
+  listInstances: (params?: { page?: number; page_size?: number }) =>
+    http.get<PageResult<ImBotInstance>>('/im/instances', { params }),
 
   /**
    * 获取单个 iLink 微信机器人实例详情

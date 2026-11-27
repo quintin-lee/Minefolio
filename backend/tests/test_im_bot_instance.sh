@@ -120,7 +120,8 @@ DUP_A=$(req POST /im/instances '{}' "$TOKEN_A")
 grep_check "A 重复创建返回 1004" '"code":1004' "$DUP_A"
 
 LIST_B=$(req GET /im/instances "" "$TOKEN_B")
-check "B 列表为空" "$(echo "$LIST_B" | jq -r '.data | length')" "0"
+check "B 列表为空" "$(echo "$LIST_B" | jq -r '.data.list | length')" "0"
+check "B 列表 total=0" "$(echo "$LIST_B" | jq -r '.data.total | floor')" "0"
 GET_B_ON_A=$(req GET "/im/instances/$INST_A" "" "$TOKEN_B")
 grep_check "B GET A 实例返回 1003" '"code":1003' "$GET_B_ON_A"
 DEL_B_ON_A=$(req DELETE "/im/instances/$INST_A" "" "$TOKEN_B")
@@ -140,7 +141,7 @@ grep_check "网关上报 qr_ready 成功" '"code":0' "$QR_UP"
 GET_A_QR=$(req GET "/im/instances/$INST_A" "" "$TOKEN_A")
 check "A 能看到 qr_content" "$(echo "$GET_A_QR" | jq -r '.data.qr_content')" "https://ilink.test/qr/1"
 LIST_B2=$(req GET /im/instances "" "$TOKEN_B")
-check "B 仍看不到任何实例" "$(echo "$LIST_B2" | jq -r '.data | length')" "0"
+check "B 仍看不到任何实例" "$(echo "$LIST_B2" | jq -r '.data.list | length')" "0"
 
 # --- 4. 验证码提交与一次性消费 ---
 BAD_PIN=$(req POST "/im/instances/$INST_A/verify-code" '{"code":"ab12"}' "$TOKEN_A")

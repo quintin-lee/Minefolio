@@ -34,6 +34,7 @@ import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { accountsApi } from '@/api/accounts'
 import { assetsApi } from '@/api/assets'
+import { fetchAllPages } from '@/utils/pagination'
 
 export interface MentionItem {
   id: string | number
@@ -69,7 +70,7 @@ function getAssetIcon(type?: string): string {
 async function loadData() {
   try {
     const [accRes, assetRes] = await Promise.allSettled([
-      accountsApi.list(),
+      fetchAllPages((page, page_size) => accountsApi.list({ page, page_size })),
       assetsApi.list({ page_size: 50 }),
     ])
 

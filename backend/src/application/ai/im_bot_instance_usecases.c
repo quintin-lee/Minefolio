@@ -184,9 +184,17 @@ im_instance_usecase_create(void*          pool,
 }
 
 csilk_json_t*
+im_instance_usecase_list_paged(
+    void* pool, int64_t user_id, int64_t page, int64_t page_size, int64_t* out_total)
+{
+    return im_instance_normalize_list(
+        mf_im_bot_instance_list_paged((csilk_db_pool_t*)pool, user_id, page, page_size, out_total));
+}
+
+csilk_json_t*
 im_instance_usecase_list(void* pool, int64_t user_id)
 {
-    return im_instance_normalize_list(mf_im_bot_instance_list((csilk_db_pool_t*)pool, user_id));
+    return im_instance_usecase_list_paged(pool, user_id, 1, 500, NULL);
 }
 
 csilk_json_t*

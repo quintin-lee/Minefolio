@@ -59,11 +59,11 @@ export interface ImportRuleCreatePayload {
  */
 export const importRulesApi = {
   /**
-   * 获取当前用户的所有导入分类规则列表
+   * 分页获取当前用户的导入分类规则列表
    * @route GET /api/import-rules
-   * @returns 导入规则对象数组
    */
-  list: () => http.get<ImportRule[]>('/import-rules'),
+  list: (params?: { page?: number; page_size?: number }) =>
+    http.get<import('@/types').PageResult<ImportRule>>('/import-rules', { params }),
 
   /**
    * 获取指定 ID 的导入规则详情

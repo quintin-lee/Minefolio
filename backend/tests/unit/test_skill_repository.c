@@ -98,7 +98,15 @@ int main(void) {
     csilk_json_t* list_other = skill_repo_list(pool, user_id, "other_cat", 0);
     assert(list_other != NULL && csilk_json_array_size(list_other) == 0);
     csilk_json_free(list_other);
-    printf("  [OK] skill_repo_list with filters\n");
+
+    int64_t       sk_total = 0;
+    csilk_json_t* sk_p1 = skill_repo_list_paged(pool, user_id, NULL, 0, 1, 1, &sk_total);
+    assert(sk_p1 != NULL && sk_total == 1 && csilk_json_array_size(sk_p1) == 1);
+    csilk_json_free(sk_p1);
+    csilk_json_t* sk_p2 = skill_repo_list_paged(pool, user_id, NULL, 0, 2, 1, &sk_total);
+    assert(sk_p2 != NULL && sk_total == 1 && csilk_json_array_size(sk_p2) == 0);
+    csilk_json_free(sk_p2);
+    printf("  [OK] skill_repo_list with filters and pagination\n");
 
     // 6. Toggle
     assert(skill_repo_toggle(pool, user_id, id, 0) == 0);

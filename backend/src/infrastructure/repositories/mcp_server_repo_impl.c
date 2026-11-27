@@ -91,22 +91,51 @@ fill_tool_from_row(const csilk_json_t* r, mf_mcp_server_tool_t* t)
 }
 
 int
-mf_mcp_server_repo_list(void*             db_pool,
-                        int64_t           user_id,
-                        mf_mcp_server_t** out_list,
-                        size_t*           out_count)
+mf_mcp_server_repo_list_paged(void*             db_pool,
+                              int64_t           user_id,
+                              int64_t           page,
+                              int64_t           page_size,
+                              mf_mcp_server_t** out_list,
+                              size_t*           out_count,
+                              int64_t*          out_total)
 {
     csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    char             uid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    if (page < 1) {
+        page = 1;
+    }
+    if (page_size < 1) {
+        page_size = 20;
+    }
+    if (page_size > 500) {
+        page_size = 500;
+    }
+    int64_t offset = (page - 1) * page_size;
 
-    csilk_json_t* rows =
-        csilk_db_query_param_json(pool,
-                                  "SELECT id, user_id, name, transport, url, command, args, env, "
-                                  "headers, secret_ref, enabled, timeout_ms, discovered_at, "
-                                  "created_at, updated_at "
-                                  "FROM mcp_server WHERE user_id=? ORDER BY name",
-                                  (const char*[]){uid_str, NULL});
+    char uid_str[32], lim_s[32], off_s[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(lim_s, sizeof(lim_s), "%lld", (long long)page_size);
+    snprintf(off_s, sizeof(off_s), "%lld", (long long)offset);
+
+    if (out_total) {
+        csilk_json_t* c_rows = csilk_db_query_param_json(
+            pool,
+            "SELECT COUNT(*) AS cnt FROM mcp_server WHERE user_id=?",
+            (const char*[]){uid_str, NULL});
+        *out_total = (c_rows && csilk_json_array_size(c_rows) > 0)
+                         ? db_get_int(csilk_json_array_get(c_rows, 0), "cnt")
+                         : 0;
+        if (c_rows) {
+            csilk_json_free(c_rows);
+        }
+    }
+
+    csilk_json_t* rows = csilk_db_query_param_json(
+        pool,
+        "SELECT id, user_id, name, transport, url, command, args, env, "
+        "headers, secret_ref, enabled, timeout_ms, discovered_at, "
+        "created_at, updated_at "
+        "FROM mcp_server WHERE user_id=? ORDER BY name LIMIT ? OFFSET ?",
+        (const char*[]){uid_str, lim_s, off_s, NULL});
 
     if (!rows) {
         *out_list = NULL;
@@ -124,6 +153,15 @@ mf_mcp_server_repo_list(void*             db_pool,
     *out_list = list;
     *out_count = n;
     return 0;
+}
+
+int
+mf_mcp_server_repo_list(void*             db_pool,
+                        int64_t           user_id,
+                        mf_mcp_server_t** out_list,
+                        size_t*           out_count)
+{
+    return mf_mcp_server_repo_list_paged(db_pool, user_id, 1, 500, out_list, out_count, NULL);
 }
 
 int

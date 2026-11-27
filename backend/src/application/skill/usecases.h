@@ -9,6 +9,14 @@ extern "C" {
 
 int skill_usecase_list(
     void* pool, int64_t user_id, const char* category, int enabled_only, csilk_json_t** out_data);
+int skill_usecase_list_paged(void*          pool,
+                             int64_t        user_id,
+                             const char*    category,
+                             int            enabled_only,
+                             int64_t        page,
+                             int64_t        page_size,
+                             csilk_json_t** out_data,
+                             int64_t*       out_total);
 int skill_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_data);
 int skill_usecase_create(void*                        pool,
                          int64_t                      user_id,

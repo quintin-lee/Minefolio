@@ -27,12 +27,15 @@ describe('imApi & iLink QR rendering', () => {
   })
 
   it('calls the expected iLink instance endpoints', async () => {
-    httpMock.get.mockResolvedValue([])
+    httpMock.get.mockResolvedValue({ list: [], total: 0, page: 1, page_size: 20 })
     httpMock.post.mockResolvedValue({ id: 1 })
     httpMock.delete.mockResolvedValue(null)
 
     await imApi.listInstances()
-    expect(httpMock.get).toHaveBeenCalledWith('/im/instances')
+    expect(httpMock.get).toHaveBeenCalledWith('/im/instances', { params: undefined })
+
+    await imApi.listInstances({ page: 2, page_size: 10 })
+    expect(httpMock.get).toHaveBeenCalledWith('/im/instances', { params: { page: 2, page_size: 10 } })
 
     await imApi.getInstance(7)
     expect(httpMock.get).toHaveBeenCalledWith('/im/instances/7')

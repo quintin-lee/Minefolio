@@ -266,9 +266,9 @@ check "http tools cache has mcp_echo" "1" "$HTTP_TOOLS_HAS"
 # After refresh, both mock servers have 1 cached tool each; the list endpoint
 # must return the "tool_count" field with value 1 for the http server.
 LIST_RES=$(auth_get "$BASE/ai/mcp/servers")
-LIST_HAS_TC=$(printf '%s' "$LIST_RES" | jq -r 'if ((.data // []) | length) > 0 and (.data[0] | has("tool_count")) then 1 else 0 end')
+LIST_HAS_TC=$(printf '%s' "$LIST_RES" | jq -r 'if ((.data.list // []) | length) > 0 and (.data.list[0] | has("tool_count")) then 1 else 0 end')
 check "list endpoint returns tool_count field" "1" "$LIST_HAS_TC"
-LIST_TC=$(printf '%s' "$LIST_RES" | jq -r 'if ((.data // []) | length) > 0 and .data[0].tool_count != null then (.data[0].tool_count | tonumber | floor) else empty end')
+LIST_TC=$(printf '%s' "$LIST_RES" | jq -r 'if ((.data.list // []) | length) > 0 and .data.list[0].tool_count != null then (.data.list[0].tool_count | tonumber | floor) else empty end')
 check "list endpoint tool_count is a number" "1" "$(printf '%s' "$LIST_TC" | grep -qE '^[0-9]+$' && echo 1 || echo 0)"
 
 # --- Scenario 2: chat hit remote MCP tool (HTTP transport, no fork) -----------

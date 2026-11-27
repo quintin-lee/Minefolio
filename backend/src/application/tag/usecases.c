@@ -6,11 +6,17 @@
 #include <string.h>
 
 int
-tag_usecase_list(void* pool, int64_t user_id, csilk_json_t** out_list)
+tag_usecase_list_paged(void*          pool,
+                       int64_t        user_id,
+                       int64_t        page,
+                       int64_t        page_size,
+                       csilk_json_t** out_list,
+                       int64_t*       out_total)
 {
     mf_tag_t* tags = NULL;
     size_t    count = 0;
-    if (mf_tag_repo_list(pool, user_id, &tags, &count) != 0) {
+    int64_t   total = 0;
+    if (mf_tag_repo_list_paged(pool, user_id, page, page_size, &tags, &count, &total) != 0) {
         return -1;
     }
     csilk_json_t* arr = csilk_json_array();
@@ -24,7 +30,16 @@ tag_usecase_list(void* pool, int64_t user_id, csilk_json_t** out_list)
     }
     mf_tag_repo_free_list(tags, count);
     *out_list = arr;
+    if (out_total) {
+        *out_total = total;
+    }
     return 0;
+}
+
+int
+tag_usecase_list(void* pool, int64_t user_id, csilk_json_t** out_list)
+{
+    return tag_usecase_list_paged(pool, user_id, 1, 500, out_list, NULL);
 }
 
 int

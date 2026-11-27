@@ -6,19 +6,88 @@
 #include <string.h>
 
 static csilk_json_t*
-query_cashflow_schedules(
-    void* pool, int64_t user_id, int64_t ledger_id, int64_t id, bool only_active)
+query_cashflow_schedules_ext(void*    pool,
+                             int64_t  user_id,
+                             int64_t  ledger_id,
+                             int64_t  id,
+                             bool     only_active,
+                             bool     paged,
+                             int64_t  page,
+                             int64_t  page_size,
+                             int64_t* out_total)
 {
-    char uid[32], lid[32], sid[32];
+    if (paged) {
+        if (page < 1) {
+            page = 1;
+        }
+        if (page_size < 1) {
+            page_size = 20;
+        }
+        if (page_size > 500) {
+            page_size = 500;
+        }
+    }
+
+    char uid[32], lid[32], sid[32], lim_s[32], off_s[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     snprintf(sid, sizeof(sid), "%lld", (long long)id);
+    int64_t row_offset = paged ? (page - 1) * page_size : 0;
+    snprintf(lim_s, sizeof(lim_s), "%lld", (long long)page_size);
+    snprintf(off_s, sizeof(off_s), "%lld", (long long)row_offset);
 
     const char* scope_where =
         (ledger_id > 0) ? MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL("s", "ta") : "s.user_id = ?";
     const char* active_cond = only_active ? " AND s.status = 'active'" : "";
     const char* id_cond = (id > 0) ? " AND s.id = ?" : "";
-    const char* order_by = (id > 0) ? "" : " ORDER BY s.id DESC";
+    const char* order_by = (id > 0) ? "" : (paged ? " ORDER BY s.id DESC LIMIT ? OFFSET ?" : " ORDER BY s.id DESC");
+
+    const char* params[16];
+    int         pidx = 0;
+    if (ledger_id > 0) {
+        params[pidx++] = lid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+    } else {
+        params[pidx++] = uid;
+    }
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    if (id > 0) {
+        params[pidx++] = sid;
+    }
+    params[pidx] = NULL;
+
+    if (paged && out_total) {
+        char count_sql[2048];
+        snprintf(count_sql,
+                 sizeof(count_sql),
+                 "SELECT COUNT(*) AS cnt "
+                 "FROM cashflow_schedules s "
+                 "JOIN assets sa ON sa.id = s.source_asset_id "
+                 "JOIN assets ta ON ta.id = s.target_asset_id "
+                 "WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL("sa") " AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                     "ta") "%s%s",
+                 scope_where,
+                 active_cond,
+                 id_cond);
+        csilk_json_t* c_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, count_sql, params);
+        *out_total = (c_rows && csilk_json_array_size(c_rows) > 0)
+                         ? db_get_int(csilk_json_array_get(c_rows, 0), "cnt")
+                         : 0;
+        if (c_rows) {
+            csilk_json_free(c_rows);
+        }
+    }
+
+    if (paged && id <= 0) {
+        params[pidx++] = lim_s;
+        params[pidx++] = off_s;
+        params[pidx] = NULL;
+    }
 
     char sql[2560];
     snprintf(sql,
@@ -40,26 +109,15 @@ query_cashflow_schedules(
              id_cond,
              order_by);
 
-    const char* params[16];
-    int         pidx = 0;
-    if (ledger_id > 0) {
-        params[pidx++] = lid;
-        params[pidx++] = uid;
-        params[pidx++] = uid;
-        params[pidx++] = uid;
-    } else {
-        params[pidx++] = uid;
-    }
-    params[pidx++] = uid;
-    params[pidx++] = uid;
-    params[pidx++] = uid;
-    params[pidx++] = uid;
-    if (id > 0) {
-        params[pidx++] = sid;
-    }
-    params[pidx] = NULL;
-
     return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
+}
+
+static csilk_json_t*
+query_cashflow_schedules(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t id, bool only_active)
+{
+    return query_cashflow_schedules_ext(
+        pool, user_id, ledger_id, id, only_active, false, 1, 500, NULL);
 }
 
 static const char* SQL_SCHEDULE_CREATE =
@@ -477,6 +535,20 @@ mf_cashflow_repo_free_events(mf_cashflow_event_t* events, size_t count)
     if (events) {
         free(events);
     }
+}
+
+csilk_json_t*
+cashflow_repo_list_detailed_paged(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t page, int64_t page_size, int64_t* out_total)
+{
+    if (!pool || user_id <= 0) {
+        if (out_total) {
+            *out_total = 0;
+        }
+        return NULL;
+    }
+    return query_cashflow_schedules_ext(
+        pool, user_id, ledger_id, 0, false, true, page, page_size, out_total);
 }
 
 csilk_json_t*

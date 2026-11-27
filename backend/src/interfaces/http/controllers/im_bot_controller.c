@@ -66,8 +66,14 @@ api_im_bindings_list(csilk_ctx_t* c)
     if (user_id <= 0) {
         return;
     }
-    csilk_json_t* list = im_bot_usecase_list_bindings(db_get_pool(), user_id);
-    respond_ok(c, list);
+    int64_t page = 1;
+    int64_t page_size = 20;
+    parse_page_params(c, &page, &page_size);
+
+    int64_t       total = 0;
+    csilk_json_t* list =
+        im_bot_usecase_list_bindings_paged(db_get_pool(), user_id, page, page_size, &total);
+    respond_page_ok(c, list ? list : csilk_json_array(), total, page, page_size);
 }
 
 static void

@@ -195,6 +195,17 @@ async function handleDeleteLedger(ledger: Ledger) {
                 </el-tooltip>
               </div>
             </div>
+            <div v-if="ledgerStore.hasMore" class="ledger-load-more">
+              <el-button
+                type="primary"
+                link
+                size="small"
+                :loading="ledgerStore.loading"
+                @click.stop="ledgerStore.loadMoreLedgers()"
+              >
+                加载更多账本 ({{ ledgerStore.ledgers.length }}/{{ ledgerStore.total }})
+              </el-button>
+            </div>
           </div>
 
           <div class="menu-divider" />

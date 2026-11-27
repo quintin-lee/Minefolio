@@ -5,14 +5,58 @@
 #include <string.h>
 
 csilk_json_t*
-skill_repo_list(csilk_db_pool_t* pool, int64_t user_id, const char* category, int enabled_only)
+skill_repo_list_paged(csilk_db_pool_t* pool,
+                      int64_t          user_id,
+                      const char*      category,
+                      int              enabled_only,
+                      int64_t          page,
+                      int64_t          page_size,
+                      int64_t*         out_total)
 {
     if (!pool) {
+        if (out_total) {
+            *out_total = 0;
+        }
         return NULL;
     }
+    if (page < 1) {
+        page = 1;
+    }
+    if (page_size < 1) {
+        page_size = 20;
+    }
+    if (page_size > 500) {
+        page_size = 500;
+    }
+    int64_t offset = (page - 1) * page_size;
 
-    char uid_str[32];
+    char uid_str[32], lim_s[32], off_s[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(lim_s, sizeof(lim_s), "%lld", (long long)page_size);
+    snprintf(off_s, sizeof(off_s), "%lld", (long long)offset);
+
+    const char* cat_cond = (category && category[0]) ? " AND category = ?" : "";
+    const char* en_cond = enabled_only ? " AND enabled = 1" : "";
+
+    if (out_total) {
+        char count_sql[256];
+        snprintf(count_sql,
+                 sizeof(count_sql),
+                 "SELECT COUNT(*) AS cnt FROM ai_skills WHERE user_id = ?%s%s",
+                 cat_cond,
+                 en_cond);
+        csilk_json_t* c_rows = (category && category[0])
+                                   ? csilk_db_query_param_json(
+                                         pool, count_sql, (const char*[]){uid_str, category, NULL})
+                                   : csilk_db_query_param_json(
+                                         pool, count_sql, (const char*[]){uid_str, NULL});
+        *out_total = (c_rows && csilk_json_array_size(c_rows) > 0)
+                         ? db_get_int(csilk_json_array_get(c_rows, 0), "cnt")
+                         : 0;
+        if (c_rows) {
+            csilk_json_free(c_rows);
+        }
+    }
 
     char sql[512];
     snprintf(sql,
@@ -21,15 +65,21 @@ skill_repo_list(csilk_db_pool_t* pool, int64_t user_id, const char* category, in
              "enabled, instructions_l2, backend, exec_root, exec_path, exec_args, exec_env, "
              "timeout_ms, max_output_bytes, is_builtin, created_at, updated_at "
              "FROM ai_skills WHERE user_id = ?%s%s "
-             "ORDER BY is_builtin DESC, name ASC",
-             (category && category[0]) ? " AND category = ?" : "",
-             enabled_only ? " AND enabled = 1" : "");
+             "ORDER BY is_builtin DESC, name ASC LIMIT ? OFFSET ?",
+             cat_cond,
+             en_cond);
 
     if (category && category[0]) {
-        return csilk_db_query_param_json(pool, sql, (const char*[]){uid_str, category, NULL});
-    } else {
-        return csilk_db_query_param_json(pool, sql, (const char*[]){uid_str, NULL});
+        return csilk_db_query_param_json(
+            pool, sql, (const char*[]){uid_str, category, lim_s, off_s, NULL});
     }
+    return csilk_db_query_param_json(pool, sql, (const char*[]){uid_str, lim_s, off_s, NULL});
+}
+
+csilk_json_t*
+skill_repo_list(csilk_db_pool_t* pool, int64_t user_id, const char* category, int enabled_only)
+{
+    return skill_repo_list_paged(pool, user_id, category, enabled_only, 1, 500, NULL);
 }
 
 csilk_json_t*

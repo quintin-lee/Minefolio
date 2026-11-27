@@ -482,12 +482,14 @@ account_usecase_archive(
 }
 
 int
-account_usecase_query(void*          pool,
-                      int64_t        user_id,
-                      int64_t        ledger_id,
-                      int            include_archived,
-                      csilk_json_t** out_list,
-                      int64_t*       out_total)
+account_usecase_query_paged(void*          pool,
+                            int64_t        user_id,
+                            int64_t        ledger_id,
+                            int            include_archived,
+                            int64_t        page,
+                            int64_t        page_size,
+                            csilk_json_t** out_list,
+                            int64_t*       out_total)
 {
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
     if (ledger_id <= 0) {
@@ -499,11 +501,11 @@ account_usecase_query(void*          pool,
 
     int64_t       total = 0;
     csilk_json_t* raw_rows =
-        account_list(db_pool, user_id, ledger_id, include_archived != 0, &total);
+        account_list_paged(db_pool, user_id, ledger_id, include_archived != 0, page, page_size, &total);
     if (!raw_rows) {
         *out_list = csilk_json_array();
         if (out_total) {
-            *out_total = 0;
+            *out_total = total;
         }
         return 0;
     }
@@ -520,9 +522,21 @@ account_usecase_query(void*          pool,
 
     *out_list = formatted_arr;
     if (out_total) {
-        *out_total = (int64_t)count;
+        *out_total = total;
     }
     return 0;
+}
+
+int
+account_usecase_query(void*          pool,
+                      int64_t        user_id,
+                      int64_t        ledger_id,
+                      int            include_archived,
+                      csilk_json_t** out_list,
+                      int64_t*       out_total)
+{
+    return account_usecase_query_paged(
+        pool, user_id, ledger_id, include_archived, 1, 500, out_list, out_total);
 }
 
 int

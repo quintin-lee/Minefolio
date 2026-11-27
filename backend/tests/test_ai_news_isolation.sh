@@ -61,7 +61,7 @@ TOKEN_A=$(echo "$SETUP_A" | jq -r '.data.token')
 
 # 获取 Alice 默认账本
 LEDGERS_A=$(curl -s "$BASE/ledgers" -H "Authorization: Bearer $TOKEN_A")
-LEDGER_A1=$(echo "$LEDGERS_A" | jq -r '.data[0].id')
+LEDGER_A1=$(echo "$LEDGERS_A" | jq -r '.data.list[0].id')
 
 # Alice 创建第二个账本
 NEW_LEDGER_A=$(curl -s -X POST "$BASE/ledgers" -H "Authorization: Bearer $TOKEN_A" \
@@ -87,8 +87,8 @@ echo "Alice default ledger: $LEDGER_A1, second ledger: $LEDGER_A2; Bob ledger: $
 
 # 3. Alice 在账本 1 创建持仓资产（含金额与数量）
 # 获取分类
-CATS_A=$(curl -s "$BASE/categories" -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $LEDGER_A1")
-STOCK_CAT=$(echo "$CATS_A" | jq -r '.data[] | select(.asset_type=="stock") | .id' | head -n 1)
+CATS_A=$(curl -s "$BASE/categories?page_size=100" -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $LEDGER_A1")
+STOCK_CAT=$(echo "$CATS_A" | jq -r '.data.list[] | select(.asset_type=="stock") | .id' | head -n 1)
 
 # 创建资产
 curl -s -X POST "$BASE/assets" -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $LEDGER_A1" \

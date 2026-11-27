@@ -116,6 +116,22 @@ int main(void) {
     csilk_json_free(list);
     printf("  [OK] account_usecase_query listed accounts total=%lld\n", (long long)total);
 
+    csilk_json_t* page1 = NULL;
+    int64_t       p1_total = 0;
+    rc = account_usecase_query_paged(pool, user_id, ledger_id, 0, 1, 1, &page1, &p1_total);
+    assert(rc == 0 && page1 != NULL && p1_total == total && csilk_json_array_size(page1) == 1);
+    int64_t id_p1 = (int64_t)db_get_num(csilk_json_array_get(page1, 0), "id");
+    csilk_json_free(page1);
+
+    csilk_json_t* page2 = NULL;
+    int64_t       p2_total = 0;
+    rc = account_usecase_query_paged(pool, user_id, ledger_id, 0, 2, 1, &page2, &p2_total);
+    assert(rc == 0 && page2 != NULL && p2_total == total && csilk_json_array_size(page2) == 1);
+    int64_t id_p2 = (int64_t)db_get_num(csilk_json_array_get(page2, 0), "id");
+    assert(id_p1 != id_p2);
+    csilk_json_free(page2);
+    printf("  [OK] account_usecase_query_paged pagination verified\n");
+
     // 5. Test account_usecase_update
     update_account_cmd_t upd_cmd = {
         .user_id = user_id,

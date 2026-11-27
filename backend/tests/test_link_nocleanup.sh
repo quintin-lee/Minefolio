@@ -221,12 +221,12 @@ check "transactions/monthly count=3" "3" "$(echo "$MONTH_RES" | jq -r '.data.cou
 echo "== 19. 分类树形结构 =="
 PARENT_ID=$(sqlite3 "$DB" "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) SELECT id, '测试父分类', 'expense', 'cash', 'CNY', '', 99 FROM users WHERE username='linktest'; SELECT last_insert_rowid();")
 sqlite3 "$DB" "INSERT INTO categories (user_id, name, parent_id, type, asset_type, currency, icon, sort_order) SELECT id, '测试子分类', $PARENT_ID, 'expense', 'cash', 'CNY', '', 1 FROM users WHERE username='linktest';"
-CATS=$(curl -s -H "$AUTH" "$BASE/categories")
-check "categories 返回数组" "array" "$(echo "$CATS" | jq -r '.data | type')"
-check "categories 非空" "1" "$(echo "$CATS" | jq -r 'if (.data | length) > 0 then 1 else 0 end')"
-check "categories 含测试父分类" "1" "$(echo "$CATS" | jq -r '[.data[] | select(.name == "测试父分类")] | if length > 0 then 1 else 0 end')"
-check "父分类 children 含测试子分类" "1" "$(echo "$CATS" | jq -r '[.data[] | select(.name == "测试父分类") | .children[]? | select(.name == "测试子分类")] | if length > 0 then 1 else 0 end')"
-check "子分类 parent_id 指向父分类" "$PARENT_ID" "$(echo "$CATS" | jq -r '[.data[] | select(.name == "测试父分类") | .children[]? | select(.name == "测试子分类") | .parent_id | floor] | .[0]')"
+CATS=$(curl -s -H "$AUTH" "$BASE/categories?page_size=100")
+check "categories 返回数组" "array" "$(echo "$CATS" | jq -r '.data.list | type')"
+check "categories 非空" "1" "$(echo "$CATS" | jq -r 'if (.data.list | length) > 0 then 1 else 0 end')"
+check "categories 含测试父分类" "1" "$(echo "$CATS" | jq -r '[.data.list[] | select(.name == "测试父分类")] | if length > 0 then 1 else 0 end')"
+check "父分类 children 含测试子分类" "1" "$(echo "$CATS" | jq -r '[.data.list[] | select(.name == "测试父分类") | .children[]? | select(.name == "测试子分类")] | if length > 0 then 1 else 0 end')"
+check "子分类 parent_id 指向父分类" "$PARENT_ID" "$(echo "$CATS" | jq -r '[.data.list[] | select(.name == "测试父分类") | .children[]? | select(.name == "测试子分类") | .parent_id | floor] | .[0]')"
 
 echo "== 20. 导出日常收支 CSV =="
 EXP_CSV=$(curl -s -H "$AUTH" "$BASE/export/daily-expenses")

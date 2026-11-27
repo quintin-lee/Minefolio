@@ -14,6 +14,9 @@ char* im_bot_usecase_generate_bind_token(void* pool, csilk_ctx_t* c, int64_t use
 
 csilk_json_t* im_bot_usecase_list_bindings(void* pool, int64_t user_id);
 
+csilk_json_t* im_bot_usecase_list_bindings_paged(
+    void* pool, int64_t user_id, int64_t page, int64_t page_size, int64_t* out_total);
+
 int
 im_bot_usecase_unbind(void* pool, const char* platform, const char* im_user_id, int64_t user_id);
 

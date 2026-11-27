@@ -187,6 +187,18 @@
           </el-popconfirm>
         </div>
       </div>
+      <div v-if="instanceTotal > instancePageSize" style="display: flex; justify-content: flex-end; margin-top: 8px;">
+        <el-pagination
+          v-model:current-page="instancePage"
+          v-model:page-size="instancePageSize"
+          :total="instanceTotal"
+          :page-sizes="[10, 20, 50]"
+          layout="total, prev, pager, next"
+          background
+          size="small"
+          @current-change="fetchInstances"
+        />
+      </div>
     </div>
 
     <!-- 绑定码展示区域 -->
@@ -224,7 +236,7 @@
     <div class="bindings-table-section">
       <div class="section-title-row">
         <h4>{{ t('settings.boundAccounts') }}</h4>
-        <el-tag size="small" type="info" round>{{ bindings.length }}</el-tag>
+        <el-tag size="small" type="info" round>{{ bindingsTotal }}</el-tag>
       </div>
 
       <el-table
@@ -285,6 +297,19 @@
           </template>
         </el-table-column>
       </el-table>
+      <div v-if="bindingsTotal > 0" style="display: flex; justify-content: flex-end; margin-top: 12px;">
+        <el-pagination
+          v-model:current-page="bindingsPage"
+          v-model:page-size="bindingsPageSize"
+          :total="bindingsTotal"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          background
+          size="small"
+          @current-change="fetchBindings"
+          @size-change="handleBindingsSizeChange"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -300,12 +325,18 @@ import type { ImBotInstance, ImBotInstanceStatus } from '@/types'
 const loading = ref(false)
 const generating = ref(false)
 const bindings = ref<ImBindingItem[]>([])
+const bindingsPage = ref(1)
+const bindingsPageSize = ref(20)
+const bindingsTotal = ref(0)
 const bindToken = ref<string | null>(null)
 const remainingSeconds = ref<number>(0)
 const unbindingKey = ref<string | null>(null)
 let timerId: ReturnType<typeof setInterval> | null = null
 
 const instance = ref<ImBotInstance | null>(null)
+const instancePage = ref(1)
+const instancePageSize = ref(20)
+const instanceTotal = ref(0)
 const instanceBusy = ref(false)
 const gatewayNotConfigured = ref(false)
 const verifyCodeInput = ref('')
@@ -460,9 +491,15 @@ async function pollCurrentInstance() {
 
 async function fetchInstances() {
   try {
-    const list = await imApi.listInstances()
+    const res: any = await imApi.listInstances({
+      page: instancePage.value,
+      page_size: instancePageSize.value,
+    })
     if (isUnmounted) return
-    instance.value = Array.isArray(list) && list.length > 0 ? (list[0] ?? null) : null
+    const list: ImBotInstance[] = Array.isArray(res) ? res : (Array.isArray(res?.list) ? res.list : [])
+    const srvTotal = Array.isArray(res) ? res.length : (typeof res?.total === 'number' ? res.total : list.length)
+    instanceTotal.value = srvTotal
+    instance.value = list.length > 0 ? (list[0] ?? null) : null
     syncInstancePolling()
   } catch (err) {
     console.error('Failed to load iLink instances:', err)
@@ -472,9 +509,15 @@ async function fetchInstances() {
 async function fetchBindings() {
   loading.value = true
   try {
-    const data = await imApi.getBindings()
+    const res: any = await imApi.getBindings({
+      page: bindingsPage.value,
+      page_size: bindingsPageSize.value,
+    })
     if (isUnmounted) return
-    bindings.value = data
+    const list: ImBindingItem[] = Array.isArray(res) ? res : (Array.isArray(res?.list) ? res.list : [])
+    const srvTotal = Array.isArray(res) ? res.length : (typeof res?.total === 'number' ? res.total : list.length)
+    bindings.value = list
+    bindingsTotal.value = srvTotal
   } catch (err) {
     console.error('Failed to load IM bindings:', err)
   } finally {
@@ -482,6 +525,11 @@ async function fetchBindings() {
       loading.value = false
     }
   }
+}
+
+function handleBindingsSizeChange() {
+  bindingsPage.value = 1
+  fetchBindings()
 }
 
 async function refreshAll() {

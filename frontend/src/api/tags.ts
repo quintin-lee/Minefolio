@@ -6,18 +6,18 @@
 // frontend/src/api/tags.ts
 import http from '@/utils/http'
 import type { AxiosRequestConfig } from 'axios'
-import type { Tag } from '@/types'
+import type { Tag, PageResult } from '@/types'
 
 /**
  * 交易标签 API 服务对象
  */
 export const tagsApi = {
   /**
-   * 获取当前用户的所有标签列表
+   * 分页获取当前用户的标签列表
    * @route GET /api/tags
-   * @returns 标签实体对象数组
    */
-  list: () => http.get<Tag[]>('/tags'),
+  list: (params?: { page?: number; page_size?: number }) =>
+    http.get<PageResult<Tag>>('/tags', { params }),
 
   /**
    * 创建新的自定义标签

@@ -29,6 +29,10 @@ int mf_im_bot_repo_upsert(csilk_db_pool_t* pool,
 /** 列出某用户的全部 IM 绑定。返回 JSON 数组（可能为空）。 */
 csilk_json_t* mf_im_bot_repo_list_for_user(csilk_db_pool_t* pool, int64_t mf_user_id);
 
+/** 分页列出某用户的 IM 绑定。 */
+csilk_json_t* mf_im_bot_repo_list_for_user_paged(
+    csilk_db_pool_t* pool, int64_t mf_user_id, int64_t page, int64_t page_size, int64_t* out_total);
+
 /** 解绑：删除 (platform, im_user_id) 且属于 mf_user_id 的记录。 */
 int mf_im_bot_repo_unbind(csilk_db_pool_t* pool,
                           const char*      platform,
@@ -39,6 +43,10 @@ int mf_im_bot_repo_unbind(csilk_db_pool_t* pool,
 
 /** 列出 owner 的实例（JSON 数组，隐藏 pending_verify_code）。 */
 csilk_json_t* mf_im_bot_instance_list(csilk_db_pool_t* pool, int64_t user_id);
+
+/** 分页列出 owner 的实例。 */
+csilk_json_t* mf_im_bot_instance_list_paged(
+    csilk_db_pool_t* pool, int64_t user_id, int64_t page, int64_t page_size, int64_t* out_total);
 
 /** owner 查询单个实例；不属于 owner 返回 NULL。 */
 csilk_json_t* mf_im_bot_instance_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id);

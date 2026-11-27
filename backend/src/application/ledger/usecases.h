@@ -15,6 +15,9 @@
  */
 csilk_json_t* ledger_usecase_list(void* pool, int64_t user_id);
 
+csilk_json_t* ledger_usecase_list_paged(
+    void* pool, int64_t user_id, int64_t page, int64_t page_size, int64_t* out_total);
+
 /**
  * @brief 获取单个账本详情
  */

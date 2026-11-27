@@ -294,13 +294,24 @@ im_bot_usecase_generate_bind_token(void* pool, csilk_ctx_t* c, int64_t user_id)
 }
 
 csilk_json_t*
-im_bot_usecase_list_bindings(void* pool, int64_t user_id)
+im_bot_usecase_list_bindings_paged(
+    void* pool, int64_t user_id, int64_t page, int64_t page_size, int64_t* out_total)
 {
     if (!pool || user_id < 0) {
+        if (out_total) {
+            *out_total = 0;
+        }
         return csilk_json_array();
     }
-    csilk_json_t* list = mf_im_bot_repo_list_for_user((csilk_db_pool_t*)pool, user_id);
+    csilk_json_t* list = mf_im_bot_repo_list_for_user_paged(
+        (csilk_db_pool_t*)pool, user_id, page, page_size, out_total);
     return list ? list : csilk_json_array();
+}
+
+csilk_json_t*
+im_bot_usecase_list_bindings(void* pool, int64_t user_id)
+{
+    return im_bot_usecase_list_bindings_paged(pool, user_id, 1, 500, NULL);
 }
 
 int

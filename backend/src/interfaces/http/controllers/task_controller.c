@@ -26,18 +26,26 @@ api_tasks_list(csilk_ctx_t* c)
 
     const char* status = csilk_get_query(c, "status");
     const char* task_type = csilk_get_query(c, "task_type");
+
+    int64_t page = 1;
+    int64_t page_size = 20;
+    parse_page_params(c, &page, &page_size);
+
+    const char* ps_str = csilk_get_query(c, "page_size");
     const char* lim_str = csilk_get_query(c, "limit");
-    int64_t     limit = 20;
-    if (lim_str && lim_str[0]) {
-        limit = parse_query_int_strict(lim_str, -1);
+    if ((!ps_str || !ps_str[0]) && lim_str && lim_str[0]) {
+        int64_t limit = parse_query_int_strict(lim_str, -1);
         if (limit <= 0) {
             respond_bad_request(c, "无效的 limit 参数");
             return;
         }
+        page_size = (limit > 500) ? 500 : limit;
     }
 
-    csilk_json_t* list = mf_async_task_list(db_get_pool(), user_id, status, task_type, (int)limit);
-    respond_ok(c, list ? list : csilk_json_array());
+    int64_t       total = 0;
+    csilk_json_t* list = mf_async_task_list_paged(
+        db_get_pool(), user_id, status, task_type, page, page_size, &total);
+    respond_page_ok(c, list ? list : csilk_json_array(), total, page, page_size);
 }
 
 static void

@@ -32,23 +32,31 @@ api_ai_skills_list(csilk_ctx_t* c)
     const char* en_str = csilk_get_query(c, "enabled_only");
     int         enabled_only = (en_str && strcmp(en_str, "1") == 0) ? 1 : 0;
 
-    csilk_json_t* data = NULL;
-    int           rc = skill_usecase_list(db_get_pool(), user_id, category, enabled_only, &data);
+    int64_t page = 1;
+    int64_t page_size = 20;
+    parse_page_params(c, &page, &page_size);
 
-    /* 懒加载预置技能：当用户未指定过滤条件且列表为空时，自动播种默认技能 */
-    if (data && csilk_json_is_array(data) && csilk_json_array_size(data) == 0 &&
-        (!category || !category[0]) && !enabled_only) {
-        csilk_json_free(data);
-        data = NULL;
+    csilk_json_t* data = NULL;
+    int64_t       total = 0;
+    int           rc = skill_usecase_list_paged(
+        db_get_pool(), user_id, category, enabled_only, page, page_size, &data, &total);
+
+    /* 懒加载预置技能：当用户未指定过滤条件且总数为 0 时，自动播种默认技能 */
+    if (rc == 0 && total == 0 && (!category || !category[0]) && !enabled_only) {
+        if (data) {
+            csilk_json_free(data);
+            data = NULL;
+        }
         skill_usecase_seed_defaults(db_get_pool(), user_id);
-        rc = skill_usecase_list(db_get_pool(), user_id, category, enabled_only, &data);
+        rc = skill_usecase_list_paged(
+            db_get_pool(), user_id, category, enabled_only, page, page_size, &data, &total);
     }
 
     if (rc != 0 || !data) {
-        respond_ok(c, csilk_json_array());
+        respond_page_ok(c, csilk_json_array(), 0, page, page_size);
         return;
     }
-    respond_ok(c, data);
+    respond_page_ok(c, data, total, page, page_size);
 }
 
 void

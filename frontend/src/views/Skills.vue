@@ -79,7 +79,7 @@
 
         <div class="stats-pills">
           <span class="pill-item">
-            共 <b>{{ skills.length }}</b> 个技能
+            共 <b>{{ total }}</b> 个技能
           </span>
           <span class="pill-divider">·</span>
           <span class="pill-item success">
@@ -118,6 +118,20 @@
           <el-button plain @click="handleResetDefaults">恢复预置金融技能</el-button>
         </template>
       </el-empty>
+
+      <div v-if="total > 0" style="display: flex; justify-content: flex-end; margin-top: 16px;">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          background
+          size="small"
+          @current-change="loadSkills"
+          @size-change="handleSizeChange"
+        />
+      </div>
     </div>
 
     <!-- Dialogs -->
@@ -127,7 +141,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import type { AiSkill } from '@/types'
@@ -140,6 +154,9 @@ const loading = ref(false)
 const resetting = ref(false)
 const deletingId = ref<number | null>(null)
 const skills = ref<AiSkill[]>([])
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 let loadSkillsReqSeq = 0
 
 const searchQuery = ref('')
@@ -182,13 +199,19 @@ async function loadSkills() {
   const reqId = ++loadSkillsReqSeq
   try {
     loading.value = true
-    const list = await listSkills()
+    const res = await listSkills({
+      category: selectedCategory.value !== 'all' ? selectedCategory.value : undefined,
+      enabled_only: enabledOnly.value ? 1 : undefined,
+      page: page.value,
+      page_size: pageSize.value,
+    })
     if (reqId !== loadSkillsReqSeq) return
-    skills.value = list.map(s => ({
+    skills.value = (res.list || []).map(s => ({
       ...s,
       id: Number(s.id),
       enabled: Number(s.enabled) === 1 ? 1 : 0,
     }))
+    total.value = res.total ?? skills.value.length
   } catch (err: unknown) {
     if (reqId !== loadSkillsReqSeq) return
     const e = err as { response?: { data?: { message?: string } }; message?: string }
@@ -199,6 +222,16 @@ async function loadSkills() {
     }
   }
 }
+
+function handleSizeChange() {
+  page.value = 1
+  loadSkills()
+}
+
+watch([selectedCategory, enabledOnly], () => {
+  page.value = 1
+  loadSkills()
+})
 
 function openCreate() {
   dialogRef.value?.openCreate()

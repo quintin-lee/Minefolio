@@ -325,30 +325,64 @@ mf_async_task_repo_get(csilk_db_pool_t* pool, int64_t user_id, int64_t task_id)
 }
 
 csilk_json_t*
-mf_async_task_repo_list(csilk_db_pool_t* pool,
-                        int64_t          user_id,
-                        const char*      status_filter,
-                        const char*      type_filter,
-                        int              limit)
+mf_async_task_repo_list_paged(csilk_db_pool_t* pool,
+                              int64_t          user_id,
+                              const char*      status_filter,
+                              const char*      type_filter,
+                              int64_t          page,
+                              int64_t          page_size,
+                              int64_t*         out_total)
 {
     if (!pool || user_id <= 0) {
+        if (out_total) {
+            *out_total = 0;
+        }
         return NULL;
     }
-    if (limit <= 0) {
-        limit = 20;
-    } else if (limit > 100) {
-        limit = 100;
+    if (page < 1) {
+        page = 1;
     }
+    if (page_size < 1) {
+        page_size = 20;
+    } else if (page_size > 500) {
+        page_size = 500;
+    }
+    int64_t row_offset = (page - 1) * page_size;
 
-    char uid_str[32], lim_str[16];
+    char uid_str[32], lim_str[32], off_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    snprintf(lim_str, sizeof(lim_str), "%d", limit);
+    snprintf(lim_str, sizeof(lim_str), "%lld", (long long)page_size);
+    snprintf(off_str, sizeof(off_str), "%lld", (long long)row_offset);
 
     bool has_status = (status_filter && status_filter[0] != '\0');
     bool has_type = (type_filter && type_filter[0] != '\0');
 
+    const char* c_params[4] = {uid_str, NULL, NULL, NULL};
+    int         cpidx = 1;
+    char        count_sql[256];
+    int         coff = snprintf(count_sql, sizeof(count_sql), "SELECT COUNT(*) AS cnt FROM async_tasks WHERE user_id=?");
+    if (has_status && coff > 0 && (size_t)coff < sizeof(count_sql)) {
+        coff += snprintf(count_sql + coff, sizeof(count_sql) - (size_t)coff, " AND status=?");
+        c_params[cpidx++] = status_filter;
+    }
+    if (has_type && coff > 0 && (size_t)coff < sizeof(count_sql)) {
+        coff += snprintf(count_sql + coff, sizeof(count_sql) - (size_t)coff, " AND task_type=?");
+        c_params[cpidx++] = type_filter;
+    }
+    c_params[cpidx] = NULL;
+
+    if (out_total) {
+        csilk_json_t* c_rows = csilk_db_query_param_json(pool, count_sql, c_params);
+        *out_total = (c_rows && csilk_json_array_size(c_rows) > 0)
+                         ? db_get_int(csilk_json_array_get(c_rows, 0), "cnt")
+                         : 0;
+        if (c_rows) {
+            csilk_json_free(c_rows);
+        }
+    }
+
     char        sql[512];
-    const char* params[5] = {uid_str, NULL, NULL, NULL, NULL};
+    const char* params[6] = {uid_str, NULL, NULL, NULL, NULL, NULL};
     int         pidx = 1;
 
     int offset = snprintf(
@@ -366,8 +400,9 @@ mf_async_task_repo_list(csilk_db_pool_t* pool,
         offset += snprintf(sql + offset, sizeof(sql) - (size_t)offset, " AND task_type=?");
         params[pidx++] = type_filter;
     }
-    snprintf(sql + offset, sizeof(sql) - (size_t)offset, " ORDER BY id DESC LIMIT ?");
+    snprintf(sql + offset, sizeof(sql) - (size_t)offset, " ORDER BY id DESC LIMIT ? OFFSET ?");
     params[pidx++] = lim_str;
+    params[pidx++] = off_str;
     params[pidx] = NULL;
 
     csilk_json_t* rows = csilk_db_query_param_json(pool, sql, params);
@@ -388,4 +423,19 @@ mf_async_task_repo_list(csilk_db_pool_t* pool,
     }
     csilk_json_free(rows);
     return out;
+}
+
+csilk_json_t*
+mf_async_task_repo_list(csilk_db_pool_t* pool,
+                        int64_t          user_id,
+                        const char*      status_filter,
+                        const char*      type_filter,
+                        int              limit)
+{
+    if (limit <= 0) {
+        limit = 20;
+    } else if (limit > 100) {
+        limit = 100;
+    }
+    return mf_async_task_repo_list_paged(pool, user_id, status_filter, type_filter, 1, limit, NULL);
 }

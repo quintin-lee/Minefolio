@@ -234,6 +234,19 @@
           </el-empty>
         </template>
       </el-table>
+      <div v-if="scheduleTotal > 0" style="display: flex; justify-content: flex-end; margin-top: 12px;">
+        <el-pagination
+          v-model:current-page="schedulePage"
+          v-model:page-size="schedulePageSize"
+          :total="scheduleTotal"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          background
+          size="small"
+          @current-change="loadSchedules"
+          @size-change="handleScheduleSizeChange"
+        />
+      </div>
     </el-drawer>
 
     <!-- 定投执行历史对话框 -->
@@ -291,6 +304,9 @@ const dcaSummary = ref<DcaPlanSummary | null>(null)
 
 const pendingExecutions = ref<DcaExecution[]>([])
 const schedules = ref<CashflowSchedule[]>([])
+const schedulePage = ref(1)
+const schedulePageSize = ref(20)
+const scheduleTotal = ref(0)
 const confirmingId = ref<number | null>(null)
 
 const dcaDialogRef = ref()
@@ -392,6 +408,26 @@ function handleDcaStatusChange() {
   loadPlans()
 }
 
+async function loadSchedules() {
+  try {
+    const res: any = await cashflowApi.listSchedules({
+      page: schedulePage.value,
+      page_size: schedulePageSize.value,
+    })
+    const list: CashflowSchedule[] = Array.isArray(res) ? res : (Array.isArray(res?.list) ? res.list : [])
+    const srvTotal = Array.isArray(res) ? res.length : (typeof res?.total === 'number' ? res.total : list.length)
+    schedules.value = list
+    scheduleTotal.value = srvTotal
+  } catch (err) {
+    console.error('[Plans] loadSchedules failed:', err)
+  }
+}
+
+function handleScheduleSizeChange() {
+  schedulePage.value = 1
+  loadSchedules()
+}
+
 async function loadData() {
   loading.value = true
   try {
@@ -403,7 +439,10 @@ async function loadData() {
         status: dcaStatus.value || undefined,
       }),
       dcaApi.listPendingExecutions(),
-      cashflowApi.listSchedules()
+      cashflowApi.listSchedules({
+        page: schedulePage.value,
+        page_size: schedulePageSize.value,
+      })
     ])
 
     if (assetsRes.status === 'fulfilled') allAssets.value = assetsRes.value.list || []
@@ -421,7 +460,11 @@ async function loadData() {
       }
     }
     if (pendingRes.status === 'fulfilled') pendingExecutions.value = pendingRes.value || []
-    if (schedulesRes.status === 'fulfilled') schedules.value = schedulesRes.value || []
+    if (schedulesRes.status === 'fulfilled') {
+      const sVal: any = schedulesRes.value
+      schedules.value = Array.isArray(sVal) ? sVal : (sVal?.list || [])
+      scheduleTotal.value = Array.isArray(sVal) ? sVal.length : (typeof sVal?.total === 'number' ? sVal.total : schedules.value.length)
+    }
   } catch (err) {
     console.error('[Plans] loadData failed:', err)
   } finally {

@@ -127,11 +127,18 @@ count_for_server(const mf_mcp_tool_count_t* pairs, size_t pair_count, int64_t se
 }
 
 int
-mf_mcp_usecase_list(void* pool, int64_t user_id, csilk_json_t** out_list)
+mf_mcp_usecase_list_paged(void*          pool,
+                          int64_t        user_id,
+                          int64_t        page,
+                          int64_t        page_size,
+                          csilk_json_t** out_list,
+                          int64_t*       out_total)
 {
     mf_mcp_server_t* servers = NULL;
     size_t           count = 0;
-    if (mf_mcp_server_repo_list(pool, user_id, &servers, &count) != 0) {
+    int64_t          total = 0;
+    if (mf_mcp_server_repo_list_paged(pool, user_id, page, page_size, &servers, &count, &total) !=
+        0) {
         return -1;
     }
 
@@ -148,7 +155,16 @@ mf_mcp_usecase_list(void* pool, int64_t user_id, csilk_json_t** out_list)
     mf_mcp_tool_counts_free(pairs, pair_count);
     mf_mcp_server_repo_free_list(servers, count);
     *out_list = arr;
+    if (out_total) {
+        *out_total = total;
+    }
     return 0;
+}
+
+int
+mf_mcp_usecase_list(void* pool, int64_t user_id, csilk_json_t** out_list)
+{
+    return mf_mcp_usecase_list_paged(pool, user_id, 1, 500, out_list, NULL);
 }
 
 int

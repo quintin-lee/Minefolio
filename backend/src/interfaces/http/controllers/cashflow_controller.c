@@ -20,10 +20,16 @@ api_cashflow_list_schedules(csilk_ctx_t* c)
         return;
     }
 
+    int64_t page = 1;
+    int64_t page_size = 20;
+    parse_page_params(c, &page, &page_size);
+
     csilk_json_t*             list = NULL;
+    int64_t                   total = 0;
     cashflow_usecase_result_t res = {0};
-    cashflow_usecase_list_schedules(db_get_pool(), user_id, ledger_id, &list, &res);
-    respond_ok(c, list ? list : csilk_json_array());
+    cashflow_usecase_list_schedules_paged(
+        db_get_pool(), user_id, ledger_id, page, page_size, &list, &total, &res);
+    respond_page_ok(c, list ? list : csilk_json_array(), total, page, page_size);
 }
 
 void

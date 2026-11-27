@@ -18,6 +18,14 @@
 csilk_json_t*
 account_list(void* pool, int64_t user_id, int64_t ledger_id, bool include_archived, int64_t* total);
 
+csilk_json_t* account_list_paged(void*    pool,
+                                 int64_t  user_id,
+                                 int64_t  ledger_id,
+                                 bool     include_archived,
+                                 int64_t  page,
+                                 int64_t  page_size,
+                                 int64_t* total);
+
 /**
  * @brief 查询单条账户
  * @return 单行对象（0 行数组视为不存在）

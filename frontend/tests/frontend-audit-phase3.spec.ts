@@ -62,8 +62,8 @@ describe('frontend audit phase 3 fixes', () => {
   })
 
   it('categoryStore deduplicates concurrent loadCategories and preserves pre-nested children', async () => {
-    let resolveList!: (val: Category[]) => void
-    const deferred = new Promise<Category[]>((r) => {
+    let resolveList!: (val: any) => void
+    const deferred = new Promise<any>((r) => {
       resolveList = r
     })
     vi.mocked(categoriesApi.list).mockReturnValueOnce(deferred)
@@ -93,7 +93,7 @@ describe('frontend audit phase 3 fixes', () => {
         ],
       },
     ]
-    resolveList(nestedInput)
+    resolveList({ list: nestedInput, total: 1, page: 1, page_size: 500 })
     await Promise.all([p1, p2])
 
     const tree = store.buildTree(nestedInput)

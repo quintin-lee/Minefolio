@@ -257,12 +257,17 @@ echo "== 19. 分类树形结构 =="
 TEST_LEDGER_ID=$(sqlite3 "$DB" "SELECT id FROM ledgers WHERE owner_id=(SELECT id FROM users WHERE username='linktest') AND is_default=1 LIMIT 1")
 PARENT_ID=$(sqlite3 "$DB" "INSERT INTO categories (user_id, ledger_id, name, type, asset_type, currency, icon, sort_order) SELECT id, $TEST_LEDGER_ID, '测试父分类', 'expense', 'cash', 'CNY', '', 99 FROM users WHERE username='linktest'; SELECT last_insert_rowid();")
 sqlite3 "$DB" "INSERT INTO categories (user_id, ledger_id, name, parent_id, type, asset_type, currency, icon, sort_order) SELECT id, $TEST_LEDGER_ID, '测试子分类', $PARENT_ID, 'expense', 'cash', 'CNY', '', 1 FROM users WHERE username='linktest';"
-CATS=$(curl -s -H "$AUTH" "$BASE/categories")
-check "categories 返回数组" "array" "$(echo "$CATS" | jq -r '.data | type')"
-check "categories 非空" "1" "$(echo "$CATS" | jq -r 'if (.data | length) > 0 then 1 else 0 end')"
-check "categories 含测试父分类" "1" "$(echo "$CATS" | jq -r '[.data[] | select(.name == "测试父分类")] | if length > 0 then 1 else 0 end')"
-check "父分类 children 含测试子分类" "1" "$(echo "$CATS" | jq -r '[.data[] | select(.name == "测试父分类") | .children[]? | select(.name == "测试子分类")] | if length > 0 then 1 else 0 end')"
-check "子分类 parent_id 指向父分类" "$PARENT_ID" "$(echo "$CATS" | jq -r '[.data[] | select(.name == "测试父分类") | .children[]? | select(.name == "测试子分类") | .parent_id | floor] | .[0]')"
+CATS=$(curl -s -H "$AUTH" "$BASE/categories?page_size=100")
+check "categories 返回数组" "array" "$(echo "$CATS" | jq -r '.data.list | type')"
+check "categories 非空" "1" "$(echo "$CATS" | jq -r 'if (.data.list | length) > 0 then 1 else 0 end')"
+check "categories total>0" "1" "$(echo "$CATS" | jq -r 'if (.data.total | floor) > 0 then 1 else 0 end')"
+check "categories 含测试父分类" "1" "$(echo "$CATS" | jq -r '[.data.list[] | select(.name == "测试父分类")] | if length > 0 then 1 else 0 end')"
+check "父分类 children 含测试子分类" "1" "$(echo "$CATS" | jq -r '[.data.list[] | select(.name == "测试父分类") | .children[]? | select(.name == "测试子分类")] | if length > 0 then 1 else 0 end')"
+check "子分类 parent_id 指向父分类" "$PARENT_ID" "$(echo "$CATS" | jq -r '[.data.list[] | select(.name == "测试父分类") | .children[]? | select(.name == "测试子分类") | .parent_id | floor] | .[0]')"
+CATS_P1=$(curl -s -H "$AUTH" "$BASE/categories?page=1&page_size=1")
+check "categories page_size=1 返回 1 条" "1" "$(echo "$CATS_P1" | jq -r '.data.list | length')"
+check "categories page=1" "1" "$(echo "$CATS_P1" | jq -r '.data.page | floor')"
+check "categories page_size=1" "1" "$(echo "$CATS_P1" | jq -r '.data.page_size | floor')"
 
 echo "== 20. 导出日常收支 CSV =="
 EXP_CSV=$(curl -s -H "$AUTH" "$BASE/export/daily-expenses")
@@ -784,8 +789,9 @@ check "存量资产回填 account_id 指向默认账户" "$DEFAULT_ACCT" "$WALLE
 ACCT_LIST=$(curl -s -H "$AUTH" "$BASE/accounts")
 ACCT_LIST_CODE=$(echo "$ACCT_LIST" | jq -r '.code | floor')
 check "GET /accounts code=0" "0" "$ACCT_LIST_CODE"
-ACCT_COUNT=$(echo "$ACCT_LIST" | jq -r --argjson d "$DEFAULT_ACCT" '[.data[] | select((.id|tostring) == ($d|tostring))] | length')
+ACCT_COUNT=$(echo "$ACCT_LIST" | jq -r --argjson d "$DEFAULT_ACCT" '[.data.list[] | select((.id|tostring) == ($d|tostring))] | length')
 check "默认账户出现在列表中" "1" "$ACCT_COUNT"
+check "accounts 返回 total>=1" "1" "$(echo "$ACCT_LIST" | jq -r 'if (.data.total | floor) >= 1 then 1 else 0 end')"
 
 # 4. 创建账户
 NEW_ACCT_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/accounts" -d '{"name":"招行储蓄卡","institution":"bank_card","account_no":"6225****1234","currency":"CNY"}')
@@ -806,10 +812,13 @@ ARCH_FLAG=$(sqlite3 "$DB" "SELECT CASE WHEN archived THEN 1 ELSE 0 END FROM acco
 check "账户 archived 标志已置位" "1" "$ARCH_FLAG"
 
 # 6b. 列表过滤：默认列表不含已归档账户；include_archived=1 含
-ARCH_EXCLUDED=$(curl -s -H "$AUTH" "$BASE/accounts" | jq -r --arg id "$NEW_ACCT_ID" '[.data[] | select((.id|tostring) == $id)] | length')
+ARCH_EXCLUDED=$(curl -s -H "$AUTH" "$BASE/accounts" | jq -r --arg id "$NEW_ACCT_ID" '[.data.list[] | select((.id|tostring) == $id)] | length')
 check "默认列表过滤已归档账户" "0" "$ARCH_EXCLUDED"
-ARCH_INCLUDED=$(curl -s -H "$AUTH" "$BASE/accounts?include_archived=1" | jq -r --arg id "$NEW_ACCT_ID" '[.data[] | select((.id|tostring) == $id)] | length')
+ARCH_INCLUDED_RES=$(curl -s -H "$AUTH" "$BASE/accounts?include_archived=1")
+ARCH_INCLUDED=$(echo "$ARCH_INCLUDED_RES" | jq -r --arg id "$NEW_ACCT_ID" '[.data.list[] | select((.id|tostring) == $id)] | length')
 check "include_archived=1 返回已归档账户" "1" "$ARCH_INCLUDED"
+ACCT_P1=$(curl -s -H "$AUTH" "$BASE/accounts?include_archived=1&page=1&page_size=1")
+check "accounts page_size=1 返回 1 条" "1" "$(echo "$ACCT_P1" | jq -r '.data.list | length')"
 
 # 7. 资产挂新账户：创建资产时携带 account_id
 HANG_ASSET_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"支付宝余额\",\"category_id\":$ASSET_CAT,\"current_value\":200,\"currency\":\"CNY\",\"account_id\":$NEW_ACCT_ID}")
@@ -1000,28 +1009,32 @@ check "未授权访问 GET /api/ai/skills 返回 401" "401" "$SKILL_NOAUTH_STATU
 # 2. 默认预置技能数量验证：/api/system/setup 初始化后用户应已自动拥有 4 个默认金融技能
 SKILLS_LIST_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills")
 check "获取技能列表 code=0" "0" "$(echo "$SKILLS_LIST_RES" | jq -r '.code | floor')"
-SKILLS_COUNT=$(echo "$SKILLS_LIST_RES" | jq -r '.data | length')
+SKILLS_COUNT=$(echo "$SKILLS_LIST_RES" | jq -r '.data.list | length')
 check "预置金融技能数量应为 4" "4" "$SKILLS_COUNT"
+check "预置金融技能 total 应为 4" "4" "$(echo "$SKILLS_LIST_RES" | jq -r '.data.total | floor')"
+SKILLS_P1=$(curl -s -H "$AUTH" "$BASE/ai/skills?page=1&page_size=1")
+check "ai/skills page_size=1 返回 1 条" "1" "$(echo "$SKILLS_P1" | jq -r '.data.list | length')"
+check "ai/skills page_size=1 total=4" "4" "$(echo "$SKILLS_P1" | jq -r '.data.total | floor')"
 
 # 2.1 非法非数字 ID 严格解析拦截 (parse_query_int_strict -> code=1002)
 BAD_ID_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills/12abc")
 check "非法技能路径 ID 12abc 被严格拦截返回 code=1002" "1002" "$(echo "$BAD_ID_RES" | jq -r '.code | floor')"
 
 # 3. 验证默认技能名称存在
-HAS_AUDITOR=$(echo "$SKILLS_LIST_RES" | jq -r '.data[] | select(.name=="financial-health-auditor") | .name')
+HAS_AUDITOR=$(echo "$SKILLS_LIST_RES" | jq -r '.data.list[] | select(.name=="financial-health-auditor") | .name')
 check "预置技能包含 financial-health-auditor" "financial-health-auditor" "$HAS_AUDITOR"
 
 # 4. 分类过滤查询：category=tax, category=finance, category=expense
 TAX_SKILLS_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills?category=tax")
-TAX_COUNT=$(echo "$TAX_SKILLS_RES" | jq -r '.data | length')
+TAX_COUNT=$(echo "$TAX_SKILLS_RES" | jq -r '.data.list | length')
 check "税务分类过滤技能数量为 1" "1" "$TAX_COUNT"
 
 FIN_SKILLS_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills?category=finance")
-FIN_COUNT=$(echo "$FIN_SKILLS_RES" | jq -r '.data | length')
+FIN_COUNT=$(echo "$FIN_SKILLS_RES" | jq -r '.data.list | length')
 check "财务分类过滤技能数量为 1" "1" "$FIN_COUNT"
 
 EXP_SKILLS_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills?category=expense")
-EXP_COUNT=$(echo "$EXP_SKILLS_RES" | jq -r '.data | length')
+EXP_COUNT=$(echo "$EXP_SKILLS_RES" | jq -r '.data.list | length')
 check "支出分类过滤技能数量为 1" "1" "$EXP_COUNT"
 
 # 5. 创建自定义技能：合法创建
@@ -1056,7 +1069,7 @@ check "禁用后 enabled 字段为 0" "0" "$TOGGLED_ENABLED"
 
 # 10. enabled_only 过滤
 ENABLED_ONLY_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills?enabled_only=1")
-ENABLED_MATCH=$(echo "$ENABLED_ONLY_RES" | jq -r ".data[] | select(.id==$CUSTOM_SKILL_ID) | .name")
+ENABLED_MATCH=$(echo "$ENABLED_ONLY_RES" | jq -r ".data.list[] | select(.id==$CUSTOM_SKILL_ID) | .name")
 check "enabled_only=1 列表中不包含已禁用的技能" "" "$ENABLED_MATCH"
 
 # 重新启用

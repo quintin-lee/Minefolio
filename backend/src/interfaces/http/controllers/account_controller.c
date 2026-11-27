@@ -27,14 +27,20 @@ api_accounts_list(csilk_ctx_t* c)
         include_archived = (int)parse_query_int_strict(inc_str, 0) != 0;
     }
 
+    int64_t page = 1;
+    int64_t page_size = 20;
+    parse_page_params(c, &page, &page_size);
+
     csilk_json_t* rows = NULL;
-    if (account_usecase_query(db_get_pool(), user_id, ledger_id, include_archived, &rows, NULL) !=
+    int64_t       total = 0;
+    if (account_usecase_query_paged(
+            db_get_pool(), user_id, ledger_id, include_archived, page, page_size, &rows, &total) !=
             0 ||
         !rows) {
         respond_error(c, 500, "查询失败");
         return;
     }
-    respond_ok(c, rows);
+    respond_page_ok(c, rows, total, page, page_size);
 }
 
 void

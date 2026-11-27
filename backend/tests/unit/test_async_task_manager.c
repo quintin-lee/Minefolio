@@ -142,6 +142,14 @@ main(void)
     assert(list != NULL && csilk_json_array_size(list) == 2);
     csilk_json_free(list);
 
+    int64_t       t_total = 0;
+    csilk_json_t* tp1 = mf_async_task_list_paged(pool, 1, NULL, "unit_test", 1, 1, &t_total);
+    assert(tp1 != NULL && t_total == 2 && csilk_json_array_size(tp1) == 1);
+    csilk_json_free(tp1);
+    csilk_json_t* tp2 = mf_async_task_list_paged(pool, 1, NULL, "unit_test", 2, 1, &t_total);
+    assert(tp2 != NULL && t_total == 2 && csilk_json_array_size(tp2) == 1);
+    csilk_json_free(tp2);
+
     /* 4. Concurrent duplicate submission reuses the active deduped task */
     bool    dedup_first = false;
     int64_t d1 = mf_async_task_submit(

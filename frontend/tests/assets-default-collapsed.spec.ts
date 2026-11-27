@@ -129,7 +129,12 @@ describe('Assets pages default collapsed accounts', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     mocks.routeQuery = {}
-    mocks.accountsList.mockResolvedValue(sampleAccounts)
+    mocks.accountsList.mockResolvedValue({
+      list: sampleAccounts,
+      total: sampleAccounts.length,
+      page: 1,
+      page_size: 20,
+    })
     mocks.assetsList.mockResolvedValue({ list: sampleAssets, total: sampleAssets.length })
     mocks.summaryGet.mockResolvedValue({
       total_assets: 17000,

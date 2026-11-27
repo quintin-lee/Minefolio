@@ -16,6 +16,8 @@ int           im_instance_usecase_create(void*          pool,
                                          char*          err,
                                          size_t         err_cap);
 csilk_json_t* im_instance_usecase_list(void* pool, int64_t user_id);
+csilk_json_t* im_instance_usecase_list_paged(
+    void* pool, int64_t user_id, int64_t page, int64_t page_size, int64_t* out_total);
 csilk_json_t* im_instance_usecase_get(void* pool, int64_t user_id, int64_t id);
 int           im_instance_usecase_relogin(
     void* pool, int64_t user_id, int64_t id, int* code, char* err, size_t err_cap);

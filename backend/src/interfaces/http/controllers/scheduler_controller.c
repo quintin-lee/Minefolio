@@ -51,15 +51,7 @@ api_scheduler_jobs_list(csilk_ctx_t* c)
 
     int64_t page = 1;
     int64_t page_size = 20;
-
-    const char* p_str = csilk_get_query(c, "page");
-    if (p_str && *p_str) {
-        page = parse_query_int_strict(p_str, 1);
-    }
-    const char* ps_str = csilk_get_query(c, "page_size");
-    if (ps_str && *ps_str) {
-        page_size = parse_query_int_strict(ps_str, 20);
-    }
+    parse_page_params(c, &page, &page_size);
 
     csilk_json_t* resp = NULL;
     int rc = scheduler_usecase_job_list(db_get_pool(), user_id, is_admin, page, page_size, &resp);

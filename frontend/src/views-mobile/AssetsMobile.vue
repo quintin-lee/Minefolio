@@ -49,11 +49,16 @@
         <div v-if="group.assets.length === 0" class="group-empty">暂无资产</div>
       </div>
     </div>
+    <div v-if="accountTotal > accountPageSize" class="mobile-pager">
+      <el-button size="small" :disabled="accountPage <= 1" @click="changeAccountPage(accountPage - 1)">上一页</el-button>
+      <span class="pager-info">{{ accountPage }} / {{ Math.max(1, Math.ceil(accountTotal / accountPageSize)) }}（共 {{ accountTotal }} 户）</span>
+      <el-button size="small" :disabled="accountPage * accountPageSize >= accountTotal" @click="changeAccountPage(accountPage + 1)">下一页</el-button>
+    </div>
     <AssetSheet
       v-model="assetSheetVisible"
       :record="editingAsset"
       :categories="categories"
-      :accounts="accounts"
+      :accounts="allAccounts.length ? allAccounts : accounts"
       @saved="load"
     />
     <AccountSheet v-model="accountSheetVisible" :record="editingAccount" @saved="load" />
@@ -75,11 +80,16 @@ import { formatCurrency } from '@/utils/format'
 import { t } from '@/utils/locale'
 import AssetSheet from '@/components/mobile/AssetSheet.vue'
 import AccountSheet from '@/components/mobile/AccountSheet.vue'
+import { fetchAllPages } from '@/utils/pagination'
 import type { Asset, Account, Category } from '@/types'
 
 const ledgerStore = useLedgerStore()
 const list = ref<Asset[]>([])
 const accounts = ref<Account[]>([])
+const allAccounts = ref<Account[]>([])
+const accountPage = ref(1)
+const accountPageSize = ref(20)
+const accountTotal = ref(0)
 const loading = ref(false)
 const exchangeRates = ref<Record<string, number>>({})
 const expanded = ref<Set<string>>(new Set())
@@ -141,7 +151,14 @@ const groups = computed(() => {
     })
   }
   for (const a of list.value) {
-    const key = a.account_id && a.account_id > 0 ? `acct-${a.account_id}` : 'ungrouped'
+    const hasAccountId = Boolean(a.account_id && a.account_id > 0)
+    if (hasAccountId && !byKey.has(`acct-${a.account_id}`)) {
+      continue
+    }
+    const key = hasAccountId ? `acct-${a.account_id}` : 'ungrouped'
+    if (key === 'ungrouped' && accountPage.value > 1) {
+      continue
+    }
     let g = byKey.get(key)
     if (!g) {
       g = { key: 'ungrouped', label: '未分组', icon: 'ph:wallet', institution: '', assets: [] }
@@ -185,18 +202,33 @@ async function load() {
       categories.value = []
     }
     const [accountsRes, assetsRes, ratesRes] = await Promise.allSettled([
-      accountsApi.list(),
+      accountsApi.list({ page: accountPage.value, page_size: accountPageSize.value }),
       assetsApi.list({ page_size: 500 }),
       marketApi.getExchangeRates()
     ])
     if (accountsRes.status === 'fulfilled') {
-      accounts.value = accountsRes.value
+      const val: any = accountsRes.value
+      const accList: Account[] = Array.isArray(val) ? val : (Array.isArray(val?.list) ? val.list : [])
+      const accTotal = Array.isArray(val) ? val.length : (typeof val?.total === 'number' ? val.total : accList.length)
+      accounts.value = accList
+      accountTotal.value = accTotal
+      if (accTotal <= accList.length && accountPage.value === 1) {
+        allAccounts.value = accList
+      } else if (allAccounts.value.length === 0) {
+        fetchAllPages((p, ps) => accountsApi.list({ page: p, page_size: ps }))
+          .then(all => { allAccounts.value = all })
+          .catch(() => {})
+      }
     } else {
       try {
-        accounts.value = rowsFrom(query(
+        const localAccounts = rowsFrom(query(
           'SELECT * FROM accounts WHERE __deleted = 0 AND archived = 0 AND (ledger_id = ? OR ledger_id = 0) ORDER BY sort_order, id',
           [currentLedgerId]
         )) as unknown as Account[]
+        allAccounts.value = localAccounts
+        accountTotal.value = localAccounts.length
+        const start = (accountPage.value - 1) * accountPageSize.value
+        accounts.value = localAccounts.slice(start, start + accountPageSize.value)
       } catch {
         /* localDb unavailable */
       }
@@ -221,6 +253,11 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function changeAccountPage(nextPage: number) {
+  accountPage.value = nextPage
+  load()
 }
 
 onMounted(load)
@@ -355,5 +392,16 @@ onMounted(load)
   color: var(--mf-text-muted);
   padding: 40px 0;
   font-size: 14px;
+}
+.mobile-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+.pager-info {
+  font-size: 12px;
+  color: var(--mf-text-muted);
 }
 </style>

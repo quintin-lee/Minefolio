@@ -9,6 +9,7 @@ import { ref, shallowRef, computed } from 'vue'
 import { categoriesApi } from '@/api/categories'
 import type { Category } from '@/types'
 import { getSwrCache, setSwrCache, clearSwrCache } from '@/utils/swr-cache'
+import { fetchAllPages } from '@/utils/pagination'
 
 const CATEGORY_CACHE_KEY = 'minefolio_cache_categories'
 
@@ -91,15 +92,13 @@ export const useCategoryStore = defineStore('category', () => {
   async function revalidateCategories() {
     const epoch = loadEpoch
     try {
-      const res = await categoriesApi.list()
+      const res = await fetchAllPages((page, page_size) => categoriesApi.list({ page, page_size }))
       if (epoch !== loadEpoch) return
-      if (Array.isArray(res)) {
-        const cleaned = sanitizeNodes(res)
-        allNodes.value = cleaned
-        loaded.value = true
-        hasRevalidated = true
-        setSwrCache(CATEGORY_CACHE_KEY, cleaned)
-      }
+      const cleaned = sanitizeNodes(res)
+      allNodes.value = cleaned
+      loaded.value = true
+      hasRevalidated = true
+      setSwrCache(CATEGORY_CACHE_KEY, cleaned)
     } catch (err) {
       if (epoch === loadEpoch) {
         console.warn('[category store] SWR background revalidation failed:', err)
@@ -127,7 +126,10 @@ export const useCategoryStore = defineStore('category', () => {
       const epoch = loadEpoch
       loading.value = true
       try {
-        const res = sanitizeNodes(await categoriesApi.list({ type }))
+        const raw = await fetchAllPages((page, page_size) =>
+          categoriesApi.list({ type, page, page_size }),
+        )
+        const res = sanitizeNodes(raw)
         if (epoch !== loadEpoch) return []
         return res
       } finally {
@@ -139,7 +141,10 @@ export const useCategoryStore = defineStore('category', () => {
     let req: Promise<Category[]> | null = null
     req = (async () => {
       try {
-        const res = sanitizeNodes(await categoriesApi.list())
+        const raw = await fetchAllPages((page, page_size) =>
+          categoriesApi.list({ page, page_size }),
+        )
+        const res = sanitizeNodes(raw)
         if (epoch !== loadEpoch) return []
         allNodes.value = res
         loaded.value = true

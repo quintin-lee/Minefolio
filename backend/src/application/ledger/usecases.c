@@ -100,13 +100,19 @@ member_list_to_json(const mf_ledger_member_t* list, size_t count)
 /* ===== Use case implementations ===== */
 
 csilk_json_t*
-ledger_usecase_list(void* pool, int64_t user_id)
+ledger_usecase_list_paged(
+    void* pool, int64_t user_id, int64_t page, int64_t page_size, int64_t* out_total)
 {
     ensure_default(pool, user_id);
 
     mf_ledger_list_item_t* list = NULL;
     size_t                 count = 0;
-    if (mf_ledger_repo_list_by_user(pool, user_id, &list, &count) != 0) {
+    int64_t                total = 0;
+    if (mf_ledger_repo_list_by_user_paged(pool, user_id, page, page_size, &list, &count, &total) !=
+        0) {
+        if (out_total) {
+            *out_total = 0;
+        }
         return csilk_json_array();
     }
 
@@ -115,7 +121,16 @@ ledger_usecase_list(void* pool, int64_t user_id)
         csilk_json_add_item(arr, ledger_list_item_to_json(&list[i]));
     }
     mf_ledger_repo_free_list(list);
+    if (out_total) {
+        *out_total = total;
+    }
     return arr;
+}
+
+csilk_json_t*
+ledger_usecase_list(void* pool, int64_t user_id)
+{
+    return ledger_usecase_list_paged(pool, user_id, 1, 500, NULL);
 }
 
 csilk_json_t*

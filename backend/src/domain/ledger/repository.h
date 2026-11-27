@@ -21,6 +21,14 @@ int mf_ledger_repo_list_by_user(void*                   pool,
                                 mf_ledger_list_item_t** out_list,
                                 size_t*                 out_count);
 
+int mf_ledger_repo_list_by_user_paged(void*                   pool,
+                                      int64_t                 user_id,
+                                      int64_t                 page,
+                                      int64_t                 page_size,
+                                      mf_ledger_list_item_t** out_list,
+                                      size_t*                 out_count,
+                                      int64_t*                out_total);
+
 /**
  * @brief 根据 ID 获取账本详情（不含聚合统计）
  * @return 0: 成功查到, 1: 不存在, -1: 错误

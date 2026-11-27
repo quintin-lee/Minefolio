@@ -4,19 +4,18 @@
  */
 
 import http from '@/utils/http'
-import type { Ledger, LedgerMember, LedgerInviteResult } from '@/types'
+import type { Ledger, LedgerMember, LedgerInviteResult, PageResult } from '@/types'
 
 /**
  * 账本与成员协作 API 服务对象
  */
 export const ledgerApi = {
   /**
-   * 获取当前用户参与的所有账本空间列表 (包含个人主账本与协作账本)
+   * 分页获取当前用户参与的账本空间列表 (包含个人主账本与协作账本)
    * @route GET /api/ledgers
-   * @returns 账本对象数组
    */
-  list: () =>
-    http.get<Ledger[]>('/ledgers'),
+  list: (params?: { page?: number; page_size?: number }) =>
+    http.get<PageResult<Ledger>>('/ledgers', { params }),
 
   /**
    * 创建新的账本空间 (如家庭账本、公司差旅、装修专项账本等)

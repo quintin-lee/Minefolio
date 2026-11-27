@@ -243,9 +243,9 @@ describe('lifecycle unmount cleanup & async sequence guards', () => {
   })
 
   it('ImBotSettings.vue does not start polling interval when unmounted before listInstances resolves', async () => {
-    const deferredInstances = createDeferred<any[]>()
+    const deferredInstances = createDeferred<any>()
     mocks.listInstances.mockReturnValue(deferredInstances.promise)
-    mocks.getBindings.mockResolvedValue([])
+    mocks.getBindings.mockResolvedValue({ list: [], total: 0, page: 1, page_size: 20 })
     mocks.renderQrContentToImage.mockResolvedValue('')
 
     const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
@@ -257,24 +257,29 @@ describe('lifecycle unmount cleanup & async sequence guards', () => {
     wrapper.unmount()
     setIntervalSpy.mockClear()
 
-    deferredInstances.resolve([
-      {
-        id: 1,
-        platform: 'wechat',
-        adapter: 'ilink',
-        status: 'qr_ready',
-        enabled: true,
-        capability: 'readonly',
-      },
-    ])
+    deferredInstances.resolve({
+      list: [
+        {
+          id: 1,
+          platform: 'wechat',
+          adapter: 'ilink',
+          status: 'qr_ready',
+          enabled: true,
+          capability: 'readonly',
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    })
     await flushPromises()
 
     expect(setIntervalSpy).not.toHaveBeenCalled()
   })
 
   it('ImBotSettings.vue does not start bind-token countdown interval when unmounted before generateBindToken resolves', async () => {
-    mocks.listInstances.mockResolvedValue([])
-    mocks.getBindings.mockResolvedValue([])
+    mocks.listInstances.mockResolvedValue({ list: [], total: 0, page: 1, page_size: 20 })
+    mocks.getBindings.mockResolvedValue({ list: [], total: 0, page: 1, page_size: 20 })
     const deferredToken = createDeferred<{ bind_token: string; ttl_sec: number }>()
     mocks.generateBindToken.mockReturnValue(deferredToken.promise)
 
@@ -461,9 +466,12 @@ describe('lifecycle unmount cleanup & async sequence guards', () => {
   it('Assets.vue clears deep-link highlight/scroll timeouts on unmount', async () => {
     vi.useFakeTimers()
     mocks.routeQuery = { asset_id: '42' }
-    mocks.accountsList.mockResolvedValue([
-      { id: 1, name: '默认账户', institution: 'cash_wallet', archived: 0, sort_order: 0 },
-    ])
+    mocks.accountsList.mockResolvedValue({
+      list: [{ id: 1, name: '默认账户', institution: 'cash_wallet', archived: 0, sort_order: 0 }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    })
     mocks.assetsList.mockResolvedValue({
       list: [{ id: 42, name: 'Asset 42', asset_type: 'cash', account_id: 1, current_value: 100 }],
       total: 1,

@@ -89,11 +89,19 @@
           <div v-else class="report-expand-hint">点击展开分析报告</div>
         </div>
 
-        <!-- 无限滚动 / 加载更多 -->
-        <div v-if="hasMore" class="load-more-row">
-          <el-button plain :loading="loadingMore" @click="loadMoreReports">
-            加载更多报告
-          </el-button>
+        <!-- 服务端分页 -->
+        <div v-if="total > 0" class="load-more-row">
+          <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            :total="total"
+            :page-sizes="[7, 10, 20]"
+            layout="total, sizes, prev, pager, next"
+            background
+            small
+            @current-change="loadReports"
+            @size-change="handlePageSizeChange"
+          />
         </div>
       </div>
 
@@ -115,10 +123,10 @@ import type { AiNewsReport } from '@/types'
 import { listNewsReports, triggerNewsAnalysis, getNewsReportByDate } from '@/api/ai-news'
 
 const loading = ref(false)
-const loadingMore = ref(false)
 const triggering = ref(false)
-const hasMore = ref(false)
-const PAGE_SIZE = 10
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 const reports = ref<AiNewsReport[]>([])
 const expandedId = ref<number>(-1)
 
@@ -221,15 +229,15 @@ const expandedAnalysisHtml = computed(() => {
 let loadReqSeq = 0
 let isUnmounted = false
 
-/** 首屏加载第一页 */
+/** 加载当前页报告列表 */
 async function loadReports() {
   const reqId = ++loadReqSeq
   loading.value = true
   try {
-    const res = await listNewsReports(PAGE_SIZE, 0)
+    const res = await listNewsReports(currentPage.value, pageSize.value)
     if (isUnmounted || reqId !== loadReqSeq) return
     reports.value = res.list
-    hasMore.value = res.has_more
+    total.value = typeof res.total === 'number' ? res.total : res.list.length
   } catch (err: unknown) {
     if (isUnmounted || reqId !== loadReqSeq) return
     const e = err as { response?: { data?: { message?: string } }; message?: string }
@@ -241,26 +249,9 @@ async function loadReports() {
   }
 }
 
-/** 无限滚动 / 点击“加载更多”时追加下一页 */
-async function loadMoreReports() {
-  if (loadingMore.value || !hasMore.value) {
-    return
-  }
-  loadingMore.value = true
-  try {
-    const res = await listNewsReports(PAGE_SIZE, reports.value.length)
-    const seen = new Set(reports.value.map((r) => r.id))
-    for (const item of res.list) {
-      if (!seen.has(item.id)) {
-        reports.value.push(item)
-      }
-    }
-    hasMore.value = res.has_more
-  } catch {
-    /* 静默: 加载更多失败保留已有数据 */
-  } finally {
-    loadingMore.value = false
-  }
+function handlePageSizeChange() {
+  currentPage.value = 1
+  loadReports()
 }
 
 async function handleTrigger() {
@@ -294,8 +285,8 @@ function startPolling() {
       return
     }
     try {
-      /* 轻量轮询: limit=1 只探顶部一条, 不拉全量正文 */
-      const res = await listNewsReports(1, 0)
+      /* 轻量轮询: page_size=1 只探顶部一条, 不拉全量正文 */
+      const res = await listNewsReports(1, 1)
       if (isUnmounted) {
         stopPolling()
         return

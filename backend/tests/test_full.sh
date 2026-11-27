@@ -184,8 +184,8 @@ SUBCAT=$(id_by_name categories FT-餐饮-午餐 $UID1)
 check_nz "子分类 FT-餐饮-午餐" "$SUBCAT"
 
 TREE=$(req_auth GET /categories "" "$TOKEN")
-TOTAL_CAT=$(echo "$TREE" | jq '.data | if type=="array" then length else 0 end')
-[ "$TOTAL_CAT" = "0" ] && TOTAL_CAT=$(echo "$TREE" | jq '.data | length // 0')
+TOTAL_CAT=$(echo "$TREE" | jq '.data.list | if type=="array" then length else 0 end')
+[ "$TOTAL_CAT" = "0" ] && TOTAL_CAT=$(echo "$TREE" | jq '.data.total // 0')
 check_nz "分类总数>0" "$TOTAL_CAT"
 
 UPD=$(extract_code "$(req_auth PUT /categories/$EXPENSE_CAT "{\"name\":\"FT-餐饮美食\",\"type\":\"expense\",\"currency\":\"CNY\",\"color\":\"#ff0000\"}" "$TOKEN")")
@@ -439,7 +439,7 @@ CF1=$(extract_code "$(req_auth POST /cashflow/schedules "{\"name\":\"月度工�
 check "创建现金流计划 code=0" "0" "$CF1"
 
 CF_LIST=$(req_auth GET /cashflow/schedules "" "$TOKEN")
-check_nz "现金流计划列表" "$(echo "$CF_LIST" | jq -r '.data | length')"
+check_nz "现金流计划列表" "$(echo "$CF_LIST" | jq -r '.data.list | length')"
 
 CF_ID=$(sqlite3 "$DB" "SELECT id FROM cashflow_schedules WHERE user_id=$UID1 LIMIT 1")
 check_nz "现金流计划 id" "$CF_ID"

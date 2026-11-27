@@ -60,7 +60,7 @@
         </div>
         <div class="stat-content">
           <div class="stat-label">{{ t('settings.participatingLedgers') }}</div>
-          <div class="stat-val mono">{{ t('settings.ledgerCount', { n: ledgerStore.ledgers.length || 1 }) }}</div>
+          <div class="stat-val mono">{{ t('settings.ledgerCount', { n: ledgerStore.total || ledgerStore.ledgers.length || 1 }) }}</div>
         </div>
       </div>
 

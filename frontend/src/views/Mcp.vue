@@ -68,7 +68,7 @@
 
         <div class="stats-pills">
           <span class="pill-item">
-            共 <b>{{ servers.length }}</b> 个服务
+            共 <b>{{ total }}</b> 个服务
           </span>
           <span class="pill-divider">·</span>
           <span class="pill-item success">
@@ -110,6 +110,20 @@
           <el-button type="primary" plain @click="openCreate">新建第一个 MCP 服务</el-button>
         </template>
       </el-empty>
+
+      <div v-if="total > 0" style="display: flex; justify-content: flex-end; margin-top: 16px;">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          background
+          size="small"
+          @current-change="loadServers"
+          @size-change="handleSizeChange"
+        />
+      </div>
     </div>
 
     <!-- Dialogs & Drawer -->
@@ -132,6 +146,9 @@ const loading = ref(false)
 const pingingAll = ref(false)
 const deletingId = ref<number | null>(null)
 const servers = ref<McpServer[]>([])
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 let loadServersReqSeq = 0
 const serverToolsMap = reactive<Record<number, McpServerTool[]>>({})
 const testingIds = reactive(new Set<number>())
@@ -178,13 +195,14 @@ async function loadServers() {
   const reqId = ++loadServersReqSeq
   try {
     loading.value = true
-    const list = await listMcpServers()
+    const res = await listMcpServers({ page: page.value, page_size: pageSize.value })
     if (reqId !== loadServersReqSeq) return
-    servers.value = list.map(s => ({
+    servers.value = (res.list || []).map(s => ({
       ...s,
       id: Number(s.id),
       enabled: Number(s.enabled) === 1 ? 1 : 0,
     }))
+    total.value = res.total ?? servers.value.length
     // Load tools previews in background
     for (const s of servers.value) {
       getMcpServerTools(s.id).then(tools => {
@@ -204,6 +222,11 @@ async function loadServers() {
       loading.value = false
     }
   }
+}
+
+function handleSizeChange() {
+  page.value = 1
+  loadServers()
 }
 
 function openCreate() {

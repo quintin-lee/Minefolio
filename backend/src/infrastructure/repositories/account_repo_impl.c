@@ -12,12 +12,64 @@ account_archived_literal(int archived)
 }
 
 csilk_json_t*
-account_list(void* pool, int64_t user_id, int64_t ledger_id, bool include_archived, int64_t* total)
+account_list_paged(void*    pool,
+                   int64_t  user_id,
+                   int64_t  ledger_id,
+                   bool     include_archived,
+                   int64_t  page,
+                   int64_t  page_size,
+                   int64_t* total)
 {
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
-    char             uid[32], lid[32];
+    if (page < 1) {
+        page = 1;
+    }
+    if (page_size < 1) {
+        page_size = 20;
+    }
+    if (page_size > 500) {
+        page_size = 500;
+    }
+    int64_t offset = (page - 1) * page_size;
+
+    char uid[32], lid[32], lim_s[32], off_s[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
+    snprintf(lim_s, sizeof(lim_s), "%lld", (long long)page_size);
+    snprintf(off_s, sizeof(off_s), "%lld", (long long)offset);
+
+    const char* arch_cond = include_archived ? "" : "AND NOT ac.archived ";
+
+    if (total) {
+        char count_sql[1024];
+        snprintf(
+            count_sql,
+            sizeof(count_sql),
+            "SELECT COUNT(*) AS cnt "
+            "FROM accounts ac "
+            "JOIN ledgers l ON ac.ledger_id = l.id "
+            "LEFT JOIN account_permissions ap ON ap.account_id = ac.id AND ap.user_id = ? "
+            "WHERE ac.ledger_id = ? "
+            "  AND ( "
+            "      ac.user_id = ? "
+            "      OR l.owner_id = ? "
+            "      OR ( "
+            "          EXISTS (SELECT 1 FROM ledger_members lm WHERE lm.ledger_id = ac.ledger_id AND "
+            "lm.user_id = ?) "
+            "          AND (ap.permission_level IS NULL OR ap.permission_level != 'none') "
+            "      ) "
+            "  ) "
+            "%s",
+            arch_cond);
+        const char*   c_params[6] = {uid, lid, uid, uid, uid, NULL};
+        csilk_json_t* c_rows = csilk_db_query_param_json(db_pool, count_sql, c_params);
+        *total = (c_rows && csilk_json_array_size(c_rows) > 0)
+                     ? db_get_int(csilk_json_array_get(c_rows, 0), "cnt")
+                     : 0;
+        if (c_rows) {
+            csilk_json_free(c_rows);
+        }
+    }
 
     char sql[1536];
     snprintf(
@@ -45,15 +97,17 @@ account_list(void* pool, int64_t user_id, int64_t ledger_id, bool include_archiv
         "          AND (ap.permission_level IS NULL OR ap.permission_level != 'none') "
         "      ) "
         "  ) "
-        "%s ORDER BY ac.sort_order, ac.id",
-        include_archived ? "" : "AND NOT ac.archived ");
+        "%s ORDER BY ac.sort_order, ac.id LIMIT ? OFFSET ?",
+        arch_cond);
 
-    const char*   params[6] = {uid, lid, uid, uid, uid, NULL};
-    csilk_json_t* rows = csilk_db_query_param_json(db_pool, sql, params);
-    if (total) {
-        *total = rows ? (int64_t)csilk_json_array_size(rows) : 0;
-    }
-    return rows;
+    const char* params[8] = {uid, lid, uid, uid, uid, lim_s, off_s, NULL};
+    return csilk_db_query_param_json(db_pool, sql, params);
+}
+
+csilk_json_t*
+account_list(void* pool, int64_t user_id, int64_t ledger_id, bool include_archived, int64_t* total)
+{
+    return account_list_paged(pool, user_id, ledger_id, include_archived, 1, 500, total);
 }
 
 csilk_json_t*

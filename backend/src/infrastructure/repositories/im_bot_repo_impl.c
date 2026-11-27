@@ -125,18 +125,55 @@ mf_im_bot_repo_upsert(csilk_db_pool_t* pool,
 }
 
 csilk_json_t*
-mf_im_bot_repo_list_for_user(csilk_db_pool_t* pool, int64_t mf_user_id)
+mf_im_bot_repo_list_for_user_paged(
+    csilk_db_pool_t* pool, int64_t mf_user_id, int64_t page, int64_t page_size, int64_t* out_total)
 {
     if (!pool || mf_user_id <= 0) {
+        if (out_total) {
+            *out_total = 0;
+        }
         return csilk_json_array();
     }
-    char id_str[32];
+    if (page < 1) {
+        page = 1;
+    }
+    if (page_size < 1) {
+        page_size = 20;
+    }
+    if (page_size > 500) {
+        page_size = 500;
+    }
+    int64_t offset = (page - 1) * page_size;
+
+    char id_str[32], lim_s[32], off_s[32];
     snprintf(id_str, sizeof(id_str), "%lld", (long long)mf_user_id);
+    snprintf(lim_s, sizeof(lim_s), "%lld", (long long)page_size);
+    snprintf(off_s, sizeof(off_s), "%lld", (long long)offset);
+
+    if (out_total) {
+        csilk_json_t* c_rows = csilk_db_query_param_json(
+            pool,
+            "SELECT COUNT(*) AS cnt FROM im_bot_bindings WHERE mf_user_id=?",
+            (const char*[]){id_str, NULL});
+        *out_total = (c_rows && csilk_json_array_size(c_rows) > 0)
+                         ? db_get_int(csilk_json_array_get(c_rows, 0), "cnt")
+                         : 0;
+        if (c_rows) {
+            csilk_json_free(c_rows);
+        }
+    }
+
     return csilk_db_query_param_json(
         pool,
         "SELECT platform, im_user_id, scope, enabled, created_at "
-        "FROM im_bot_bindings WHERE mf_user_id=? ORDER BY platform, im_user_id",
-        (const char*[]){id_str, NULL});
+        "FROM im_bot_bindings WHERE mf_user_id=? ORDER BY platform, im_user_id LIMIT ? OFFSET ?",
+        (const char*[]){id_str, lim_s, off_s, NULL});
+}
+
+csilk_json_t*
+mf_im_bot_repo_list_for_user(csilk_db_pool_t* pool, int64_t mf_user_id)
+{
+    return mf_im_bot_repo_list_for_user_paged(pool, mf_user_id, 1, 500, NULL);
 }
 
 int
@@ -159,16 +196,53 @@ mf_im_bot_repo_unbind(csilk_db_pool_t* pool,
 }
 
 csilk_json_t*
-mf_im_bot_instance_list(csilk_db_pool_t* pool, int64_t user_id)
+mf_im_bot_instance_list_paged(
+    csilk_db_pool_t* pool, int64_t user_id, int64_t page, int64_t page_size, int64_t* out_total)
 {
     if (!pool || user_id <= 0) {
+        if (out_total) {
+            *out_total = 0;
+        }
         return csilk_json_array();
     }
-    char uid[32];
+    if (page < 1) {
+        page = 1;
+    }
+    if (page_size < 1) {
+        page_size = 20;
+    }
+    if (page_size > 500) {
+        page_size = 500;
+    }
+    int64_t offset = (page - 1) * page_size;
+
+    char uid[32], lim_s[32], off_s[32];
     im_id_str(user_id, uid, sizeof(uid));
-    csilk_json_t* res =
-        im_instance_query(pool, "mf_user_id=? ORDER BY id DESC", (const char*[]){uid, NULL});
+    snprintf(lim_s, sizeof(lim_s), "%lld", (long long)page_size);
+    snprintf(off_s, sizeof(off_s), "%lld", (long long)offset);
+
+    if (out_total) {
+        csilk_json_t* c_rows = csilk_db_query_param_json(
+            pool,
+            "SELECT COUNT(*) AS cnt FROM im_bot_instances WHERE mf_user_id=?",
+            (const char*[]){uid, NULL});
+        *out_total = (c_rows && csilk_json_array_size(c_rows) > 0)
+                         ? db_get_int(csilk_json_array_get(c_rows, 0), "cnt")
+                         : 0;
+        if (c_rows) {
+            csilk_json_free(c_rows);
+        }
+    }
+
+    csilk_json_t* res = im_instance_query(
+        pool, "mf_user_id=? ORDER BY id DESC LIMIT ? OFFSET ?", (const char*[]){uid, lim_s, off_s, NULL});
     return res ? res : csilk_json_array();
+}
+
+csilk_json_t*
+mf_im_bot_instance_list(csilk_db_pool_t* pool, int64_t user_id)
+{
+    return mf_im_bot_instance_list_paged(pool, user_id, 1, 500, NULL);
 }
 
 csilk_json_t*

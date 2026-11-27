@@ -15,6 +15,13 @@
  */
 int tag_usecase_list(void* pool, int64_t user_id, csilk_json_t** out_list);
 
+int tag_usecase_list_paged(void*          pool,
+                           int64_t        user_id,
+                           int64_t        page,
+                           int64_t        page_size,
+                           csilk_json_t** out_list,
+                           int64_t*       out_total);
+
 /**
  * @brief 按前缀搜索标签自动补全建议
  */

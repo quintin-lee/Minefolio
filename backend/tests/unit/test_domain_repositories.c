@@ -1834,6 +1834,14 @@ test_smart_import_rule_bool_and_csv_amount_validation(csilk_db_pool_t* pool, int
     assert(seen_inactive && seen_active);
     csilk_json_free(rules);
 
+    int64_t       rule_total = 0;
+    csilk_json_t* rules_p1 = mf_import_rule_list_paged(pool, user_id, 1, 1, &rule_total);
+    assert(rules_p1 != NULL && rule_total >= 2 && csilk_json_array_size(rules_p1) == 1);
+    csilk_json_free(rules_p1);
+    csilk_json_t* rules_p2 = mf_import_rule_list_paged(pool, user_id, 2, 1, &rule_total);
+    assert(rules_p2 != NULL && rule_total >= 2 && csilk_json_array_size(rules_p2) == 1);
+    csilk_json_free(rules_p2);
+
     /* 4. Daily expense CSV import must skip inactive rule and match active rule */
     const char* rule_csv =
         "date,asset,category,type,amount,currency,note\n"

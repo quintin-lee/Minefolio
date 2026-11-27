@@ -51,7 +51,7 @@ const mockAiSettings = {
 }
 
 vi.mock('@/api/ai-mcp', () => ({
-  listMcpServers: vi.fn().mockImplementation(() => Promise.resolve([])),
+  listMcpServers: vi.fn().mockImplementation(() => Promise.resolve({ list: [], total: 0, page: 1, page_size: 20 })),
   listMcpScripts: vi.fn().mockImplementation(() => Promise.resolve([])),
   createMcpServer: vi.fn(),
   updateMcpServer: vi.fn(),
@@ -78,7 +78,7 @@ vi.mock('@/api/system', () => ({
 
 vi.mock('@/api/ledger', () => ({
   ledgerApi: {
-    list: vi.fn().mockResolvedValue([]),
+    list: vi.fn().mockResolvedValue({ list: [], total: 0, page: 1, page_size: 20 }),
   },
 }))
 

@@ -107,7 +107,7 @@ CAT_RES=$(curl -s -X POST "${BASE_URL}/api/categories" \
 echo "Category create: ${CAT_RES}"
 
 CAT_LIST=$(curl -s -H "$AUTH_HEADER" "${BASE_URL}/api/categories")
-CAT_ID=$(node -e "const r=JSON.parse(process.argv[1]); console.log(r.data[0].id);" "$CAT_LIST")
+CAT_ID=$(node -e "const r=JSON.parse(process.argv[1]); console.log(r.data.list[0].id);" "$CAT_LIST")
 
 ASSET_RES=$(curl -s -X POST "${BASE_URL}/api/assets" \
     -H "$AUTH_HEADER" -H "Content-Type: application/json" \

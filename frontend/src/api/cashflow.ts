@@ -4,19 +4,18 @@
  */
 
 import http from '@/utils/http'
-import type { CashflowSchedule, MonthlyCashflowSummary } from '@/types'
+import type { CashflowSchedule, MonthlyCashflowSummary, PageResult } from '@/types'
 
 /**
  * 现金流排期与日历 API 服务对象
  */
 export const cashflowApi = {
   /**
-   * 获取所有现金流排期计划列表 (如每月工资、房租、定期分红、订阅扣费等)
+   * 分页获取现金流排期计划列表 (如每月工资、房租、定期分红、订阅扣费等)
    * @route GET /api/cashflow/schedules
-   * @returns 现金流排期计划列表
    */
-  listSchedules: () =>
-    http.get<CashflowSchedule[]>('/cashflow/schedules'),
+  listSchedules: (params?: { page?: number; page_size?: number }) =>
+    http.get<PageResult<CashflowSchedule>>('/cashflow/schedules', { params }),
 
   /**
    * 创建新的现金流排期计划

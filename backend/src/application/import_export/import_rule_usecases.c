@@ -2,6 +2,19 @@
 #include "infrastructure/repositories/import_rule_repo_impl.h"
 
 csilk_json_t*
+import_rule_usecase_list_paged(
+    void* pool, int64_t user_id, int64_t page, int64_t page_size, int64_t* out_total)
+{
+    if (!pool || user_id <= 0) {
+        if (out_total) {
+            *out_total = 0;
+        }
+        return NULL;
+    }
+    return mf_import_rule_list_paged((csilk_db_pool_t*)pool, user_id, page, page_size, out_total);
+}
+
+csilk_json_t*
 import_rule_usecase_list(void* pool, int64_t user_id)
 {
     if (!pool || user_id <= 0) {

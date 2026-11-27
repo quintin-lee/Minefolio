@@ -10,18 +10,31 @@ import type {
   SkillCreatePayload,
   SkillUpdatePayload,
   SkillTestResult,
+  PageResult,
 } from '@/types'
 
 /**
- * 获取技能列表 (支持按分类或启用状态过滤)
+ * 分页获取技能列表 (支持按分类或启用状态过滤)
  * @route GET /api/ai/skills
  */
 export async function listSkills(params?: {
   category?: string
   enabled_only?: number
-}): Promise<AiSkill[]> {
-  const r = await http.get<AiSkill[]>('/ai/skills', { params })
-  return Array.isArray(r) ? r : []
+  page?: number
+  page_size?: number
+}): Promise<PageResult<AiSkill>> {
+  const page = params?.page ?? 1
+  const page_size = params?.page_size ?? 20
+  const r = await http.get<PageResult<AiSkill> | AiSkill[]>('/ai/skills', { params })
+  if (Array.isArray(r)) {
+    return { list: r, total: r.length, page, page_size }
+  }
+  return {
+    list: Array.isArray(r?.list) ? r.list : [],
+    total: typeof r?.total === 'number' ? r.total : (Array.isArray(r?.list) ? r.list.length : 0),
+    page: typeof r?.page === 'number' ? r.page : page,
+    page_size: typeof r?.page_size === 'number' ? r.page_size : page_size,
+  }
 }
 
 /**

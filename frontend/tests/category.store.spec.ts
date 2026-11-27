@@ -26,7 +26,7 @@ describe('category store', () => {
       { id: 2, name: '工资', type: 'income', parent_id: null, sort_order: 0, created_at: '' },
       { id: 3, name: '银行账户', type: 'asset', asset_type: 'cash', parent_id: null, sort_order: 0, created_at: '' },
     ]
-    ;(categoriesApi.list as any).mockResolvedValue(mockCategories)
+    ;(categoriesApi.list as any).mockResolvedValue({ list: mockCategories, total: 3, page: 1, page_size: 500 })
 
     const store = useCategoryStore()
     expect(store.loaded).toBe(false)
@@ -87,7 +87,7 @@ describe('category store', () => {
         ],
       },
     ]
-    ;(categoriesApi.list as any).mockResolvedValue(nested)
+    ;(categoriesApi.list as any).mockResolvedValue({ list: nested, total: 1, page: 1, page_size: 500 })
 
     const store = useCategoryStore()
     await store.loadCategories()
@@ -99,9 +99,14 @@ describe('category store', () => {
     expect(store.expenseCategories).toHaveLength(1)
 
     // Even when parent has empty children initially, fetched children attach under parent instead of top-level allNodes
-    ;(categoriesApi.list as any).mockResolvedValue([
-      { id: 2, name: '交通出行', type: 'expense', parent_id: null, currency: 'CNY', sort_order: 2, children: [] },
-    ])
+    ;(categoriesApi.list as any).mockResolvedValue({
+      list: [
+        { id: 2, name: '交通出行', type: 'expense', parent_id: null, currency: 'CNY', sort_order: 2, children: [] },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 500,
+    })
     ;(categoriesApi.children as any).mockResolvedValue([
       { id: 201, name: '公共交通', type: 'expense', parent_id: 2, currency: 'CNY', sort_order: 1 },
     ])
@@ -129,7 +134,7 @@ describe('category store', () => {
       { id: 101, name: '咖啡奶茶', type: 'expense', parent_id: 1, currency: 'CNY', sort_order: 1 },
       { id: 1, name: '餐饮美食', type: 'expense', parent_id: null, currency: 'CNY', sort_order: 1 },
     ]
-    ;(categoriesApi.list as any).mockResolvedValue(dirty)
+    ;(categoriesApi.list as any).mockResolvedValue({ list: dirty, total: 3, page: 1, page_size: 500 })
 
     const store = useCategoryStore()
     const res = await store.loadCategories()
@@ -149,9 +154,14 @@ describe('category store', () => {
   })
 
   it('triggers reactive computed updates when loadChildren attaches children under shallowRef', async () => {
-    ;(categoriesApi.list as any).mockResolvedValue([
-      { id: 10, name: '交通出行', type: 'expense', parent_id: null, currency: 'CNY', sort_order: 1, children: [] },
-    ])
+    ;(categoriesApi.list as any).mockResolvedValue({
+      list: [
+        { id: 10, name: '交通出行', type: 'expense', parent_id: null, currency: 'CNY', sort_order: 1, children: [] },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 500,
+    })
     ;(categoriesApi.children as any).mockResolvedValue([
       { id: 101, name: '公共交通', type: 'expense', parent_id: 10, currency: 'CNY', sort_order: 1 },
       { id: 102, name: '打车网约车', type: 'expense', parent_id: 10, currency: 'CNY', sort_order: 2 },

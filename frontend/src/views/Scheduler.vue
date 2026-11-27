@@ -135,7 +135,7 @@
 
         <div class="stats-pills">
           <span class="pill-item">
-            共 <b>{{ jobs.length }}</b> 个任务
+            共 <b>{{ jobsTotal }}</b> 个任务
           </span>
           <span class="pill-divider">·</span>
           <span class="pill-item builtin">
@@ -157,7 +157,7 @@
     <div v-loading="loading" class="table-container">
       <el-table
         v-if="filteredJobs.length > 0"
-        :data="paginatedJobs"
+        :data="filteredJobs"
         class="premium-table jobs-table"
         row-class-name="premium-row"
         header-cell-class-name="premium-header"
@@ -351,15 +351,17 @@
       </el-empty>
 
       <!-- Pagination -->
-      <div v-if="filteredJobs.length > pageSize" class="table-pagination">
+      <div v-if="jobsTotal > 0" class="table-pagination">
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
-          :total="filteredJobs.length"
+          :total="jobsTotal"
           :page-sizes="[10, 20, 50]"
           layout="total, sizes, prev, pager, next"
           background
           size="small"
+          @current-change="fetchJobs"
+          @size-change="handlePageSizeChange"
         />
       </div>
     </div>
@@ -392,6 +394,7 @@ const selectedType = ref('all')
 const enabledOnly = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(20)
+const jobsTotal = ref(0)
 
 const togglingIds = reactive(new Set<number>())
 const runningIds = reactive(new Set<number>())
@@ -453,11 +456,6 @@ const filteredJobs = computed(() => {
   })
 })
 
-const paginatedJobs = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filteredJobs.value.slice(start, start + pageSize.value)
-})
-
 const enabledJobsCount = computed(() => {
   return jobs.value.filter(j => Boolean(j.enabled)).length
 })
@@ -483,9 +481,10 @@ const fetchJobs = async () => {
   const reqId = ++jobsReqSeq
   loading.value = true
   try {
-    const res = await schedulerApi.listJobs(1, 100)
+    const res = await schedulerApi.listJobs(currentPage.value, pageSize.value)
     if (isUnmounted || reqId !== jobsReqSeq) return
     jobs.value = res.items || []
+    jobsTotal.value = typeof res.total === 'number' ? res.total : jobs.value.length
   } catch (err: any) {
     if (isUnmounted || reqId !== jobsReqSeq) return
     ElMessage.error(err.message || '获取定时任务列表失败')
@@ -494,6 +493,11 @@ const fetchJobs = async () => {
       loading.value = false
     }
   }
+}
+
+const handlePageSizeChange = () => {
+  currentPage.value = 1
+  fetchJobs()
 }
 
 const refreshAll = async () => {

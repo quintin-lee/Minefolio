@@ -454,15 +454,19 @@ ai_news_execute_analysis(csilk_db_pool_t* pool,
 }
 
 csilk_json_t*
-ai_news_list_ledger(csilk_db_pool_t* pool,
-                    int64_t          user_id,
-                    int64_t          ledger_id,
-                    int              limit,
-                    int              offset,
-                    int*             out_has_more)
+ai_news_list_ledger_paged(csilk_db_pool_t* pool,
+                          int64_t          user_id,
+                          int64_t          ledger_id,
+                          int              limit,
+                          int              offset,
+                          int64_t*         out_total,
+                          int*             out_has_more)
 {
     if (out_has_more) {
         *out_has_more = 0;
+    }
+    if (out_total) {
+        *out_total = 0;
     }
     if (!pool || user_id <= 0) {
         return csilk_json_array();
@@ -473,40 +477,52 @@ ai_news_list_ledger(csilk_db_pool_t* pool,
     if (offset < 0) {
         offset = 0;
     }
-    char uid_str[32];
+    char uid_str[32], lid_str[32], lim_str[16], off_str[16];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    char lid_str[32];
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+    snprintf(lim_str, sizeof(lim_str), "%d", limit);
+    snprintf(off_str, sizeof(off_str), "%d", offset);
 
-    char sql[512];
-    snprintf(sql,
-             sizeof(sql),
-             "SELECT id, user_id, ledger_id, report_date, digest_id, title, summary, "
-             "       holdings_snapshot, affected_assets, model_used, token_cost, status, "
-             "error_msg, created_at "
-             "FROM ai_news_reports WHERE user_id=? AND (? <= 0 OR ledger_id=?) "
-             "ORDER BY report_date DESC LIMIT %d OFFSET %d",
-             limit,
-             offset);
-    csilk_json_t* rows =
-        csilk_db_query_param_json(pool, sql, (const char*[]){uid_str, lid_str, lid_str, NULL});
+    int64_t total = 0;
+    csilk_json_t* c_rows = csilk_db_query_param_json(
+        pool,
+        "SELECT COUNT(*) AS cnt FROM ai_news_reports WHERE user_id=? AND (? <= 0 OR ledger_id=?)",
+        (const char*[]){uid_str, lid_str, lid_str, NULL});
+    if (c_rows && csilk_json_array_size(c_rows) > 0) {
+        total = db_get_int(csilk_json_array_get(c_rows, 0), "cnt");
+    }
+    if (c_rows) {
+        csilk_json_free(c_rows);
+    }
+    if (out_total) {
+        *out_total = total;
+    }
 
-    char more_sql[512];
-    snprintf(more_sql,
-             sizeof(more_sql),
-             "SELECT 1 FROM ai_news_reports WHERE user_id=? AND (? <= 0 OR ledger_id=?) "
-             "ORDER BY report_date DESC LIMIT 1 OFFSET %d",
-             offset + limit);
-    csilk_json_t* more =
-        csilk_db_query_param_json(pool, more_sql, (const char*[]){uid_str, lid_str, lid_str, NULL});
-    int has_more = (more && csilk_json_is_array(more) && csilk_json_array_size(more) > 0) ? 1 : 0;
+    const char* sql =
+        "SELECT id, user_id, ledger_id, report_date, digest_id, title, summary, "
+        "       holdings_snapshot, affected_assets, model_used, token_cost, status, "
+        "error_msg, created_at "
+        "FROM ai_news_reports WHERE user_id=? AND (? <= 0 OR ledger_id=?) "
+        "ORDER BY report_date DESC LIMIT ? OFFSET ?";
+    csilk_json_t* rows = csilk_db_query_param_json(
+        pool, sql, (const char*[]){uid_str, lid_str, lid_str, lim_str, off_str, NULL});
+
+    int returned = (rows && csilk_json_is_array(rows)) ? (int)csilk_json_array_size(rows) : 0;
     if (out_has_more) {
-        *out_has_more = has_more;
+        *out_has_more = ((int64_t)offset + (int64_t)returned < total) ? 1 : 0;
     }
-    if (more) {
-        csilk_json_free(more);
-    }
-    return rows;
+    return rows ? rows : csilk_json_array();
+}
+
+csilk_json_t*
+ai_news_list_ledger(csilk_db_pool_t* pool,
+                    int64_t          user_id,
+                    int64_t          ledger_id,
+                    int              limit,
+                    int              offset,
+                    int*             out_has_more)
+{
+    return ai_news_list_ledger_paged(pool, user_id, ledger_id, limit, offset, NULL, out_has_more);
 }
 
 csilk_json_t*

@@ -7,6 +7,51 @@
 /* --- SQL statements inlined from repositories/import_rule_repo.c --- */
 
 csilk_json_t*
+mf_import_rule_list_paged(
+    csilk_db_pool_t* pool, int64_t user_id, int64_t page, int64_t page_size, int64_t* out_total)
+{
+    if (page < 1) {
+        page = 1;
+    }
+    if (page_size < 1) {
+        page_size = 20;
+    }
+    if (page_size > 500) {
+        page_size = 500;
+    }
+    int64_t offset = (page - 1) * page_size;
+
+    char uid[32], lim_s[32], off_s[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lim_s, sizeof(lim_s), "%lld", (long long)page_size);
+    snprintf(off_s, sizeof(off_s), "%lld", (long long)offset);
+
+    if (out_total) {
+        csilk_json_t* c_rows = csilk_db_query_param_json(
+            pool,
+            "SELECT COUNT(*) AS cnt FROM import_rules r WHERE r.user_id = ?",
+            (const char*[]){uid, NULL});
+        *out_total = (c_rows && csilk_json_array_size(c_rows) > 0)
+                         ? db_get_int(csilk_json_array_get(c_rows, 0), "cnt")
+                         : 0;
+        if (c_rows) {
+            csilk_json_free(c_rows);
+        }
+    }
+
+    return csilk_db_query_param_json(
+        pool,
+        "SELECT r.id, r.user_id, r.keyword, r.match_field, r.match_type, "
+        "r.category_id, r.target_type, r.priority, r.is_active, r.created_at, "
+        "c.name as category_name "
+        "FROM import_rules r "
+        "LEFT JOIN categories c ON r.category_id = c.id "
+        "WHERE r.user_id = ? "
+        "ORDER BY r.priority ASC, r.id ASC LIMIT ? OFFSET ?",
+        (const char*[]){uid, lim_s, off_s, NULL});
+}
+
+csilk_json_t*
 mf_import_rule_list(csilk_db_pool_t* pool, int64_t user_id)
 {
     char uid[32];

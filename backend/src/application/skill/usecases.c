@@ -121,14 +121,31 @@ static const size_t S_DEFAULT_SKILLS_COUNT = sizeof(S_DEFAULT_SKILLS) / sizeof(S
 /* --- Use Cases Implementations --- */
 
 int
+skill_usecase_list_paged(void*          pool,
+                         int64_t        user_id,
+                         const char*    category,
+                         int            enabled_only,
+                         int64_t        page,
+                         int64_t        page_size,
+                         csilk_json_t** out_data,
+                         int64_t*       out_total)
+{
+    if (!pool || !out_data) {
+        if (out_total) {
+            *out_total = 0;
+        }
+        return -1;
+    }
+    *out_data = skill_repo_list_paged(
+        (csilk_db_pool_t*)pool, user_id, category, enabled_only, page, page_size, out_total);
+    return (*out_data != NULL) ? 0 : -1;
+}
+
+int
 skill_usecase_list(
     void* pool, int64_t user_id, const char* category, int enabled_only, csilk_json_t** out_data)
 {
-    if (!pool || !out_data) {
-        return -1;
-    }
-    *out_data = skill_repo_list((csilk_db_pool_t*)pool, user_id, category, enabled_only);
-    return (*out_data != NULL) ? 0 : -1;
+    return skill_usecase_list_paged(pool, user_id, category, enabled_only, 1, 500, out_data, NULL);
 }
 
 int

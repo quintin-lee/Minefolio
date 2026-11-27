@@ -72,8 +72,8 @@ echo "Bob created OK (ID: $USER_B_ID)"
 
 # 3. Check Alice's default ledger
 LEDGERS_A=$(curl -s -X GET "$BASE/ledgers" -H "Authorization: Bearer $TOKEN_A")
-DEF_LID_A=$(echo "$LEDGERS_A" | jq -r '.data[0].id | floor')
-DEF_NAME_A=$(echo "$LEDGERS_A" | jq -r '.data[0].name')
+DEF_LID_A=$(echo "$LEDGERS_A" | jq -r '.data.list[0].id | floor')
+DEF_NAME_A=$(echo "$LEDGERS_A" | jq -r '.data.list[0].name')
 test "$DEF_NAME_A" = "默认账本"
 echo "Alice has default ledger: $DEF_LID_A ($DEF_NAME_A)"
 
@@ -104,8 +104,11 @@ echo "Bob joined family ledger OK!"
 # 7. Bob checks his ledger list (should have 2: his default + Alice's family ledger)
 LEDGERS_B=$(curl -s -X GET "$BASE/ledgers" -H "Authorization: Bearer $TOKEN_B")
 echo "LEDGERS_B=$LEDGERS_B"
-B_COUNT=$(echo "$LEDGERS_B" | jq '.data | length')
+B_COUNT=$(echo "$LEDGERS_B" | jq '.data.list | length')
 test "$B_COUNT" -ge 2
+LEDGERS_B_P1=$(curl -s -X GET "$BASE/ledgers?page=1&page_size=1" -H "Authorization: Bearer $TOKEN_B")
+test "$(echo "$LEDGERS_B_P1" | jq '.data.list | length')" = "1"
+test "$(echo "$LEDGERS_B_P1" | jq '.data.total | floor')" -ge 2
 echo "Bob now has $B_COUNT ledgers"
 
 # 8. Alice lists members of the family ledger
@@ -248,18 +251,18 @@ BOB_ACCOUNTS=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM
 test "$(echo "$BOB_ACCOUNTS" | jq -r '.code | floor')" = "0"
 
 # Verify Account A is masked for Bob
-BOB_ACCT_A_MASK_BAL=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|tostring) == \"$ACCT_A_ID\") | .is_balance_masked")
+BOB_ACCT_A_MASK_BAL=$(echo "$BOB_ACCOUNTS" | jq -r ".data.list[] | select((.id|tostring) == \"$ACCT_A_ID\") | .is_balance_masked")
 test "$BOB_ACCT_A_MASK_BAL" = "true"
-BOB_ACCT_A_MASK_NO=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|tostring) == \"$ACCT_A_ID\") | .is_account_no_masked")
+BOB_ACCT_A_MASK_NO=$(echo "$BOB_ACCOUNTS" | jq -r ".data.list[] | select((.id|tostring) == \"$ACCT_A_ID\") | .is_account_no_masked")
 test "$BOB_ACCT_A_MASK_NO" = "true"
-BOB_ACCT_A_VAL=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|tostring) == \"$ACCT_A_ID\") | .total_value")
+BOB_ACCT_A_VAL=$(echo "$BOB_ACCOUNTS" | jq -r ".data.list[] | select((.id|tostring) == \"$ACCT_A_ID\") | .total_value")
 test "$BOB_ACCT_A_VAL" = "0" -o "$BOB_ACCT_A_VAL" = "0.0" -o "$BOB_ACCT_A_VAL" = "0.00"
-BOB_ACCT_A_NO=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|tostring) == \"$ACCT_A_ID\") | .account_no")
+BOB_ACCT_A_NO=$(echo "$BOB_ACCOUNTS" | jq -r ".data.list[] | select((.id|tostring) == \"$ACCT_A_ID\") | .account_no")
 test "$BOB_ACCT_A_NO" = "************5678"
 echo "✅ Account RBAC: Bob sees Account A with masked balance and masked account_no"
 
 # Verify Account B is completely hidden from Bob
-BOB_ACCT_B=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|tostring) == \"$ACCT_B_ID\") | .id")
+BOB_ACCT_B=$(echo "$BOB_ACCOUNTS" | jq -r ".data.list[] | select((.id|tostring) == \"$ACCT_B_ID\") | .id")
 test -z "$BOB_ACCT_B"
 echo "✅ Account RBAC: Account B ('none' permission) is completely hidden from Bob"
 
@@ -344,8 +347,8 @@ CR_CAT=$(curl -s -X POST "$BASE/categories" \
   -H "Content-Type: application/json" \
   -d '{"name":"餐饮美食","type":"expense","icon":"ph:fork-knife"}')
 test "$(echo "$CR_CAT" | jq -r '.code | floor')" = "0"
-ALICE_CATS=$(curl -s -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $FAM_LID" "$BASE/categories")
-CAT_FOOD_ID=$(echo "$ALICE_CATS" | jq -r ".data[] | select(.name == \"餐饮美食\") | .id | floor")
+ALICE_CATS=$(curl -s -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $FAM_LID" "$BASE/categories?page_size=100")
+CAT_FOOD_ID=$(echo "$ALICE_CATS" | jq -r ".data.list[] | select(.name == \"餐饮美食\") | .id | floor")
 test -n "$CAT_FOOD_ID" && test "$CAT_FOOD_ID" -gt 0
 
 # Alice creates shared asset "家庭联名招行卡" (Joint Bank Card, balance 1000) under Family ledger
@@ -360,9 +363,9 @@ ASSET_JOINT_ID=$(echo "$ALICE_ASSETS" | jq -r ".data.list[] | select(.name == \"
 test -n "$ASSET_JOINT_ID" && test "$ASSET_JOINT_ID" -gt 0
 
 # Bob lists categories: Bob sees Alice's shared "餐饮美食" category
-BOB_CATS=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM_LID" "$BASE/categories")
+BOB_CATS=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM_LID" "$BASE/categories?page_size=100")
 test "$(echo "$BOB_CATS" | jq -r '.code | floor')" = "0"
-BOB_FOOD=$(echo "$BOB_CATS" | jq -r ".data[] | select(.name == \"餐饮美食\") | .id | floor")
+BOB_FOOD=$(echo "$BOB_CATS" | jq -r ".data.list[] | select(.name == \"餐饮美食\") | .id | floor")
 test -n "$BOB_FOOD" && test "$BOB_FOOD" = "$CAT_FOOD_ID"
 echo "✅ Shared category: Bob sees Alice's shared '餐饮美食' category (id $BOB_FOOD)"
 

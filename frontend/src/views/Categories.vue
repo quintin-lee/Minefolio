@@ -76,7 +76,7 @@
               <h3>分类列表</h3>
             </div>
             <div class="panel-body-scroll">
-              <el-table :data="paginatedFlatCategories" row-key="id" class="premium-table" header-cell-class-name="premium-header"
+              <el-table :data="filteredFlatCategories" row-key="id" class="premium-table" header-cell-class-name="premium-header"
                 :row-class-name="rowClassName" @row-click="onRowClick">
                 <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip>
                   <template #default="{ row }">
@@ -122,15 +122,17 @@
                 </el-table-column>
               </el-table>
             </div>
-            <div v-if="filteredFlatCategories.length > 0" class="table-pagination">
+            <div v-if="totalRoots > 0" class="table-pagination">
               <el-pagination
                 v-model:current-page="currentPage"
                 v-model:page-size="pageSize"
-                :total="filteredFlatCategories.length"
+                :total="totalRoots"
                 :page-sizes="[20, 50, 100]"
                 layout="total, sizes, prev, pager, next"
                 background
                 small
+                @current-change="loadPageCategories"
+                @size-change="handlePageSizeChange"
               />
             </div>
           </div>
@@ -208,19 +210,10 @@ const debouncedKeyword = ref('')
 const treeRef = ref<any>(null)
 const currentPage = ref(1)
 const pageSize = ref(20)
+const pageRoots = ref<Category[]>([])
+const totalRoots = ref(0)
+let pageReqSeq = 0
 let searchTimer: ReturnType<typeof setTimeout> | null = null
-
-function filterTree(nodes: Category[], kw: string): Category[] {
-  const out: Category[] = []
-  for (const node of nodes) {
-    const nameHit = node.name.toLowerCase().includes(kw)
-    const children = node.children ? filterTree(node.children, kw) : []
-    if (nameHit || children.length > 0) {
-      out.push({ ...node, children: nameHit ? (node.children ?? []) : children })
-    }
-  }
-  return out
-}
 
 function filterTreeNode(value: string, data: Category): boolean {
   if (!value) return true
@@ -234,24 +227,35 @@ const fullTree = computed(() => {
   return hasNested ? list : categoryStore.buildTree(list)
 })
 
-const tabTreeData = computed(() =>
-  activeTab.value === 'all'
-    ? fullTree.value
-    : fullTree.value.filter(c => c.type === activeTab.value)
-)
+const tabTreeData = computed(() => pageRoots.value)
 
-const tabFlatCategories = computed(() => flatten(tabTreeData.value))
+const filteredFlatCategories = computed(() => flatten(pageRoots.value))
 
-const filteredFlatCategories = computed(() => {
-  const kw = debouncedKeyword.value.trim().toLowerCase()
-  if (!kw) return tabFlatCategories.value
-  return flatten(filterTree(tabTreeData.value, kw))
-})
+async function loadPageCategories() {
+  const reqId = ++pageReqSeq
+  try {
+    const res: any = await categoriesApi.list({
+      type: activeTab.value === 'all' ? undefined : activeTab.value,
+      keyword: debouncedKeyword.value.trim() || undefined,
+      page: currentPage.value,
+      page_size: pageSize.value,
+    })
+    if (reqId !== pageReqSeq) return
+    const list: Category[] = Array.isArray(res) ? res : (Array.isArray(res?.list) ? res.list : [])
+    const total = Array.isArray(res) ? res.length : (typeof res?.total === 'number' ? res.total : list.length)
+    pageRoots.value = list
+    totalRoots.value = total
+  } catch (err) {
+    if (reqId === pageReqSeq) {
+      console.error('[Categories] loadPageCategories failed:', err)
+    }
+  }
+}
 
-const paginatedFlatCategories = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filteredFlatCategories.value.slice(start, start + pageSize.value)
-})
+function handlePageSizeChange() {
+  currentPage.value = 1
+  loadPageCategories()
+}
 
 watch(keyword, (val) => {
   if (searchTimer) clearTimeout(searchTimer)
@@ -263,6 +267,7 @@ watch(keyword, (val) => {
 
 watch([activeTab, debouncedKeyword], () => {
   currentPage.value = 1
+  loadPageCategories()
 })
 
 watch([activeTab, tabTreeData], () => {
@@ -275,7 +280,7 @@ watch([activeTab, tabTreeData], () => {
 })
 
 watch(
-  () => filteredFlatCategories.value.length,
+  () => totalRoots.value,
   (total) => {
     const maxPage = Math.max(1, Math.ceil(total / pageSize.value))
     if (currentPage.value > maxPage) {
@@ -501,7 +506,7 @@ function onFormTypeChange() {
 
 async function loadData(force = false) {
   try {
-    await categoryStore.loadCategories(undefined, force)
+    await Promise.all([loadPageCategories(), categoryStore.loadCategories(undefined, force)])
   } catch (err) {
     console.error('[Categories] loadData failed:', err)
     ElMessage.error('加载分类失败')

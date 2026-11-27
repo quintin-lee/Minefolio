@@ -17,27 +17,49 @@
 #include <time.h>
 
 int
-cashflow_usecase_list_schedules(void*                      pool,
-                                int64_t                    user_id,
-                                int64_t                    ledger_id,
-                                csilk_json_t**             out_list,
-                                cashflow_usecase_result_t* out_res)
+cashflow_usecase_list_schedules_paged(void*                      pool,
+                                      int64_t                    user_id,
+                                      int64_t                    ledger_id,
+                                      int64_t                    page,
+                                      int64_t                    page_size,
+                                      csilk_json_t**             out_list,
+                                      int64_t*                   out_total,
+                                      cashflow_usecase_result_t* out_res)
 {
     if (!out_res) {
         return -1;
     }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || !out_list) {
+        if (out_total) {
+            *out_total = 0;
+        }
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "参数错误");
         return -1;
     }
 
-    csilk_json_t* list = cashflow_repo_list_detailed(pool, user_id, ledger_id);
+    int64_t       total = 0;
+    csilk_json_t* list =
+        cashflow_repo_list_detailed_paged(pool, user_id, ledger_id, page, page_size, &total);
     *out_list = list ? list : csilk_json_array();
+    if (out_total) {
+        *out_total = total;
+    }
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
     return 0;
+}
+
+int
+cashflow_usecase_list_schedules(void*                      pool,
+                                int64_t                    user_id,
+                                int64_t                    ledger_id,
+                                csilk_json_t**             out_list,
+                                cashflow_usecase_result_t* out_res)
+{
+    return cashflow_usecase_list_schedules_paged(
+        pool, user_id, ledger_id, 1, 500, out_list, NULL, out_res);
 }
 
 int
