@@ -22,8 +22,13 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          for f in /etc/apt/sources.list.d/*; do
+            if [ -f "$f" ] && grep -q "packages.microsoft.com" "$f"; then
+              sudo rm -f "$f"
+            fi
+          done
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y -o Acquire::Retries=3 --no-install-recommends \
             build-essential gcc-14 g++-14 cmake pkg-config \
             libuv1-dev libyaml-dev libsqlite3-dev libssl-dev \
             libcurl4-openssl-dev zlib1g-dev sqlite3 curl python3 nodejs jq
@@ -114,8 +119,13 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          for f in /etc/apt/sources.list.d/*; do
+            if [ -f "$f" ] && grep -q "packages.microsoft.com" "$f"; then
+              sudo rm -f "$f"
+            fi
+          done
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y -o Acquire::Retries=3 --no-install-recommends \
             build-essential gcc-14 g++-14 cmake pkg-config \
             libuv1-dev libyaml-dev libsqlite3-dev libssl-dev \
             libcurl4-openssl-dev zlib1g-dev sqlite3 curl python3 \
@@ -174,8 +184,13 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          for f in /etc/apt/sources.list.d/*; do
+            if [ -f "$f" ] && grep -q "packages.microsoft.com" "$f"; then
+              sudo rm -f "$f"
+            fi
+          done
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y -o Acquire::Retries=3 --no-install-recommends \
             build-essential gcc-14 g++-14 cmake pkg-config \
             libuv1-dev libyaml-dev libsqlite3-dev libssl-dev \
             libcurl4-openssl-dev zlib1g-dev sqlite3 curl python3 nodejs jq
@@ -204,8 +219,13 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          for f in /etc/apt/sources.list.d/*; do
+            if [ -f "$f" ] && grep -q "packages.microsoft.com" "$f"; then
+              sudo rm -f "$f"
+            fi
+          done
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y -o Acquire::Retries=3 --no-install-recommends \
             build-essential gcc-14 g++-14 cmake pkg-config gcovr \
             libuv1-dev libyaml-dev libsqlite3-dev libssl-dev \
             libcurl4-openssl-dev zlib1g-dev sqlite3 curl python3 nodejs jq
@@ -292,7 +312,13 @@ jobs:
           path: frontend/coverage/
 
       - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+        run: |
+          for f in /etc/apt/sources.list.d/*; do
+            if [ -f "$f" ] && grep -q "packages.microsoft.com" "$f"; then
+              sudo rm -f "$f"
+            fi
+          done
+          npx playwright install --with-deps chromium
 
       - name: Run E2E tests
         run: npm run test:e2e
