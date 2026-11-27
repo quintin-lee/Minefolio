@@ -36,6 +36,58 @@ rate_limit_trust_proxy(void)
 }
 
 static void
+sanitize_ip_token(const char* raw, char* out, size_t out_cap)
+{
+    if (!out || out_cap == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (!raw || !raw[0]) {
+        return;
+    }
+    size_t n = 0;
+    for (const char* p = raw; *p && n + 1 < out_cap; p++) {
+        unsigned char ch = (unsigned char)*p;
+        if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') ||
+            (ch >= 'A' && ch <= 'F') || ch == '.' || ch == ':') {
+            out[n++] = (char)ch;
+        }
+    }
+    out[n] = '\0';
+}
+
+static bool
+extract_rightmost_xff_ip(const char* xff, char* out, size_t out_cap)
+{
+    if (!xff || !xff[0] || !out || out_cap == 0) {
+        return false;
+    }
+    const char* end = xff + strlen(xff);
+    while (end > xff && (*(end - 1) == ' ' || *(end - 1) == '\t' || *(end - 1) == ',')) {
+        end--;
+    }
+    if (end == xff) {
+        return false;
+    }
+    const char* start = end;
+    while (start > xff && *(start - 1) != ',') {
+        start--;
+    }
+    while (start < end && (*start == ' ' || *start == '\t')) {
+        start++;
+    }
+    size_t raw_len = (size_t)(end - start);
+    if (raw_len == 0 || raw_len >= 128) {
+        return false;
+    }
+    char token[128];
+    memcpy(token, start, raw_len);
+    token[raw_len] = '\0';
+    sanitize_ip_token(token, out, out_cap);
+    return out[0] != '\0';
+}
+
+static void
 rate_limit_effective_ip(csilk_ctx_t* c, char* out, size_t out_cap)
 {
     if (!out || out_cap == 0) {
@@ -46,9 +98,24 @@ rate_limit_effective_ip(csilk_ctx_t* c, char* out, size_t out_cap)
         return;
     }
     /* 未开启 TRUST_PROXY 时，临时屏蔽 X-Forwarded-For / X-Real-IP 请求头，
-     * 使原版 csilk v1.2.0 的 csilk_get_client_ip(c) 退回到底层 TCP socket 对端真实 IP，
-     * 既阻止伪造请求头绕过限流，又保持与上游 csilk v1.2.0 的严格源码兼容。 */
+     * 使原版 csilk v1.2.0 的 csilk_get_client_ip(c) 退回到底层 TCP socket 对端真实 IP；
+     * 开启 TRUST_PROXY 时，优先信任可信反代设置的 X-Real-IP 或最右一跳 X-Forwarded-For，
+     * 防止客户端伪造最左侧 X-Forwarded-For 绕过限流。 */
     bool trust_proxy = rate_limit_trust_proxy();
+    if (trust_proxy) {
+        const char* xreal = csilk_get_header(c, "X-Real-IP");
+        if (xreal && xreal[0] != '\0') {
+            sanitize_ip_token(xreal, out, out_cap);
+            if (out[0] != '\0') {
+                return;
+            }
+        }
+        const char* xff = csilk_get_header(c, "X-Forwarded-For");
+        if (extract_rightmost_xff_ip(xff, out, out_cap)) {
+            return;
+        }
+    }
+
     bool has_xff = false;
     bool has_xreal = false;
     char xff_save[512] = {0};
@@ -70,22 +137,9 @@ rate_limit_effective_ip(csilk_ctx_t* c, char* out, size_t out_cap)
     }
 
     const char* ip = csilk_get_client_ip(c);
-    if (!ip || !ip[0]) {
+    sanitize_ip_token(ip, out, out_cap);
+    if (out[0] == '\0') {
         snprintf(out, out_cap, "unknown");
-    } else {
-        /* 清洗非 IP 字符，防止超长或特殊控制字符污染桶键 */
-        size_t n = 0;
-        for (const char* p = ip; *p && n + 1 < out_cap; p++) {
-            unsigned char ch = (unsigned char)*p;
-            if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') ||
-                (ch >= 'A' && ch <= 'F') || ch == '.' || ch == ':') {
-                out[n++] = (char)ch;
-            }
-        }
-        out[n] = '\0';
-        if (n == 0) {
-            snprintf(out, out_cap, "unknown");
-        }
     }
 
     if (has_xff) {

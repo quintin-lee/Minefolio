@@ -116,13 +116,12 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * 用户登录 (支持可选 2FA 流程)
+   * 用户登录 (2FA 用户返回 require_2fa + temp_token 后交由 verify2FaLogin 完成验证)
    * @param username 用户名
    * @param password 明文密码（内部完成 RSA 加密；加密或网络失败时抛出的错误带 crypto_failed 标识）
-   * @param totpCode 6 位 TOTP 动态验证码 (可选)
    * @returns 登录结果 (包含 require_2fa 或 token)
    */
-  async function login(username: string, password: string, totpCode?: string) {
+  async function login(username: string, password: string) {
     let password_enc: string
     try {
       password_enc = await encryptPassword(password)
@@ -132,7 +131,7 @@ export const useAuthStore = defineStore('auth', () => {
       }
       throw e
     }
-    const raw = (await authApi.login(username, password_enc, totpCode)) as unknown
+    const raw = (await authApi.login(username, password_enc)) as unknown
     const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: any }).data : raw) as any
     if (res?.require_2fa) {
       token.value = ''
@@ -220,8 +219,11 @@ export const useAuthStore = defineStore('auth', () => {
    * Token/用户态的清理是同步的；聊天等按账号缓存的内存状态随后通过动态 import 清理，
    * 避免把 AI 聊天模块静态打入首屏包，同时防止上一账号的会话/消息/草稿泄露给下一位用户。
    */
-  async function logout() {
+  async function logout(options?: { skipServer?: boolean }) {
     const logoutEpoch = ++authSessionEpoch
+    const prevToken =
+      token.value ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('token') || '' : '')
     token.value = ''
     user.value = null
     if (typeof localStorage !== 'undefined') {
@@ -246,6 +248,13 @@ export const useAuthStore = defineStore('auth', () => {
     }
     clearCryptoKeyCache()
     clearChatMarkdownCaches()
+    if (!options?.skipServer && prevToken) {
+      try {
+        await authApi.logout?.(prevToken)
+      } catch {
+        // 服务端吊销失败不阻塞本地状态清理
+      }
+    }
     try {
       // 动态 import 各 store：避免把聊天/账本/分类/同步模块静态打入首屏包
       const [{ useChatStore }, { useLedgerStore }, { useCategoryStore }, { useMarketStore }, { resetFinancialEntities }, syncMod] = await Promise.all([

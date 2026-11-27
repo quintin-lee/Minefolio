@@ -92,7 +92,7 @@ export async function offlineRequest(method: 'get' | 'post' | 'put' | 'delete', 
       return res
     } catch (err: any) {
       if (isAuthError(err)) {
-        await useAuthStore().logout?.()
+        await useAuthStore().logout?.({ skipServer: true })
         throw err
       }
       // 仅对网络故障下的写操作做离线落库；读操作与服务端响应错误(4xx/5xx/业务码)直接抛出

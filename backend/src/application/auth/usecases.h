@@ -31,6 +31,8 @@ int auth_usecase_me(void*                  pool,
                     csilk_json_t**         out_data,
                     auth_usecase_result_t* out_res);
 
+int auth_usecase_logout(void* pool, int64_t user_id, auth_usecase_result_t* out_res);
+
 int auth_usecase_change_password(void*                        pool,
                                  const change_password_cmd_t* cmd,
                                  csilk_ctx_t*                 c,

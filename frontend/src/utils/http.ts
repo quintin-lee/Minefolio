@@ -113,7 +113,7 @@ export function setAuthErrorHandler(handler: AuthErrorHandler | null): void {
 export function handleAuthError() {
   if (isHandlingAuthError) return
   isHandlingAuthError = true
-  useAuthStore().logout()
+  useAuthStore().logout({ skipServer: true })
 
   if (customAuthErrorHandler) {
     try {

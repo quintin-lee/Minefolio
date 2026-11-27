@@ -982,9 +982,53 @@ auth_usecase_2fa_disable(void*                    pool,
         return -1;
     }
 
-    mf_auth_repo_disable_totp(pool, cmd->user_id);
-    mf_auth_repo_update_token_version(pool, cmd->user_id);
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin((csilk_db_pool_t*)pool, "mf_2fa_disable", &scope) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "数据库事务开启失败");
+        return -1;
+    }
+    if (mf_auth_repo_disable_totp(pool, cmd->user_id) != 0 ||
+        mf_auth_repo_update_token_version(pool, cmd->user_id) != 0 ||
+        db_tx_scope_commit((csilk_db_pool_t*)pool, &scope) != 0) {
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "解绑 2FA 失败");
+        return -1;
+    }
+    invalidate_user_jwt(cmd->user_id);
     totp_replay_clear_user(cmd->user_id);
+    out_res->code = 0;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
+    return 0;
+}
+
+int
+auth_usecase_logout(void* pool, int64_t user_id, auth_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!pool || user_id <= 0) {
+        out_res->code = 1001;
+        snprintf(out_res->message, sizeof(out_res->message), "未授权");
+        return -1;
+    }
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin((csilk_db_pool_t*)pool, "mf_auth_logout", &scope) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "注销会话失败");
+        return -1;
+    }
+    if (mf_auth_repo_update_token_version(pool, user_id) != 0 ||
+        db_tx_scope_commit((csilk_db_pool_t*)pool, &scope) != 0) {
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "注销会话失败");
+        return -1;
+    }
+    invalidate_user_jwt(user_id);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
     return 0;
@@ -1013,7 +1057,13 @@ auth_usecase_2fa_verify_login(void*                         pool,
         return -1;
     }
 
-    csilk_json_t* payload = csilk_jwt_verify(NULL, cmd->temp_token, secret_jwt);
+    csilk_jwt_options_t jwt_opts = {
+        .algorithm = CSILK_JWT_HS256,
+        .flags = CSILK_JWT_REQUIRE_EXP,
+        .leeway_sec = 0,
+    };
+    csilk_json_t* payload =
+        csilk_jwt_verify_options(NULL, cmd->temp_token, secret_jwt, strlen(secret_jwt), &jwt_opts);
     if (!payload) {
         out_res->code = 1001;
         snprintf(out_res->message, sizeof(out_res->message), "未授权");
@@ -1112,8 +1162,18 @@ auth_usecase_2fa_verify_login(void*                         pool,
         for (int i = 0; i < try_count; i++) {
             if (csilk_totp_verify_and_consume_backup_code(
                     user.totp_backup_codes, try_codes[i], updated_codes, sizeof(updated_codes))) {
-                mf_auth_repo_update_backup_codes(pool, user_id, updated_codes);
-                ok = true;
+                db_tx_scope_t cas_scope;
+                if (db_tx_scope_begin((csilk_db_pool_t*)pool, "mf_2fa_backup_cas", &cas_scope) ==
+                    0) {
+                    int cas_rc = mf_auth_repo_cas_backup_codes(
+                        pool, user_id, user.totp_backup_codes, updated_codes);
+                    if (cas_rc == 0 &&
+                        db_tx_scope_commit((csilk_db_pool_t*)pool, &cas_scope) == 0) {
+                        ok = true;
+                    } else {
+                        db_tx_scope_rollback((csilk_db_pool_t*)pool, &cas_scope);
+                    }
+                }
                 break;
             }
         }
@@ -1804,7 +1864,7 @@ auth_oidc_verify_id_token(const char* id_token,
         }
         if (aud_cnt > 1) {
             const char* azp = csilk_json_get_string(pay, "azp");
-            if (azp && azp[0] && strcmp(azp, expected_client_id) != 0) {
+            if (!azp || !azp[0] || strcmp(azp, expected_client_id) != 0) {
                 csilk_json_free(hdr);
                 csilk_json_free(pay);
                 return -1;
@@ -2007,15 +2067,20 @@ oauth_exchange_oidc(
     char id_sub[128] = {0};
     char id_user[128] = {0};
 
-    if (id_token && id_token[0]) {
+    if (!jwks_url[0] && !userinfo_url[0]) {
+        /* Reject unauthenticated OIDC identity claims when neither JWKS nor UserInfo is configured */
+        csilk_json_free(tok_resp);
+        OPENSSL_cleanse(client_id, sizeof(client_id));
+        return -1;
+    }
+
+    if (id_token && id_token[0] && jwks_url[0]) {
         char* jwks_body = NULL;
-        if (jwks_url[0]) {
-            if (oidc_http_request(jwks_url, NULL, NULL, allow_local, &jwks_body) != 0 ||
-                !jwks_body) {
-                csilk_json_free(tok_resp);
-                OPENSSL_cleanse(client_id, sizeof(client_id));
-                return -1;
-            }
+        if (oidc_http_request(jwks_url, NULL, NULL, allow_local, &jwks_body) != 0 ||
+            !jwks_body) {
+            csilk_json_free(tok_resp);
+            OPENSSL_cleanse(client_id, sizeof(client_id));
+            return -1;
         }
         int vrc = auth_oidc_verify_id_token(id_token,
                                             client_id,

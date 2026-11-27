@@ -31,6 +31,11 @@ int mf_auth_repo_disable_totp(void* pool, int64_t user_id);
 
 int mf_auth_repo_update_backup_codes(void* pool, int64_t user_id, const char* backup_codes_json);
 
+int mf_auth_repo_cas_backup_codes(void*       pool,
+                                  int64_t     user_id,
+                                  const char* expected_backup_codes_json,
+                                  const char* next_backup_codes_json);
+
 int mf_auth_repo_count(void* pool);
 
 int mf_auth_repo_is_initialized(void* pool);

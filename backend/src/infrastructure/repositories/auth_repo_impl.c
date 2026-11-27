@@ -161,15 +161,15 @@ mf_auth_repo_update_token_version(void* pool, int64_t user_id)
     }
     char uid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-    csilk_json_t* res =
-        csilk_db_query_param_json((csilk_db_pool_t*)pool,
-                                  "UPDATE users SET token_version = token_version + 1 WHERE id = ?",
-                                  (const char*[]){uid, NULL});
-    int ok = res ? csilk_json_array_size(res) > 0 : 0;
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "UPDATE users SET token_version = token_version + 1 WHERE id = ? RETURNING id",
+        (const char*[]){uid, NULL});
+    int rc = (res && csilk_json_array_size(res) > 0) ? 0 : -1;
     if (res) {
         csilk_json_free(res);
     }
-    return ok;
+    return rc;
 }
 
 int
@@ -218,30 +218,56 @@ mf_auth_repo_disable_totp(void* pool, int64_t user_id)
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
         "UPDATE users SET totp_secret = '', totp_enabled = FALSE, totp_backup_codes = '' "
-        "WHERE id = ?",
+        "WHERE id = ? RETURNING id",
         (const char*[]){uid, NULL});
+    int rc = (res && csilk_json_array_size(res) > 0) ? 0 : -1;
     if (res) {
         csilk_json_free(res);
     }
-    return 0;
+    return rc;
 }
 
 int
 mf_auth_repo_update_backup_codes(void* pool, int64_t user_id, const char* backup_codes_json)
 {
-    if (!pool || user_id <= 0) {
+    if (!pool || user_id <= 0 || !backup_codes_json) {
         return -1;
     }
     char uid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-    csilk_json_t* res =
-        csilk_db_query_param_json((csilk_db_pool_t*)pool,
-                                  "UPDATE users SET totp_backup_codes = ? WHERE id = ?",
-                                  (const char*[]){backup_codes_json, uid, NULL});
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "UPDATE users SET totp_backup_codes = ? WHERE id = ? RETURNING id",
+        (const char*[]){backup_codes_json, uid, NULL});
+    int rc = (res && csilk_json_array_size(res) > 0) ? 0 : -1;
     if (res) {
         csilk_json_free(res);
     }
-    return 0;
+    return rc;
+}
+
+int
+mf_auth_repo_cas_backup_codes(void*       pool,
+                              int64_t     user_id,
+                              const char* expected_backup_codes_json,
+                              const char* next_backup_codes_json)
+{
+    if (!pool || user_id <= 0 || !expected_backup_codes_json || !next_backup_codes_json) {
+        return -1;
+    }
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "UPDATE users SET totp_backup_codes = ? WHERE id = ? AND totp_backup_codes = ? "
+        "RETURNING id",
+        (const char*[]){next_backup_codes_json, uid, expected_backup_codes_json, NULL});
+    if (!res) {
+        return -1;
+    }
+    int rc = (csilk_json_array_size(res) > 0) ? 0 : 1;
+    csilk_json_free(res);
+    return rc;
 }
 
 int

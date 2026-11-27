@@ -1232,9 +1232,43 @@ test_rate_limit_uses_peer_ip_when_proxy_untrusted(void)
     csrf_send_http(srv.port, req11, resp, sizeof(resp));
     assert(strstr(resp, "HTTP/1.1 429") != NULL);
 
+    /* When TRUST_PROXY=1, rightmost XFF hop is authoritative; spoofed leftmost IPs share the proxy-appended bucket */
+    config_secret_set_test_override("TRUST_PROXY", "1");
+    for (int i = 0; i < 10; i++) {
+        char req[512];
+        snprintf(req,
+                 sizeof(req),
+                 "POST /api/auth/login HTTP/1.1\r\nHost: localhost\r\n"
+                 "X-Forwarded-For: 203.0.114.%d, 198.51.100.77\r\nContent-Length: 2\r\n"
+                 "Connection: close\r\n\r\n{}",
+                 i + 1);
+        csrf_send_http(srv.port, req, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+    }
+    const char* req_proxy11 =
+        "POST /api/auth/login HTTP/1.1\r\nHost: localhost\r\n"
+        "X-Forwarded-For: 203.0.114.200, 198.51.100.77\r\nContent-Length: 2\r\n"
+        "Connection: close\r\n\r\n{}";
+    csrf_send_http(srv.port, req_proxy11, resp, sizeof(resp));
+    assert(strstr(resp, "HTTP/1.1 429") != NULL);
+
+    config_secret_set_test_override("TRUST_PROXY", "0");
     csilk_server_stop(srv.srv);
     pthread_join(srv.thread, NULL);
     csilk_app_free(srv.app);
+}
+
+static void
+test_server_logout_revokes_token_version(csilk_db_pool_t* pool)
+{
+    printf("  [9] Testing auth_usecase_logout increments token_version...\n");
+    mf_user_t before = {0};
+    assert(mf_auth_repo_find_by_username(pool, "totp_replay_audit_u1", &before) == 0);
+    auth_usecase_result_t lres = {0};
+    assert(auth_usecase_logout(pool, before.id, &lres) == 0 && lres.code == 0);
+    mf_user_t after = {0};
+    assert(mf_auth_repo_get_by_id(pool, before.id, &after) == 0);
+    assert(after.token_version == before.token_version + 1);
 }
 
 static void
@@ -1355,6 +1389,7 @@ main(void)
     test_csrf_middleware_oauth_and_no_duplicate_cookie();
     test_rate_limit_uses_peer_ip_when_proxy_untrusted();
     test_totp_replay_and_window_hardening(pool);
+    test_server_logout_revokes_token_version(pool);
 
     cleanup_db_files();
     printf("=== All Security & Audit Regression Tests Passed ===\n");

@@ -280,6 +280,50 @@ int main(void) {
     assert(bind_rc != 0 && bind_code == 1004 && bind_data == NULL);
     printf("PASS: test_im_bot_bind_auth_rejects_disabled_user\n");
 
+    /* 7. temp_token without exp MUST be rejected by auth_usecase_2fa_verify_login (CSILK_JWT_REQUIRE_EXP) */
+    assert(mf_auth_repo_set_disabled(pool, test_uid, false) == 0);
+    assert(mf_auth_repo_enable_totp(pool, test_uid, "[\"CAS00001\"]") == 0);
+    memset(&test_user, 0, sizeof(test_user));
+    assert(mf_auth_repo_get_by_id(pool, test_uid, &test_user) == 0);
+
+    csilk_json_t* no_exp_claims = csilk_json_object();
+    csilk_json_add_number(no_exp_claims, "sub", (double)test_uid);
+    csilk_json_add_number(no_exp_claims, "v", (double)test_user.token_version);
+    csilk_json_add_string(no_exp_claims, "type", "2fa_pending");
+    char* no_exp_tok = csilk_jwt_generate(NULL, no_exp_claims, secret);
+    csilk_json_free(no_exp_claims);
+    assert(no_exp_tok != NULL);
+    verify_2fa_login_cmd_t no_exp_cmd = {.temp_token = no_exp_tok, .code = "123456"};
+    csilk_json_t*          no_exp_data = NULL;
+    memset(&dis_res, 0, sizeof(dis_res));
+    assert(auth_usecase_2fa_verify_login(pool, &no_exp_cmd, &no_exp_data, &dis_res) != 0);
+    assert(dis_res.code == 1001);
+    free(no_exp_tok);
+    csilk_json_free(no_exp_data);
+    printf("PASS: test_2fa_verify_login_requires_exp\n");
+
+    /* 8. CAS backup codes rejects duplicate concurrent swap cleanly */
+    mf_user_t u_cas = {0};
+    assert(mf_auth_repo_get_by_id(pool, test_uid, &u_cas) == 0);
+    assert(u_cas.totp_backup_codes[0] != '\0');
+    assert(mf_auth_repo_cas_backup_codes(pool, test_uid, u_cas.totp_backup_codes, "[\"USED1\"]") ==
+           0);
+    assert(mf_auth_repo_cas_backup_codes(pool, test_uid, u_cas.totp_backup_codes, "[\"USED2\"]") ==
+           1);
+    printf("PASS: test_2fa_backup_code_cas\n");
+
+    /* 9. Disabling 2FA bumps token_version atomically */
+    mf_user_t before_dis = {0};
+    assert(mf_auth_repo_get_by_id(pool, test_uid, &before_dis) == 0);
+    disable_2fa_cmd_t dis_cmd = {.user_id = test_uid, .password = "Password123!"};
+    memset(&dis_res, 0, sizeof(dis_res));
+    assert(auth_usecase_2fa_disable(pool, &dis_cmd, NULL, &dis_res) == 0 && dis_res.code == 0);
+    mf_user_t after_dis = {0};
+    assert(mf_auth_repo_get_by_id(pool, test_uid, &after_dis) == 0);
+    assert(after_dis.totp_enabled == 0);
+    assert(after_dis.token_version == before_dis.token_version + 1);
+    printf("PASS: test_2fa_disable_increments_token_version\n");
+
     free(temp_token);
     unlink("/tmp/test_auth_2fa_lifecycle.db");
     printf("=== All test_auth_2fa_lifecycle tests passed ===\n");

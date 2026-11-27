@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 vi.mock('@/api/auth', () => ({
   authApi: {
     login: vi.fn(),
+    logout: vi.fn().mockResolvedValue(undefined),
     register: vi.fn(),
     me: vi.fn(),
     verify2FaLogin: vi.fn(),
@@ -189,6 +190,7 @@ describe('auth store', () => {
     category.loaded = true
 
     await store.logout()
+    expect(authApi.logout).toHaveBeenCalledWith('existing-token')
     expect(store.token).toBe('')
     expect(store.user).toBeNull()
     expect(localStorage.getItem('token')).toBeNull()
@@ -202,6 +204,14 @@ describe('auth store', () => {
     expect(category.allNodes.length).toBe(0)
     expect(category.loaded).toBe(false)
   }, 60000)
+
+  it('skips server logout request when skipServer is true', async () => {
+    const store = useAuthStore()
+    store.token = 'expired-token'
+    await store.logout({ skipServer: true })
+    expect(authApi.logout).not.toHaveBeenCalled()
+    expect(store.token).toBe('')
+  })
 
   it('does not wipe a newly logged-in session when an earlier async logout finishes late', async () => {
     const store = useAuthStore()

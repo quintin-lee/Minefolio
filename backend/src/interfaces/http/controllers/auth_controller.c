@@ -93,6 +93,25 @@ api_auth_me(csilk_ctx_t* c)
 }
 
 void
+api_auth_logout(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return;
+    }
+
+    auth_usecase_result_t res = {0};
+    int                   rc = auth_usecase_logout(db_get_pool(), user_id, &res);
+
+    if (rc == 0 && res.code == 0) {
+        jwt_middleware_invalidate_user(user_id);
+        respond_ok_null(c);
+    } else {
+        respond_error(c, res.code ? res.code : 500, res.message);
+    }
+}
+
+void
 api_auth_change_password(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
@@ -330,6 +349,13 @@ register_auth_routes(csilk_app_t* app)
                       "user_resp_t",
                       "Get current user profile",
                       "Returns the authenticated user's profile");
+    csilk_app_post_ext(app,
+                       "/api/auth/logout",
+                       api_auth_logout,
+                       NULL,
+                       NULL,
+                       "Logout",
+                       "Revoke current user tokens on server side by incrementing token_version");
     csilk_app_put_ext(app,
                       "/api/auth/password",
                       api_auth_change_password,

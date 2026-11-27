@@ -130,6 +130,17 @@ test_oidc_id_token_and_provider_gating(void)
                jwt, "mf-app", "https://idp.example", jwks, 2000000000, sub, sizeof(sub), uname, sizeof(uname)) !=
            0);
 
+    /* Multi-aud ID token WITHOUT azp MUST be rejected */
+    make_signed_jwt(pkey,
+                    hdr_rs,
+                    "{\"iss\":\"https://idp.example\",\"sub\":\"oidc-u-1\",\"aud\":[\"mf-app\","
+                    "\"other\"],\"exp\":2000000100}",
+                    jwt,
+                    sizeof(jwt));
+    assert(auth_oidc_verify_id_token(
+               jwt, "mf-app", "https://idp.example", jwks, 2000000000, sub, sizeof(sub), uname, sizeof(uname)) !=
+           0);
+
     EVP_PKEY_free(pkey);
 
     /* OIDC provider listing requires CLIENT_ID + AUTH_URL + TOKEN_URL */

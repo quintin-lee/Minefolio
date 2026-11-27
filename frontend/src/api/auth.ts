@@ -73,15 +73,24 @@ export const authApi = {
    * @route POST /api/auth/login
    * @param username 用户名
    * @param password_enc 经 RSA-OAEP 加密后的密码字符串
-   * @param totp_code 6位动态验证码 (若开启了 2FA 可在此一次性提供)
    * @returns 登录结果响应 (包含 JWT 或 2FA 临时 Token)
    */
-  login: (username: string, password_enc: string, totp_code?: string) =>
+  login: (username: string, password_enc: string) =>
     http.post<LoginResponse>('/auth/login', {
       username,
       password_enc,
-      totp_code,
     }),
+
+  /**
+   * 退出登录（吊销当前用户服务端会话）
+   * @route POST /api/auth/logout
+   */
+  logout: (token?: string) =>
+    http.post<void>(
+      '/auth/logout',
+      undefined,
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+    ),
 
   /**
    * 注册新用户
