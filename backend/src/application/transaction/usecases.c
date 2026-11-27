@@ -205,8 +205,8 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
     quantity_t qty_q;
     money_from_double(cmd->amount, cur, &amt_m);
     money_from_double(fee, cur, &fee_m);
-    price_from_double(cmd->price, 4, cur, &price_p);
-    quantity_from_double(cmd->quantity, 4, &qty_q);
+    price_from_double(cmd->price, 8, cur, &price_p);
+    quantity_from_double(cmd->quantity, 8, &qty_q);
 
     /* 构造领域实体并执行领域规则校验 */
     mf_transaction_t domain_tx = {0};
@@ -512,8 +512,8 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
     quantity_t qty_q;
     money_from_double(amount, cur, &amt_m);
     money_from_double(fee, cur, &fee_m);
-    price_from_double(price, 4, cur, &price_p);
-    quantity_from_double(qty, 4, &qty_q);
+    price_from_double(price, 8, cur, &price_p);
+    quantity_from_double(qty, 8, &qty_q);
 
     ledger_tx_t ltx = {
         .id = cmd->tx_id,

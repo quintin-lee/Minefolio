@@ -9,6 +9,8 @@
 #include "core/financial/money.h"
 #include "domain/market/rules.h"
 #include "application/portfolio/usecases.h"
+#include "application/transaction/usecases.h"
+#include "core/ledger/ledger_engine.h"
 #include "common/db.h"
 #include "csilk/csilk.h"
 
@@ -44,6 +46,7 @@ init_precision_test_db(const char* db_path)
 }
 
 int main(void) {
+    ledger_register_balance_hooks();
     printf("Running test_financial_precision_edge...\n");
 
     /* 1. Test precision multiplication: 1000.0000 shares @ 19.99 CNY */
@@ -132,6 +135,71 @@ int main(void) {
     assert(fabs(net_worth - 0.10) < 0.001);
 
     csilk_json_free(resp);
+
+    /* 6. Verify 8-decimal crypto precision across db_get_decimal, tx_usecase_create, and rebuild */
+    csilk_json_t* num_obj = csilk_json_object();
+    csilk_json_add_number(num_obj, "btc_qty", 0.00001234);
+    csilk_json_add_number(num_obj, "btc_price", 68000.12345678);
+    csilk_json_add_number(num_obj, "whole_amt", 100.0);
+
+    quantity_t q_small = db_get_quantity(num_obj, "btc_qty");
+    char       q_small_str[64] = {0};
+    quantity_to_string_fixed(q_small, 8, q_small_str, sizeof(q_small_str));
+    assert(strcmp(q_small_str, "0.00001234") == 0);
+
+    price_t p_btc = db_get_price(num_obj, "btc_price", CURRENCY_USD);
+    char    p_btc_str[64] = {0};
+    price_to_string_fixed(p_btc, 8, p_btc_str, sizeof(p_btc_str));
+    assert(strcmp(p_btc_str, "68000.12345678") == 0);
+
+    decimal_t d_whole = db_get_decimal(num_obj, "whole_amt");
+    assert(d_whole.scale == 0);
+    assert(d_whole.mantissa == 100);
+    csilk_json_free(num_obj);
+
+    assert(csilk_db_exec(
+               pool,
+               "INSERT INTO categories (id, user_id, ledger_id, name, type, asset_type) "
+               "VALUES (12, 1, 1, 'Crypto', 'expense', 'crypto')") == 0);
+    assert(csilk_db_exec(
+               pool,
+               "INSERT INTO assets (id, user_id, ledger_id, category_id, name, currency, "
+               "quantity, cost_basis, net_value, current_value) VALUES "
+               "(105, 1, 1, 12, 'BTC', 'USD', 0, 0, 0, 0)") == 0);
+
+    create_tx_cmd_t buy_btc = {
+        .user_id = 1,
+        .ledger_id = 1,
+        .asset_id = 105,
+        .linked_asset_id = 0,
+        .category_id = 12,
+        .type = "buy",
+        .amount = 0.84,
+        .price = 68000.12345678,
+        .quantity = 0.00001234,
+        .fee = 0.0,
+        .currency = "USD",
+        .note = "precision test",
+        .date = "2026-01-15",
+    };
+    tx_usecase_result_t tx_res = {0};
+    assert(tx_usecase_create(pool, &buy_btc, &tx_res) == 0);
+
+    csilk_json_t* btc_rows = csilk_db_query_param_json(
+        pool, "SELECT quantity FROM assets WHERE id=105", (const char*[]){NULL});
+    assert(btc_rows && csilk_json_array_size(btc_rows) == 1);
+    quantity_t stored_btc = db_get_quantity(csilk_json_array_get(btc_rows, 0), "quantity");
+    char       stored_btc_str[64] = {0};
+    quantity_to_string_fixed(stored_btc, 8, stored_btc_str, sizeof(stored_btc_str));
+    assert(strcmp(stored_btc_str, "0.00001234") == 0);
+    csilk_json_free(btc_rows);
+
+    ledger_position_state_t pos_state = {0};
+    assert(ledger_rebuild_position(pool, 1, 105, &pos_state) == 0);
+    char reb_qty_str[64] = {0};
+    quantity_to_string_fixed(pos_state.quantity, 8, reb_qty_str, sizeof(reb_qty_str));
+    assert(strcmp(reb_qty_str, "0.00001234") == 0);
+
     unlink(db_file);
 
     printf("PASS: test_financial_precision_edge completed successfully\n");

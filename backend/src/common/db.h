@@ -279,10 +279,32 @@ db_get_decimal(const csilk_json_t* obj, const char* key)
         return decimal_zero();
     }
     if (csilk_json_is_number(v)) {
-        double    num = csilk_json_number_value(v);
+        double num = csilk_json_number_value(v);
+        if (isnan(num) || isinf(num)) {
+            return decimal_zero();
+        }
+        char buf[64];
+        int  n = snprintf(buf, sizeof(buf), "%.12f", num);
+        if (n < 0 || (size_t)n >= sizeof(buf)) {
+            decimal_t d = decimal_zero();
+            decimal_from_double(num, 4, &d);
+            return d;
+        }
+        char* dot = strchr(buf, '.');
+        if (dot) {
+            size_t len = (size_t)n;
+            while (len > 0 && buf[len - 1] == '0') {
+                buf[--len] = '\0';
+            }
+            if (len > 0 && buf[len - 1] == '.') {
+                buf[--len] = '\0';
+            }
+        }
         decimal_t d;
-        decimal_from_double(num, 4, &d);
-        return d;
+        if (decimal_from_string(buf, &d) == DECIMAL_OK) {
+            return d;
+        }
+        return decimal_zero();
     }
     return decimal_zero();
 }
