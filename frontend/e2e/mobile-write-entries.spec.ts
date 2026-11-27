@@ -14,12 +14,45 @@ async function seedAuth(page: import('@playwright/test').Page) {
   })
 }
 
+async function waitForAppReady(page: import('@playwright/test').Page) {
+  // Bootstrap awaits initLocalDb() before mounting and dismissing the splash;
+  // wait for that signal so offline writes never race DB initialization.
+  await page.locator('#mf-boot-splash').waitFor({ state: 'detached', timeout: 30_000 })
+}
+
 test('断网新增资产/分类/标签/交易 → 恢复后按序推送并使用真实 ID', async ({ page }) => {
   await seedAuth(page)
   let online = false
   const createdIds: Record<string, number> = {}
 
-  // 写入口与同步端点：断网时 abort，恢复后返回新 ID
+  // 兜底：所有未被特异性 mock 的 /api 请求必须返回成功。
+  // 启动期的 /api/auth/me、/api/ledgers 等若返回 401，会触发
+  // handleAuthError() → auth.logout() → SyncEngine.reset() → resetLocalDb()，
+  // 导致用例中途 db 被置空（`localDb not initialized`）并与同步流程竞态。
+  await page.route((url) => url.pathname.startsWith('/api/'), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 0, data: { list: [], total: 0 } }),
+    })
+  )
+  await page.route((url) => url.pathname === '/api/system/status', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 0, data: { initialized: true } }),
+    })
+  )
+  await page.route((url) => url.pathname === '/api/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 0, data: { id: 1, username: 'e2e-user', role: 'user' } }),
+    })
+  )
+
+  // 写入口与同步端点：断网时 abort，恢复后返回新 ID。
+  // 注册顺序在兜底 stub 之后：Playwright 后注册的 route 优先匹配。
   await page.route(/\/api\/(assets|categories|tags|transactions)(?:\/|$)/, async (route) => {
     if (!online) return route.abort('failed')
     const path = new URL(route.request().url()).pathname.replace(/^\/api\//, '').replace(/\/$/, '')
@@ -39,6 +72,7 @@ test('断网新增资产/分类/标签/交易 → 恢复后按序推送并使用
   })
 
   await page.goto(`${BASE}/m/dashboard`)
+  await waitForAppReady(page)
 
   const results = await page.evaluate(async () => {
     const { offlineApi } = await import('/src/utils/offline-http.ts')
