@@ -98,8 +98,14 @@ ledger_rebuild_position_ex(csilk_db_pool_t*         pool,
         return -1;
     }
 
+    int64_t owner_id = user_id;
+    if (ledger_internal_resolve_asset_owner(pool, asset_id, user_id, true, &owner_id, NULL) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
+
     char uid_str[32], ast_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)owner_id);
     snprintf(ast_str, sizeof(ast_str), "%lld", (long long)asset_id);
 
     // 1. Fetch asset metadata, quantity, cost_basis, net_value & currency
@@ -140,12 +146,12 @@ ledger_rebuild_position_ex(csilk_db_pool_t*         pool,
     // 因此 FIFO 资产（除非显式无快照）始终执行全量批次重放。
     csilk_json_t* snap = NULL;
     if (exclude_tx_id <= 0 && !is_fifo) {
-        ledger_snapshot_get_latest(pool, user_id, asset_id, NULL, &snap);
+        ledger_snapshot_get_latest(pool, owner_id, asset_id, NULL, &snap);
     }
     bool had_snapshot = (snap != NULL);
 
     if (is_fifo) {
-        tx_lots_delete_by_asset(pool, user_id, asset_id);
+        tx_lots_delete_by_asset(pool, owner_id, asset_id);
     }
 
     quantity_t curr_qty;
@@ -172,11 +178,11 @@ ledger_rebuild_position_ex(csilk_db_pool_t*         pool,
         char    ckpt_id_str[32];
         snprintf(ckpt_id_str, sizeof(ckpt_id_str), "%lld", (long long)ckpt_id);
 
-        const char* sub_params[] = {uid_str, ast_str, ckpt_date, ckpt_date, ckpt_id_str, NULL};
+        const char* sub_params[] = {ast_str, ckpt_date, ckpt_date, ckpt_id_str, NULL};
         tx_rows = csilk_db_query_param_json(
             pool,
             "SELECT id, transaction_type, amount, price_per_unit, quantity, fee, transaction_date "
-            "FROM transactions WHERE user_id=? AND asset_id=? AND transaction_type IN ('buy', "
+            "FROM transactions WHERE asset_id=? AND transaction_type IN ('buy', "
             "'sell') "
             "AND (transaction_date > ? OR (transaction_date = ? AND id > ?)) "
             "ORDER BY transaction_date ASC, id ASC",
@@ -192,15 +198,15 @@ ledger_rebuild_position_ex(csilk_db_pool_t*         pool,
         tx_rows = csilk_db_query_param_json(
             pool,
             "SELECT id, transaction_type, amount, price_per_unit, quantity, fee, transaction_date "
-            "FROM transactions WHERE user_id=? AND asset_id=? AND transaction_type IN ('buy', "
+            "FROM transactions WHERE asset_id=? AND transaction_type IN ('buy', "
             "'sell') "
             "ORDER BY transaction_date ASC, id ASC",
-            (const char*[]){uid_str, ast_str, NULL});
+            (const char*[]){ast_str, NULL});
     }
 
     if (tx_rows && csilk_json_array_size(tx_rows) > 0) {
         int replay_rc = replay_position_transactions(pool,
-                                                     user_id,
+                                                     owner_id,
                                                      asset_id,
                                                      cur,
                                                      is_fifo,
@@ -273,7 +279,10 @@ ledger_rebuild_position_ex(csilk_db_pool_t*         pool,
         out_state->realized_pnl = cum_realized;
         out_state->unrealized_pnl = curr_unrealized;
     }
-    db_tx_scope_commit(pool, &scope);
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
     return 0;
 }
 
@@ -300,8 +309,14 @@ ledger_rebuild_account(csilk_db_pool_t*        pool,
         return -1;
     }
 
+    int64_t owner_id = user_id;
+    if (ledger_internal_resolve_asset_owner(pool, asset_id, user_id, true, &owner_id, NULL) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
+
     char uid_str[32], ast_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)owner_id);
     snprintf(ast_str, sizeof(ast_str), "%lld", (long long)asset_id);
 
     // 1. Fetch asset currency, baseline current_value & category liability flag
@@ -446,6 +461,9 @@ ledger_rebuild_portfolio(csilk_db_pool_t* pool, int64_t user_id)
         }
     }
     csilk_json_free(assets);
-    db_tx_scope_commit(pool, &scope);
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
     return 0;
 }

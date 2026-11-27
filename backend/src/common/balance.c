@@ -219,6 +219,49 @@ is_investment_type(const char* atype)
 }
 
 static int
+balance_verify_asset_write(csilk_db_pool_t* pool,
+                           int64_t          asset_id,
+                           int64_t          asset_owner_uid,
+                           int64_t          asset_ledger_id,
+                           int64_t          user_id)
+{
+    if (asset_owner_uid == user_id) {
+        return 0;
+    }
+    if (asset_ledger_id <= 0) {
+        CSILK_LOG_W("balance: permission denied (asset_id=%lld, user_id=%lld)",
+                    (long long)asset_id,
+                    (long long)user_id);
+        return -1;
+    }
+    char lid_str[32], user_id_str[32];
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)asset_ledger_id);
+    snprintf(user_id_str, sizeof(user_id_str), "%lld", (long long)user_id);
+    const char*   mem_params[] = {lid_str, user_id_str, NULL};
+    csilk_json_t* mem_row = csilk_db_query_param_json(
+        pool, "SELECT role FROM ledger_members WHERE ledger_id=? AND user_id=?", mem_params);
+    if (!mem_row || csilk_json_array_size(mem_row) == 0) {
+        if (mem_row) {
+            csilk_json_free(mem_row);
+        }
+        CSILK_LOG_W("balance: permission denied (user_id=%lld not in ledger_id=%lld)",
+                    (long long)user_id,
+                    (long long)asset_ledger_id);
+        return -1;
+    }
+    const char* role = csilk_json_get_string(csilk_json_array_get(mem_row, 0), "role");
+    int         can_write = (role && (strcmp(role, "owner") == 0 || strcmp(role, "editor") == 0));
+    csilk_json_free(mem_row);
+    if (!can_write) {
+        CSILK_LOG_W("balance: permission denied (user_id=%lld has role '%s')",
+                    (long long)user_id,
+                    role ? role : "unknown");
+        return -1;
+    }
+    return 0;
+}
+
+static int
 balance_apply_delta_m_impl(csilk_db_pool_t* pool,
                            int64_t          asset_id,
                            int64_t          user_id,
@@ -265,43 +308,11 @@ balance_apply_delta_m_impl(csilk_db_pool_t* pool,
     int64_t             asset_ledger_id = db_get_int(asset, "ledger_id");
 
     /* 鉴权：若调用者非资产创建人，则要求该资产属于某账本且调用者是该账本的 owner 或 editor */
-    if (asset_owner_uid != user_id) {
-        if (asset_ledger_id <= 0) {
-            csilk_json_free(row);
-            CSILK_LOG_W("balance_apply_delta: permission denied (asset_id=%lld, user_id=%lld)",
-                        (long long)asset_id,
-                        (long long)user_id);
-            db_tx_scope_rollback(pool, &scope);
-            return -1;
-        }
-        char lid_str[32];
-        snprintf(lid_str, sizeof(lid_str), "%lld", (long long)asset_ledger_id);
-        const char*   mem_params[] = {lid_str, user_id_str, NULL};
-        csilk_json_t* mem_row = csilk_db_query_param_json(
-            pool, "SELECT role FROM ledger_members WHERE ledger_id=? AND user_id=?", mem_params);
-        if (!mem_row || csilk_json_array_size(mem_row) == 0) {
-            if (mem_row) {
-                csilk_json_free(mem_row);
-            }
-            csilk_json_free(row);
-            CSILK_LOG_W(
-                "balance_apply_delta: permission denied (user_id=%lld not in ledger_id=%lld)",
-                (long long)user_id,
-                (long long)asset_ledger_id);
-            db_tx_scope_rollback(pool, &scope);
-            return -1;
-        }
-        const char* role = csilk_json_get_string(csilk_json_array_get(mem_row, 0), "role");
-        int can_write = (role && (strcmp(role, "owner") == 0 || strcmp(role, "editor") == 0));
-        csilk_json_free(mem_row);
-        if (!can_write) {
-            csilk_json_free(row);
-            CSILK_LOG_W("balance_apply_delta: permission denied (user_id=%lld has role '%s')",
-                        (long long)user_id,
-                        role ? role : "unknown");
-            db_tx_scope_rollback(pool, &scope);
-            return -1;
-        }
+    if (balance_verify_asset_write(pool, asset_id, asset_owner_uid, asset_ledger_id, user_id) !=
+        0) {
+        csilk_json_free(row);
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
     }
 
     const char* asset_type = csilk_json_get_string(asset, "asset_type");
@@ -457,7 +468,6 @@ balance_apply_delta(csilk_db_pool_t* pool,
 static bool
 has_newer_valuation_event(csilk_db_pool_t* pool,
                           const char*      aid_str,
-                          const char*      uid_str,
                           const char*      tx_date,
                           int64_t          tx_id)
 {
@@ -471,10 +481,10 @@ has_newer_valuation_event(csilk_db_pool_t* pool,
         csilk_json_t* r = csilk_db_query_param_json(
             pool,
             "SELECT 1 FROM transactions "
-            "WHERE asset_id=? AND user_id=? AND transaction_type IN ('buy', 'sell') "
+            "WHERE asset_id=? AND transaction_type IN ('buy', 'sell') "
             "AND id != ? AND (transaction_date > ? OR (transaction_date = ? AND id > ?)) "
             "LIMIT 1",
-            (const char*[]){aid_str, uid_str, tid_str, tx_date, tx_date, tid_str, NULL});
+            (const char*[]){aid_str, tid_str, tx_date, tx_date, tid_str, NULL});
         if (r) {
             size_t n = csilk_json_array_size(r);
             csilk_json_free(r);
@@ -486,9 +496,9 @@ has_newer_valuation_event(csilk_db_pool_t* pool,
         csilk_json_t* r = csilk_db_query_param_json(
             pool,
             "SELECT 1 FROM transactions "
-            "WHERE asset_id=? AND user_id=? AND transaction_type IN ('buy', 'sell') "
+            "WHERE asset_id=? AND transaction_type IN ('buy', 'sell') "
             "AND transaction_date > ? LIMIT 1",
-            (const char*[]){aid_str, uid_str, tx_date, NULL});
+            (const char*[]){aid_str, tx_date, NULL});
         if (r) {
             size_t n = csilk_json_array_size(r);
             csilk_json_free(r);
@@ -532,22 +542,33 @@ apply_position_fc_dated(csilk_db_pool_t* pool,
                         int64_t          tx_id,
                         money_t*         out_position_delta)
 {
-    char aid_str[32], uid_str[32];
+    if (!pool || asset_id <= 0 || user_id <= 0 || !type) {
+        return -1;
+    }
+    char aid_str[32];
     snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     csilk_json_t* pos = csilk_db_query_param_json(
         pool,
         "SELECT a.quantity, a.cost_basis, a.net_value, a.current_value, a.currency, a.cost_method, "
-        "c.asset_type "
-        "FROM assets a JOIN categories c ON a.category_id=c.id WHERE a.id=? AND a.user_id=?",
-        (const char*[]){aid_str, uid_str, NULL});
+        "a.user_id, a.ledger_id, c.asset_type "
+        "FROM assets a JOIN categories c ON a.category_id=c.id WHERE a.id=?",
+        (const char*[]){aid_str, NULL});
     if (!pos || csilk_json_array_size(pos) == 0) {
         if (pos) {
             csilk_json_free(pos);
         }
-        return 0;
+        return -1;
     }
     const csilk_json_t* pr = csilk_json_array_get(pos, 0);
+    int64_t             asset_owner_uid = db_get_int(pr, "user_id");
+    int64_t             asset_ledger_id = db_get_int(pr, "ledger_id");
+    if (balance_verify_asset_write(pool, asset_id, asset_owner_uid, asset_ledger_id, user_id) !=
+        0) {
+        csilk_json_free(pos);
+        return -1;
+    }
+    char owner_uid_str[32];
+    snprintf(owner_uid_str, sizeof(owner_uid_str), "%lld", (long long)asset_owner_uid);
     const char*         atype = csilk_json_get_string(pr, "asset_type");
     if (!is_investment_type(atype)) {
         csilk_json_free(pos);
@@ -590,7 +611,7 @@ apply_position_fc_dated(csilk_db_pool_t* pool,
         /* 历史补录买单：若已有更新日期的交易或收盘估值行情，且当前 net_value 有效，
          * 则保留当前 net_value，避免历史成交价覆盖现行净值与市值。 */
         if (decimal_is_positive(old_net.unit_price) &&
-            has_newer_valuation_event(pool, aid_str, uid_str, tx_date, tx_id)) {
+            has_newer_valuation_event(pool, aid_str, tx_date, tx_id)) {
             new_net = old_net;
         } else {
             new_net = price;
@@ -601,7 +622,7 @@ apply_position_fc_dated(csilk_db_pool_t* pool,
         mf_balance_hooks_t hooks = balance_get_hooks();
         if (cost_method && strcmp(cost_method, "fifo") == 0) {
             if (!hooks.calc_sell_position_fifo || hooks.calc_sell_position_fifo(pool,
-                                                                                user_id,
+                                                                                asset_owner_uid,
                                                                                 asset_id,
                                                                                 qty,
                                                                                 price,
@@ -656,7 +677,7 @@ apply_position_fc_dated(csilk_db_pool_t* pool,
     money_to_string(new_cost, nc, sizeof(nc));
     price_to_string_fixed(new_net, 8, nv, sizeof(nv));
 
-    const char*   p[] = {nq, nc, nv, aid_str, uid_str, NULL};
+    const char*   p[] = {nq, nc, nv, aid_str, owner_uid_str, NULL};
     csilk_json_t* upd_res = csilk_db_query_param_json(
         pool,
         "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=? AND user_id=?",
@@ -707,13 +728,10 @@ apply_position(csilk_db_pool_t* pool,
                double           qty,
                double*          out_position_delta)
 {
-    char aid_str[32], uid_str[32];
+    char aid_str[32];
     snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    csilk_json_t* pos_cur =
-        csilk_db_query_param_json(pool,
-                                  "SELECT currency FROM assets WHERE id=? AND user_id=?",
-                                  (const char*[]){aid_str, uid_str, NULL});
+    csilk_json_t* pos_cur = csilk_db_query_param_json(
+        pool, "SELECT currency FROM assets WHERE id=?", (const char*[]){aid_str, NULL});
     currency_t cur = CURRENCY_CNY;
     if (pos_cur && csilk_json_array_size(pos_cur) > 0) {
         const char* cstr = csilk_json_get_string(csilk_json_array_get(pos_cur, 0), "currency");

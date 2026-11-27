@@ -15,27 +15,66 @@
  * 内部共享与局部辅助函数 (Internal Helpers)
  * ========================================================================= */
 
+int
+ledger_internal_resolve_asset_owner(csilk_db_pool_t* pool,
+                                    int64_t          asset_id,
+                                    int64_t          caller_user_id,
+                                    bool             require_write,
+                                    int64_t*         out_owner_id,
+                                    bool*            out_is_fifo)
+{
+    if (!pool || asset_id <= 0 || caller_user_id <= 0) {
+        return -1;
+    }
+    char ast_str[32];
+    snprintf(ast_str, sizeof(ast_str), "%lld", (long long)asset_id);
+
+    csilk_json_t* rows = csilk_db_query_param_json(
+        pool,
+        "SELECT user_id, ledger_id, cost_method FROM assets WHERE id=?",
+        (const char*[]){ast_str, NULL});
+    if (!rows || csilk_json_array_size(rows) == 0) {
+        if (rows) {
+            csilk_json_free(rows);
+        }
+        return -1;
+    }
+    const csilk_json_t* r = csilk_json_array_get(rows, 0);
+    int64_t             owner_id = db_get_int(r, "user_id");
+    int64_t             ledger_id = db_get_int(r, "ledger_id");
+    const char*         cm = csilk_json_get_string(r, "cost_method");
+    bool                is_fifo = (cm && strcmp(cm, "fifo") == 0);
+    csilk_json_free(rows);
+
+    if (owner_id != caller_user_id) {
+        if (ledger_id <= 0) {
+            return -1;
+        }
+        char role[32] = {0};
+        if (!ledger_get_user_role(pool, ledger_id, caller_user_id, role, sizeof(role)) ||
+            !role[0]) {
+            return -1;
+        }
+        if (require_write && strcmp(role, "owner") != 0 && strcmp(role, "editor") != 0) {
+            return -1;
+        }
+    }
+
+    if (out_owner_id) {
+        *out_owner_id = owner_id;
+    }
+    if (out_is_fifo) {
+        *out_is_fifo = is_fifo;
+    }
+    return 0;
+}
+
 bool
 ledger_internal_asset_is_fifo(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
 {
-    if (!pool || user_id <= 0 || asset_id <= 0) {
-        return false;
-    }
-    char ast_str[32], uid_str[32];
-    snprintf(ast_str, sizeof(ast_str), "%lld", (long long)asset_id);
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-
-    csilk_json_t* cm_rows =
-        csilk_db_query_param_json(pool,
-                                  "SELECT cost_method FROM assets WHERE id=? AND user_id=?",
-                                  (const char*[]){ast_str, uid_str, NULL});
     bool is_fifo = false;
-    if (cm_rows && csilk_json_array_size(cm_rows) > 0) {
-        const char* cm = csilk_json_get_string(csilk_json_array_get(cm_rows, 0), "cost_method");
-        is_fifo = (cm && strcmp(cm, "fifo") == 0);
-    }
-    if (cm_rows) {
-        csilk_json_free(cm_rows);
+    if (ledger_internal_resolve_asset_owner(pool, asset_id, user_id, false, NULL, &is_fifo) != 0) {
+        return false;
     }
     return is_fifo;
 }
@@ -564,11 +603,15 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             goto fail_rollback;
         }
 
-        // On BUY for FIFO asset, record the new transaction lot
+        // On BUY for FIFO asset, record the new transaction lot under asset owner_id
+        int64_t pos_owner_id = tx->user_id;
+        bool    is_fifo = false;
         if (tx->type == LEDGER_TX_BUY &&
-            ledger_internal_asset_is_fifo(pool, tx->user_id, tx->asset_id)) {
+            ledger_internal_resolve_asset_owner(
+                pool, tx->asset_id, tx->user_id, true, &pos_owner_id, &is_fifo) == 0 &&
+            is_fifo) {
             int64_t lot_id = ledger_internal_create_buy_lot(pool,
-                                                            tx->user_id,
+                                                            pos_owner_id,
                                                             tx->asset_id,
                                                             tx->id,
                                                             effective_date,
@@ -681,9 +724,16 @@ ledger_reverse_position_fallback(csilk_db_pool_t* pool,
                                  const char*      tx_date,
                                  money_t*         out_position_delta)
 {
+    int64_t pos_owner_id = user_id;
+    bool    is_fifo = false;
+    if (ledger_internal_resolve_asset_owner(
+            pool, asset_id, user_id, true, &pos_owner_id, &is_fifo) != 0) {
+        return 0;
+    }
+
     char aid_str[32], uid_str[32];
     snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)pos_owner_id);
     csilk_json_t* pos = csilk_db_query_param_json(
         pool,
         "SELECT a.quantity, a.cost_basis, a.net_value, a.current_value, a.currency, a.cost_method, "
@@ -868,12 +918,17 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
     }
 
     // 2. Position / Asset balance rollback
-    bool is_inv = (type && (strcmp(type, "buy") == 0 || strcmp(type, "sell") == 0));
-    bool is_fifo = is_inv && ledger_internal_asset_is_fifo(pool, user_id, asset_id);
+    bool    is_inv = (type && (strcmp(type, "buy") == 0 || strcmp(type, "sell") == 0));
+    int64_t pos_owner_id = user_id;
+    bool    is_fifo = false;
+    if (is_inv && ledger_internal_resolve_asset_owner(
+                      pool, asset_id, user_id, true, &pos_owner_id, &is_fifo) != 0) {
+        goto fail_rollback;
+    }
 
     if (is_inv) {
         if (is_fifo && strcmp(type, "buy") == 0) {
-            tx_lots_delete_by_buy_tx(pool, user_id, tx_id);
+            tx_lots_delete_by_buy_tx(pool, pos_owner_id, tx_id);
         }
         if (ledger_rebuild_position_ex(pool, user_id, asset_id, NULL, tx_id) != 0) {
             /* Checkpoint replay can be inconsistent when the reversed

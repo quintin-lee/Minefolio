@@ -703,6 +703,67 @@ main(void)
         int rc_stranger = balance_apply_delta_m(pool, 301, 999, delta_neg, "daily_expense", 3, "Stranger spend");
         assert(rc_stranger != 0);
         printf("    ✓ Viewer and stranger correctly rejected.\n");
+
+        /* 9b. Shared-ledger investment position buy/sell/rebuild by editor (bob) */
+        csilk_db_exec(pool,
+                      "INSERT OR REPLACE INTO categories (id, user_id, ledger_id, name, type, asset_type) "
+                      "VALUES (19, 1, 10, 'Shared Stock', 'asset', 'stock')");
+        csilk_db_exec(pool,
+                      "INSERT OR REPLACE INTO assets (id, user_id, ledger_id, category_id, name, currency, "
+                      "current_value, quantity, cost_basis, net_value) VALUES "
+                      "(302, 1, 10, 19, 'Alice Shared Stock', 'CNY', 0, 0, 0, 0)");
+
+        money_t    b_amt, b_fee, b_pdelta;
+        price_t    b_price;
+        quantity_t b_qty;
+        assert(money_from_double(200.0, CURRENCY_CNY, &b_amt) == DECIMAL_OK);
+        assert(money_from_double(5.0, CURRENCY_CNY, &b_fee) == DECIMAL_OK);
+        assert(price_from_double(10.0, 4, CURRENCY_CNY, &b_price) == DECIMAL_OK);
+        assert(quantity_from_double(20.0, 4, &b_qty) == DECIMAL_OK);
+
+        /* Record Bob's buy via ledger_apply_tx with linked cash asset 301 */
+        ledger_tx_t bob_buy = {
+            .user_id = 2,
+            .ledger_id = 10,
+            .asset_id = 302,
+            .linked_asset_id = 301,
+            .category_id = 19,
+            .type = LEDGER_TX_BUY,
+            .type_str = "buy",
+            .amount = b_amt,
+            .price = b_price,
+            .quantity = b_qty,
+            .fee = b_fee,
+            .tx_date = "2026-10-05 10:00:00",
+            .note = "Bob buys shared stock",
+        };
+        assert(ledger_apply_tx(pool, &bob_buy) == 0);
+
+        csilk_json_t* srow = csilk_db_query_param_json(
+            pool,
+            "SELECT quantity, cost_basis, net_value, current_value FROM assets WHERE id=302",
+            (const char*[]){NULL});
+        assert(srow && csilk_json_array_size(srow) == 1);
+        assert(fabs(db_get_num(csilk_json_array_get(srow, 0), "quantity") - 20.0) < 1e-6);
+        assert(fabs(db_get_num(csilk_json_array_get(srow, 0), "cost_basis") - 205.0) < 1e-4);
+        assert(fabs(db_get_num(csilk_json_array_get(srow, 0), "current_value") - 200.0) < 1e-4);
+        csilk_json_free(srow);
+
+        /* Rebuild from Alice (owner) or Bob (editor) must keep Bob's buy intact */
+        ledger_position_state_t sstate = {0};
+        assert(ledger_rebuild_position(pool, 1, 302, &sstate) == 0);
+        assert(fabs(quantity_to_double(sstate.quantity) - 20.0) < 1e-6);
+        assert(fabs(money_to_double(sstate.cost_basis) - 205.0) < 1e-4);
+
+        /* Viewer (charlie=3) and stranger (999) must fail closed on apply_position & rebuild */
+        assert(apply_position_fc_dated(
+                   pool, 302, 3, "buy", b_amt, b_fee, b_price, b_qty, 0.0, "2026-10-06", 0, &b_pdelta) <
+               0);
+        assert(apply_position_fc_dated(
+                   pool, 302, 999, "buy", b_amt, b_fee, b_price, b_qty, 0.0, "2026-10-06", 0, &b_pdelta) <
+               0);
+        assert(ledger_rebuild_position(pool, 3, 302, &sstate) < 0);
+        printf("    ✓ Shared-ledger investment position buy/rebuild & RBAC isolation verified.\n");
     }
 
     // 10. Balance hook registration & fail-closed behavior when unregistered
