@@ -26,7 +26,7 @@
       </el-radio>
     </el-radio-group>
 
-    <el-form label-width="120px" class="premium-form">
+    <el-form label-width="120px" :label-position="labelPosition" class="premium-form">
       <el-form-item :label="$t('settings.currentTheme')">
         <el-text type="primary">{{ theme.resolvedTheme === 'dark' ? $t('settings.dark') : $t('settings.light') }}</el-text>
       </el-form-item>
@@ -47,6 +47,9 @@ import { watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useThemeStore } from '@/stores/theme'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
+import { useResponsiveFormLabel } from '@/composables/useResponsiveFormLabel'
+
+const { labelPosition } = useResponsiveFormLabel()
 
 const theme = useThemeStore()
 const displaySettings = useDisplaySettingsStore()

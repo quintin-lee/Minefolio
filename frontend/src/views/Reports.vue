@@ -546,6 +546,7 @@ onMounted(loadAll)
 
 .metric-cards {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 12px;
   flex-shrink: 0;
@@ -553,6 +554,7 @@ onMounted(loadAll)
 
 .metric-card {
   flex: 1;
+  min-width: 120px;
   background: var(--mf-surface-muted);
   border: 1px solid var(--mf-border);
   border-radius: var(--mf-radius-md);
@@ -824,13 +826,19 @@ onMounted(loadAll)
   }
   .tab-row > .el-col {
     height: auto;
-    min-height: 420px;
+    min-height: 0;
     margin-bottom: 16px;
   }
   .report-card {
-    min-height: 420px;
+    min-height: 0;
     height: auto;
     overflow: visible;
+  }
+  .chart-container {
+    min-height: 300px;
+  }
+  .table-container :deep(.el-table) {
+    height: auto !important;
   }
 }
 </style>

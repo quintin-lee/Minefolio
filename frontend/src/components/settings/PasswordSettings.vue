@@ -8,6 +8,7 @@
       :rules="rules"
       ref="formRef"
       label-width="120px"
+      :label-position="labelPosition"
       class="premium-form"
       @keyup.enter="submit"
     >
@@ -54,7 +55,10 @@ import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { t } from '@/utils/locale'
+import { useResponsiveFormLabel } from '@/composables/useResponsiveFormLabel'
 import type { FormInstance, FormRules } from 'element-plus'
+
+const { labelPosition } = useResponsiveFormLabel()
 
 const auth = useAuthStore()
 const loading = ref(false)

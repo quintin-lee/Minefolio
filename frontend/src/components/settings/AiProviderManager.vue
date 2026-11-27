@@ -23,7 +23,7 @@
               </el-button>
           </div>
         </div>
-        <el-form v-if="editIndex === index" :model="provider" label-width="100px" class="provider-form">
+        <el-form v-if="editIndex === index" :model="provider" label-width="100px" :label-position="labelPosition" class="provider-form">
           <el-form-item :label="t('settings.aiProviderId')">
             <el-input v-model="provider.id" :disabled="provider.id.length > 0 && provider.has_api_key" :placeholder="t('settings.aiProviderIdPlaceholder')" />
           </el-form-item>
@@ -101,7 +101,7 @@
 
     <el-divider />
 
-    <el-form :model="aiForm" label-width="120px" class="premium-form">
+    <el-form :model="aiForm" label-width="120px" :label-position="labelPosition" class="premium-form">
       <el-form-item :label="t('settings.aiDefaultProvider')">
         <el-select v-model="aiForm.default_provider" style="width: 100%">
           <el-option
@@ -146,6 +146,9 @@ import { getSettings, updateSettings, testAiConnection, fetchAiModels } from '@/
 import type { AiSettings, AiTestConnectionResult } from '@/api/ai'
 import { encryptText } from '@/utils/crypto'
 import { t } from '@/utils/locale'
+import { useResponsiveFormLabel } from '@/composables/useResponsiveFormLabel'
+
+const { labelPosition } = useResponsiveFormLabel()
 
 interface ProviderItem {
   _uid: number

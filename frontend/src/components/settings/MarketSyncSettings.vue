@@ -4,7 +4,7 @@
       <h3>{{ t('settings.marketSyncTitle') }}</h3>
     </div>
     <p class="export-hint">{{ t('settings.marketSyncHint') }}</p>
-    <el-form label-width="120px" class="premium-form" style="margin-top: 16px;">
+    <el-form label-width="120px" :label-position="labelPosition" class="premium-form" style="margin-top: 16px;">
       <el-form-item :label="t('settings.httpProxyLabel')">
         <el-input v-model="marketForm.market_proxy" :placeholder="t('settings.httpProxyPlaceholder')" />
       </el-form-item>
@@ -16,7 +16,7 @@
         </el-radio-group>
       </el-form-item>
       <el-form-item v-if="marketForm.market_sync_mode !== 'manual'" :label="t('settings.syncCycle')">
-        <el-select v-model="marketForm.market_sync_interval_min" style="width: 200px;">
+        <el-select v-model="marketForm.market_sync_interval_min" style="width: 200px; max-width: 100%;">
           <el-option :value="15" :label="t('settings.interval15')" />
           <el-option :value="30" :label="t('settings.interval30')" />
           <el-option :value="60" :label="t('settings.interval60')" />
@@ -25,7 +25,7 @@
         </el-select>
       </el-form-item>
       <el-form-item>
-        <div style="display: flex; gap: 12px; align-items: center;">
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
           <el-button type="primary" class="action-btn" :loading="savingMarket" @click="saveMarketSettings">
             {{ t('settings.saveMarketConfig') }}
           </el-button>
@@ -46,7 +46,10 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { marketApi } from '@/api/market'
 import { t } from '@/utils/locale'
+import { useResponsiveFormLabel } from '@/composables/useResponsiveFormLabel'
 import type { MarketSettings, TestProxyResult } from '@/types'
+
+const { labelPosition } = useResponsiveFormLabel()
 
 const marketForm = reactive<MarketSettings>({
   market_proxy: '',

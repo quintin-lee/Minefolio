@@ -7,7 +7,7 @@
     destroy-on-close
     :show-close="false"
   >
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="premium-form">
+    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" :label-position="labelPosition" class="premium-form">
       <el-form-item label="计划名称" prop="name">
         <el-input v-model="form.name" placeholder="如：沪深300指数定投、茅台按周定投" />
       </el-form-item>
@@ -145,7 +145,10 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { dcaApi } from '@/api/dca'
 import { assetLabel } from '@/utils/format'
+import { useResponsiveFormLabel } from '@/composables/useResponsiveFormLabel'
 import type { Asset, DcaPlan } from '@/types'
+
+const { labelPosition } = useResponsiveFormLabel()
 
 const props = defineProps<{
   assets: Asset[]

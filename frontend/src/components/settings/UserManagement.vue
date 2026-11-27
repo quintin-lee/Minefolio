@@ -66,7 +66,7 @@
         v-model="filters.keyword"
         :placeholder="t('settings.userMgmtSearchPlaceholder')"
         clearable
-        style="width: 220px;"
+        style="width: 220px; max-width: 100%;"
         @keyup.enter="handleSearch"
         @clear="handleSearch"
       >

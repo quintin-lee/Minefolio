@@ -11,7 +11,7 @@
     <div class="model-info-bar" v-if="aiProviders.length > 0">
       <div class="model-info-left">
         <span class="label">AI 视觉模型:</span>
-        <el-select v-model="selectedModel" size="small" style="width: 200px;" placeholder="选择模型">
+        <el-select v-model="selectedModel" size="small" style="width: 200px; max-width: 100%;" placeholder="选择模型">
           <el-option-group v-for="prov in aiProviders" :key="prov.id" :label="prov.name || prov.id">
             <el-option v-for="m in (prov.models || [])" :key="m" :label="m" :value="m" />
           </el-option-group>

@@ -7,7 +7,7 @@
     destroy-on-close
     :show-close="false"
   >
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="premium-form">
+    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" :label-position="labelPosition" class="premium-form">
       <el-form-item label="项目名称" prop="name">
         <el-input v-model="form.name" placeholder="如：某某债半年度付息、XX高股息ETF季度分红、房屋收租" />
       </el-form-item>
@@ -123,7 +123,10 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { cashflowApi } from '@/api/cashflow'
 import { localToday, assetLabel } from '@/utils/format'
+import { useResponsiveFormLabel } from '@/composables/useResponsiveFormLabel'
 import type { Asset, CashflowSchedule } from '@/types'
+
+const { labelPosition } = useResponsiveFormLabel()
 
 const props = defineProps<{
   assets: Asset[]
