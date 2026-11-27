@@ -2,19 +2,19 @@
   <div class="cashflow-calendar-container">
     <!-- 顶部概览指标 -->
     <el-row :gutter="16" class="calendar-metrics">
-      <el-col :span="8">
+      <el-col :xs="24" :sm="8">
         <div class="metric-card actual">
           <div class="metric-label">本月已到账被动收入</div>
           <div class="metric-value">¥{{ formatNumber(summaryData?.actual_total || 0) }}</div>
         </div>
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :sm="8">
         <div class="metric-card projected">
           <div class="metric-label">本月预期被动收入</div>
           <div class="metric-value">¥{{ formatNumber(summaryData?.projected_total || 0) }}</div>
         </div>
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :sm="8">
         <div class="metric-card annual">
           <div class="metric-label">全年年化预期被动收益</div>
           <div class="metric-value">¥{{ formatNumber(summaryData?.annual_projected_total || 0) }}</div>
@@ -71,6 +71,29 @@
               <span class="event-amt">+¥{{ formatNumber(ev.amount) }}</span>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 窄屏议程列表视图（<= 640px 展示） -->
+    <div v-loading="loading" class="calendar-agenda-list">
+      <div v-if="agendaDays.length === 0" class="agenda-empty">本月暂无现金流事件</div>
+      <div v-for="day in agendaDays" :key="day.date" class="agenda-day-group">
+        <div class="agenda-day-header" :class="{ 'is-today': day.isToday }">
+          {{ day.date }}
+        </div>
+        <div
+          v-for="(ev, evIdx) in day.events"
+          :key="evIdx"
+          class="agenda-event-item"
+          :class="ev.is_actual ? 'is-actual' : 'is-projected'"
+          @click="handleEventClick(ev)"
+        >
+          <div class="agenda-event-left">
+            <span class="dot" :class="ev.is_actual ? 'actual' : 'projected'"></span>
+            <span class="agenda-event-name">{{ ev.name }}</span>
+          </div>
+          <span class="agenda-event-amt">+¥{{ formatNumber(ev.amount) }}</span>
         </div>
       </div>
     </div>
@@ -226,6 +249,10 @@ const calendarDays = computed<CalendarDay[]>(() => {
   return days
 })
 
+const agendaDays = computed<CalendarDay[]>(() =>
+  calendarDays.value.filter(d => Boolean(d.date) && d.events.length > 0)
+)
+
 function handleEventClick(ev: CashflowCalendarEvent) {
   if (ev.is_actual) {
     ElMessage.info(`流水「${ev.name}」已于 ${ev.date} 确认入账`)
@@ -275,6 +302,7 @@ defineExpose({ reload: loadCalendar })
 
 .calendar-metrics {
   margin-bottom: 4px;
+  row-gap: 12px;
 }
 
 .metric-card {
@@ -314,11 +342,14 @@ defineExpose({ reload: loadCalendar })
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .month-nav {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -331,6 +362,7 @@ defineExpose({ reload: loadCalendar })
 .legend-tags {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 16px;
   font-size: 13px;
   color: var(--el-text-color-secondary);
@@ -460,5 +492,98 @@ defineExpose({ reload: loadCalendar })
 .event-amt {
   font-family: monospace;
   font-weight: 600;
+}
+
+.calendar-agenda-list {
+  display: none;
+}
+
+.agenda-day-group {
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: var(--mf-radius-md);
+  overflow: hidden;
+}
+
+.agenda-day-header {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  background: var(--mf-surface-muted);
+  border-bottom: 1px solid var(--mf-border);
+}
+
+.agenda-day-header.is-today {
+  color: var(--mf-primary);
+}
+
+.agenda-event-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--mf-border-subtle);
+}
+
+.agenda-event-item:last-child {
+  border-bottom: none;
+}
+
+.agenda-event-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agenda-event-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mf-text-main);
+}
+
+.agenda-event-amt {
+  font-family: monospace;
+  font-weight: 600;
+  flex-shrink: 0;
+  color: var(--mf-primary);
+}
+
+.agenda-event-item.is-actual .agenda-event-amt {
+  color: var(--mf-success);
+}
+
+.agenda-empty {
+  text-align: center;
+  font-size: 13px;
+  color: var(--mf-text-muted);
+  padding: 16px;
+}
+
+@media (max-width: 640px) {
+  .day-cell {
+    min-height: 48px;
+    padding: 4px;
+  }
+  .event-pill {
+    justify-content: center;
+    padding: 2px;
+    min-height: 8px;
+  }
+  .event-name,
+  .event-amt {
+    display: none;
+  }
+  .calendar-agenda-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+  }
 }
 </style>
