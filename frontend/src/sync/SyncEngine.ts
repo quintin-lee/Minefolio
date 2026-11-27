@@ -96,6 +96,29 @@ function parseRemotePayload(raw: unknown): Record<string, unknown> | undefined {
   }
 }
 
+/** 递归展平分类树，确保各级子分类进入本地 SQLite 且不被差异清理误删 */
+function flattenCategoryTree(nodes: any[]): any[] {
+  const flat: any[] = []
+  const visited = new Set<number>()
+  const visit = (items: any[]) => {
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue
+      if (item.id !== undefined && item.id !== null) {
+        const id = Number(item.id)
+        if (visited.has(id)) continue
+        visited.add(id)
+      }
+      const { children, ...rest } = item
+      flat.push(rest)
+      if (Array.isArray(children) && children.length > 0) {
+        visit(children)
+      }
+    }
+  }
+  visit(nodes)
+  return flat
+}
+
 export class SyncEngine {
   private static instance: SyncEngine | null = null
 
@@ -480,8 +503,13 @@ export class SyncEngine {
         const seenIds = new Set<number>()
         let completedAllPages = false
         while (true) {
-          const res: any = await api.list({ page, page_size: pageSize })
-          const remoteRows = (res?.list ?? (Array.isArray(res) ? res : [])) as any[]
+          const params: Record<string, any> = { page, page_size: pageSize }
+          if (table === 'accounts') {
+            params.include_archived = 1
+          }
+          const res: any = await api.list(params)
+          const rawRows = (res?.list ?? (Array.isArray(res) ? res : [])) as any[]
+          const remoteRows = table === 'categories' ? flattenCategoryTree(rawRows) : rawRows
           for (const remote of remoteRows) {
             if (remote?.id !== undefined && remote?.id !== null) seenIds.add(Number(remote.id))
             const localRow = rowsFrom(query(`SELECT * FROM ${table} WHERE id = ?`, [remote.id]))[0]
@@ -502,9 +530,9 @@ export class SyncEngine {
             }
           }
           if (
-            remoteRows.length === 0 ||
+            rawRows.length === 0 ||
             Array.isArray(res) ||
-            remoteRows.length < pageSize ||
+            rawRows.length < pageSize ||
             (res?.total !== undefined && page * pageSize >= res.total)
           ) {
             completedAllPages = true
