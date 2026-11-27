@@ -36,6 +36,7 @@
 #include "interfaces/http/controllers/scheduler_controller.h"
 #include "interfaces/http/controllers/task_controller.h"
 #include "services/market/market_scheduler.h"
+#include "core/ledger/ledger_engine.h"
 #include "core/scheduler/scheduler_engine.h"
 #include "application/scheduler/usecases.h"
 #include "services/ai_service.h"
@@ -198,6 +199,7 @@ main(int argc, char** argv)
         csilk_db_pool_free(pool);
         return 1;
     }
+    ledger_register_balance_hooks();
     ai_init(pool);
     if (task_controller_init(pool, 4) != 0) {
         fprintf(stderr, "Failed to initialize async task manager\n");

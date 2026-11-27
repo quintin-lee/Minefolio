@@ -4,6 +4,7 @@
 #include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
 #include "infrastructure/repositories/market_repo_impl.h"
 #include "services/market/exchange_rate_service.h"
+#include "core/ledger/ledger_engine.h"
 #include "common/db.h"
 #include "config/secret.h"
 #include "csilk/csilk.h"
@@ -160,6 +161,7 @@ test_market_sync_currency_alignment(void)
 }
 
 int main(void) {
+    ledger_register_balance_hooks();
     currency_t cny = currency_from_str("CNY");
 
     // Scenario: Buy 1000 @ 2.0 = 2000, fee 10; Sell 400 @ 3.0 = 1200, fee 8; Dividend 100

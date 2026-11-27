@@ -1089,3 +1089,34 @@ ledger_reverse_transfer(csilk_db_pool_t* pool,
                                  NULL,
                                  "mf_ledger_reverse_transfer");
 }
+
+static int
+balance_rebuild_position_ex_hook(csilk_db_pool_t* pool,
+                                 int64_t          user_id,
+                                 int64_t          asset_id,
+                                 int64_t          exclude_tx_id,
+                                 currency_t*      out_currency)
+{
+    ledger_position_state_t state;
+    int rc = ledger_rebuild_position_ex(pool, user_id, asset_id, &state, exclude_tx_id);
+    if (rc != 0) {
+        return rc;
+    }
+    if (out_currency) {
+        *out_currency = state.current_value.currency;
+    }
+    return 0;
+}
+
+void
+ledger_register_balance_hooks(void)
+{
+    static const mf_balance_hooks_t hooks = {
+        .get_fx_to_cny_safe = exchange_rate_get_to_cny_safe,
+        .get_fx_historical_or_latest = exchange_rate_get_historical_or_latest,
+        .calc_sell_position = ledger_calc_sell_position,
+        .calc_sell_position_fifo = ledger_calc_sell_position_fifo,
+        .rebuild_position_ex = balance_rebuild_position_ex_hook,
+    };
+    balance_register_hooks(&hooks);
+}

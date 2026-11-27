@@ -22,6 +22,7 @@
 #include "application/daily_expense/commands.h"
 #include "application/daily_expense/usecases.h"
 #include "common/balance.h"
+#include "core/ledger/ledger_engine.h"
 #include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "services/import_service.h"
 
@@ -1880,6 +1881,7 @@ test_smart_import_rule_bool_and_csv_amount_validation(csilk_db_pool_t* pool, int
 int
 main(void)
 {
+    ledger_register_balance_hooks();
     csilk_db_pool_t* pool = setup_test_db();
     if (!pool) {
         fprintf(stderr, "Failed to setup test database\n");

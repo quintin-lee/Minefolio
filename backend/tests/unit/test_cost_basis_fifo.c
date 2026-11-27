@@ -56,6 +56,7 @@ int
 main(void)
 {
     printf("=== Running Unit Test: FIFO Cost Basis Accounting Engine (TDD) ===\n");
+    ledger_register_balance_hooks();
     const char* db_file = "/tmp/test_cost_basis_fifo.db";
     init_test_db(db_file);
     csilk_db_pool_t* pool = db_get_pool();

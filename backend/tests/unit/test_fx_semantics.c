@@ -1,4 +1,5 @@
 #include "services/market/exchange_rate_service.h"
+#include "core/ledger/ledger_engine.h"
 #include "application/transfer/usecases.h"
 #include "application/transaction/commands.h"
 #include "application/transaction/usecases.h"
@@ -183,6 +184,7 @@ test_cross_currency_transfer_fx_and_reversal(void)
 }
 
 int main(void) {
+    ledger_register_balance_hooks();
     // 1. Known currencies must succeed with code 0
     double rate = 0.0;
     int rc = exchange_rate_get_to_cny_safe("CNY", &rate);

@@ -54,6 +54,7 @@ int
 main(void)
 {
     printf("=== Running Unit Test: Ledger Rebuild Checkpointing (TDD) ===\n");
+    ledger_register_balance_hooks();
     const char* db_file = "/tmp/test_ledger_rebuild_checkpoint.db";
     init_test_db(db_file);
     csilk_db_pool_t* pool = db_get_pool();
