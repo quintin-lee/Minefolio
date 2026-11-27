@@ -88,4 +88,69 @@ describe('frontend layout optimization', () => {
     const css = readSrc('src/styles/index.css')
     expect(css).toMatch(/\.mobile-segmented\s+\.segmented-item\s*\{[^}]*min-height:\s*32px;/s)
   })
+
+  it('unlocks Categories narrow stacking, wraps category tabs, and deduplicates .node-icon', () => {
+    const categories = readSrc('src/views/Categories.vue')
+    expect(categories).toMatch(/\.category-tabs\s*\{[^}]*flex-wrap:\s*wrap;/s)
+    expect(categories).toMatch(/@media\s*\(max-width:\s*991px\)\s*\{[\s\S]*?\.categories-page\s*\{[^}]*height:\s*auto;/s)
+    expect(categories.match(/^\.node-icon\s*\{/gm) || []).toHaveLength(1)
+  })
+
+  it('uses safe grid floor bounds and responsive collapses across grid components', () => {
+    for (const file of ['src/views/Mcp.vue', 'src/views/Skills.vue']) {
+      expect(readSrc(file)).toContain('minmax(min(320px, 100%), 1fr)')
+    }
+    for (const file of [
+      'src/components/market/GlobalIndicesBoard.vue',
+      'src/components/market/MarketSkeleton.vue',
+    ]) {
+      expect(readSrc(file)).toContain('minmax(min(280px, 100%), 1fr)')
+    }
+    expect(readSrc('src/components/WorkflowConfigCard.vue')).toMatch(/@media\s*\(max-width:\s*640px\)/)
+    expect(readSrc('src/components/market/FxHoldingsSummary.vue')).toMatch(/@media\s*\(max-width:\s*768px\)/)
+    expect(readSrc('src/components/market/FxTrendChart.vue')).toMatch(/@media\s*\(max-width:\s*768px\)/)
+    expect(readSrc('src/components/market/GlobalIndicesPlaceholder.vue')).toMatch(/@media\s*\(max-width:\s*768px\)/)
+    expect(readSrc('src/components/CashflowCalendar.vue')).toContain('repeat(7, minmax(0, 1fr))')
+  })
+
+  it('reflows Assets rows on narrow screens and uses design tokens for .institution-tag', () => {
+    const assets = readSrc('src/views/Assets.vue')
+    expect(assets).toMatch(/\.institution-tag\s*\{[^}]*var\(--mf-primary-light\)/s)
+    expect(assets).toMatch(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.asset-row\s*\{[^}]*grid-template-areas:/s)
+    expect(assets).not.toContain('rgba(0, 212, 255, 0.08)')
+  })
+
+  it('centers floating batch bars relative to Layout sidebar width and uses centralized tokens', () => {
+    const layout = readSrc('src/views/Layout.vue')
+    expect(layout).toContain('--mf-sidebar-width: 260px;')
+    expect(layout).toContain('--mf-sidebar-width: 64px;')
+
+    for (const file of ['src/views/Transactions.vue', 'src/views/DailyExpenses.vue']) {
+      const src = readSrc(file)
+      expect(src).toContain('calc(50% + var(--mf-sidebar-width, 0px) / 2)')
+      expect(src).toContain('z-index: var(--mf-z-floating, 120);')
+      expect(src).toContain('max-width: calc(100vw - 24px);')
+    }
+  })
+
+  it('wraps Reports metric cards, sizes charts on narrow viewports, expands spacing scale, and tokenizes remaining z-index overlays', () => {
+    const reports = readSrc('src/views/Reports.vue')
+    expect(reports).toMatch(/\.metric-cards\s*\{[^}]*flex-wrap:\s*wrap;/s)
+    expect(reports).toMatch(/@media\s*\(max-width:\s*1199px\)\s*\{[\s\S]*?\.chart-container\s*\{[^}]*min-height:\s*300px;/s)
+
+    const css = readSrc('src/styles/index.css')
+    expect(css).toContain('--mf-spacing-xs: 4px;')
+    expect(css).toContain('--mf-spacing-sm: 8px;')
+    expect(css).toContain('--mf-spacing-xl: 32px;')
+
+    for (const file of [
+      'src/components/AssetMentionMenu.vue',
+      'src/components/WorkflowSlashMenu.vue',
+      'src/views-mobile/DailyExpensesMobile.vue',
+    ]) {
+      expect(readSrc(file)).toContain('var(--mf-z-floating, 120)')
+    }
+    const chatCss = readSrc('src/styles/chat-page.css')
+    expect(chatCss).toMatch(/\.panel-overlay-backdrop\s*\{[^}]*var\(--mf-z-floating,\s*120\)/s)
+  })
 })

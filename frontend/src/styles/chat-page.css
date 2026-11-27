@@ -1469,7 +1469,7 @@
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
-  z-index: 110;
+  z-index: var(--mf-z-floating, 120);
   animation: backdrop-fade 0.2s ease-out;
 }
 

@@ -59,8 +59,11 @@
   --mf-loss-border: rgba(16, 185, 129, 0.3);
 
   /* Spacing Scale (theme-independent) */
+  --mf-spacing-xs: 4px;
+  --mf-spacing-sm: 8px;
   --mf-spacing-md: 16px;
   --mf-spacing-lg: 24px;
+  --mf-spacing-xl: 32px;
 
   /* Layout & Layering Tokens */
   --mf-content-max-width: 1600px;

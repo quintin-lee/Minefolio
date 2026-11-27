@@ -183,5 +183,5 @@ onMounted(() => loadData(true))
 .mobile-tag { border: none; font-size: 11px; padding: 0 6px; height: 20px; line-height: 20px; }
 .load-more-wrap { display: flex; justify-content: center; margin: 16px 0 24px; }
 .load-more-btn { width: 100%; border-radius: var(--mf-radius-md); color: var(--mf-text-muted); }
-.fab { position: fixed; z-index: 90; right: calc(20px + env(safe-area-inset-right)); bottom: calc(76px + env(safe-area-inset-bottom)); width: 56px; height: 56px; box-shadow: var(--mf-shadow-glow); }
+.fab { position: fixed; z-index: var(--mf-z-floating, 120); right: calc(20px + env(safe-area-inset-right)); bottom: calc(76px + env(safe-area-inset-bottom)); width: 56px; height: 56px; box-shadow: var(--mf-shadow-glow); }
 </style>

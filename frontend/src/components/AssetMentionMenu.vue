@@ -180,7 +180,7 @@ defineExpose({ handleKeyDown })
   border-radius: 10px;
   box-shadow: var(--mf-shadow-lg);
   overflow: hidden;
-  z-index: 100;
+  z-index: var(--mf-z-floating, 120);
   animation: slideUp 0.15s ease-out;
 }
 
