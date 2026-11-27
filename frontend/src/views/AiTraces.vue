@@ -57,7 +57,7 @@
             <span>{{ row.provider || '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="model" label="模型" min-width="140">
+        <el-table-column prop="model" label="模型" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="mono-text">{{ row.model || '—' }}</span>
           </template>

@@ -84,7 +84,7 @@
         empty-text="暂无历史备份快照"
         class="backup-table"
       >
-        <el-table-column prop="filename" :label="t('settings.backupFilename')" min-width="240">
+        <el-table-column prop="filename" :label="t('settings.backupFilename')" min-width="240" show-overflow-tooltip>
           <template #default="{ row }">
             <div class="file-cell">
               <Icon icon="ph:file-archive-bold" width="18" class="file-icon" />

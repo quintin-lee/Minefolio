@@ -96,8 +96,8 @@
         >
           <el-table-column type="selection" width="45" align="center" />
           <el-table-column prop="transaction_date" label="日期" width="120" />
-          <el-table-column prop="asset_name" label="账户资产" min-width="130" />
-          <el-table-column prop="linked_asset_name" label="扣款/回流账户" min-width="130">
+          <el-table-column prop="asset_name" label="账户资产" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="linked_asset_name" label="扣款/回流账户" min-width="130" show-overflow-tooltip>
             <template #default="{ row }">
               <el-tag v-if="row.linked_asset_name" size="small" type="warning" effect="light" class="type-badge" round>
                 {{ row.linked_asset_name }}
@@ -112,7 +112,7 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="category_name" label="交易分类" min-width="120">
+          <el-table-column prop="category_name" label="交易分类" min-width="120" show-overflow-tooltip>
             <template #default="{ row }">
               <span v-if="row.category_name" class="category-pill">{{ row.category_name }}</span>
               <span v-else class="muted-text">—</span>
@@ -146,7 +146,7 @@
               <el-tag size="small" type="info" effect="plain">{{ row.currency || 'CNY' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="note" label="备注" min-width="160">
+          <el-table-column prop="note" label="备注" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">
               <span>{{ row.note || '-' }}</span>
             </template>

@@ -108,7 +108,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="username" :label="t('settings.username')" min-width="200">
+        <el-table-column prop="username" :label="t('settings.username')" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
             <div class="user-cell">
               <div class="user-avatar-sm" :class="{ 'is-admin': row.role === 'admin', 'is-disabled': row.disabled }">

@@ -2,8 +2,8 @@
   <div class="table-container">
     <el-table :data="transactions" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
       <el-table-column prop="transaction_date" label="日期" width="120" />
-      <el-table-column prop="asset_name" label="资产" min-width="120" />
-      <el-table-column prop="category_name" label="分类" min-width="120" />
+      <el-table-column prop="asset_name" label="资产" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="category_name" label="分类" min-width="120" show-overflow-tooltip />
       <el-table-column prop="transaction_type" label="类型" width="100">
         <template #default="{ row }">
           <el-tag size="small" effect="light" class="type-badge" round>
@@ -16,7 +16,7 @@
           <span class="mono-amount">{{ formatCurrency(row.amount, row.currency) }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="note" label="备注" min-width="150" />
+      <el-table-column prop="note" label="备注" min-width="150" show-overflow-tooltip />
     </el-table>
   </div>
 </template>

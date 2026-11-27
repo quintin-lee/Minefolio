@@ -247,7 +247,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="im_user_id" :label="t('settings.imUserId')" min-width="200">
+        <el-table-column prop="im_user_id" :label="t('settings.imUserId')" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="mono user-id-text">{{ row.im_user_id }}</span>
           </template>

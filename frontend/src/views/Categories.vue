@@ -78,7 +78,7 @@
             <div class="panel-body-scroll">
               <el-table :data="paginatedFlatCategories" row-key="id" class="premium-table" header-cell-class-name="premium-header"
                 :row-class-name="rowClassName" @row-click="onRowClick">
-                <el-table-column prop="name" label="名称" min-width="140">
+                <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip>
                   <template #default="{ row }">
                     <span class="cat-name-cell">
                       <span class="cat-icon">{{ (row as any).icon || defaultIcon(row as Category) }}</span>

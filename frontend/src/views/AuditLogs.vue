@@ -30,7 +30,7 @@
             <span class="mono-text">{{ formatDateTime(row.created_at) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="asset_name" label="资产" min-width="120">
+        <el-table-column prop="asset_name" label="资产" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">
             <span>{{ row.asset_name || '—' }}</span>
           </template>
@@ -59,7 +59,7 @@
             <span class="mono-text">{{ row.source_id }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="note" label="备注" min-width="150">
+        <el-table-column prop="note" label="备注" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="muted-text">{{ row.note || '—' }}</span>
           </template>

@@ -12,13 +12,13 @@
     </p>
 
     <el-table :data="importRules" v-loading="rulesLoading" size="small" style="margin-top: 12px;">
-      <el-table-column prop="keyword" :label="t('settings.ruleKeywordCol')" min-width="120" />
+      <el-table-column prop="keyword" :label="t('settings.ruleKeywordCol')" min-width="120" show-overflow-tooltip />
       <el-table-column prop="match_field" :label="t('settings.ruleMatchField')" width="100">
         <template #default="{ row }">
           {{ matchFieldLabel(row.match_field) }}
         </template>
       </el-table-column>
-      <el-table-column prop="category_name" :label="t('settings.ruleCategory')" min-width="100">
+      <el-table-column prop="category_name" :label="t('settings.ruleCategory')" min-width="100" show-overflow-tooltip>
         <template #default="{ row }">
           <span>{{ row.category_name || '-' }}</span>
         </template>

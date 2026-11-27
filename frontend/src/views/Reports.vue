@@ -90,7 +90,7 @@
                       class="premium-table-small"
                       :header-cell-style="{ background: 'var(--mf-primary-light)' }"
                     >
-                      <el-table-column prop="tag_name" label="标签" min-width="120">
+                      <el-table-column prop="tag_name" label="标签" min-width="120" show-overflow-tooltip>
                         <template #default="{ row }">
                           <el-tag size="small" effect="plain" class="tag-plain">{{ row.tag_name }}</el-tag>
                         </template>
@@ -276,7 +276,7 @@
                 <h3>外币资产汇兑收益与价格回报拆解</h3>
               </div>
               <el-table :data="fxPnlData.assets" stripe size="small" class="premium-table">
-                <el-table-column prop="asset_name" label="资产名称" min-width="140" />
+                <el-table-column prop="asset_name" label="资产名称" min-width="140" show-overflow-tooltip />
                 <el-table-column prop="currency" label="币种" width="80" align="center" />
                 <el-table-column prop="cost_basis_orig" label="原币成本" width="110" align="right">
                   <template #default="{ row }">{{ Number(row.cost_basis_orig).toLocaleString() }}</template>
