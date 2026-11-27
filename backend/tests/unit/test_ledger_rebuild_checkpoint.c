@@ -626,6 +626,59 @@ main(void)
     memset(&tx_res, 0, sizeof(tx_res));
     assert(tx_usecase_create(pool, &cross_tx_2, &tx_res) != 0 && tx_res.code == 1002);
 
+    // Cross-ledger tx_usecase_update rejection (target asset_id / linked_asset_id)
+    create_asset_cmd_t create_l2_stock = {
+        .user_id = user_id,
+        .ledger_id = 2,
+        .category_id = 20,
+        .name = "Ledger2 Stock",
+        .current_value = 0.0,
+        .currency = "CNY",
+    };
+    memset(&a_res, 0, sizeof(a_res));
+    assert(asset_usecase_create(pool, &create_l2_stock, &a_res) == 0 && a_res.id > 0);
+    int64_t l2_stock_id = a_res.id;
+
+    // 1) Update tx1 (in ledger 1) to target asset in ledger 2 -> 1002
+    update_tx_cmd_t upd_cross_asset = {
+        .user_id = user_id,
+        .ledger_id = 1,
+        .tx_id = tx1.id,
+        .asset_id = l2_stock_id,
+        .has_asset_id = true,
+        .amount = 1000.0,
+        .price = 1.0,
+        .quantity = 1000.0,
+        .currency = "CNY",
+        .date = "2026-09-01 10:00:00",
+    };
+    memset(&tx_res, 0, sizeof(tx_res));
+    assert(tx_usecase_update(pool, &upd_cross_asset, &tx_res) != 0 && tx_res.code == 1002);
+
+    // 2) Update tx1 (in ledger 1) to cross-ledger linked_asset_id -> 1002
+    update_tx_cmd_t upd_cross_linked = {
+        .user_id = user_id,
+        .ledger_id = 1,
+        .tx_id = tx1.id,
+        .asset_id = 201,
+        .has_asset_id = true,
+        .linked_asset_id = l2_cash_id,
+        .has_linked_asset_id = true,
+        .amount = 1000.0,
+        .price = 1.0,
+        .quantity = 1000.0,
+        .currency = "CNY",
+        .date = "2026-09-01 10:00:00",
+    };
+    memset(&tx_res, 0, sizeof(tx_res));
+    assert(tx_usecase_update(pool, &upd_cross_linked, &tx_res) != 0 && tx_res.code == 1002);
+
+    // 3) Update tx1 with cmd->ledger_id=0 and mismatched asset/linked ledgers -> 1002
+    update_tx_cmd_t upd_cross_pair = upd_cross_linked;
+    upd_cross_pair.ledger_id = 0;
+    memset(&tx_res, 0, sizeof(tx_res));
+    assert(tx_usecase_update(pool, &upd_cross_pair, &tx_res) != 0 && tx_res.code == 1002);
+
     printf("=== All Ledger Rebuild Checkpoint Tests Passed! ===\n");
     return 0;
 }

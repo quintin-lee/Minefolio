@@ -43,6 +43,7 @@ export const useMarketStore = defineStore('market', () => {
   let ratesReqSeq = 0
   let historyReqSeq = 0
   let holdingsReqSeq = 0
+  let syncReqSeq = 0
 
   function setBaseCurrency(currency: string) {
     baseCurrency.value = currency
@@ -160,17 +161,17 @@ export const useMarketStore = defineStore('market', () => {
   }
 
   async function syncAllQuotes() {
-    const startSeq = ratesReqSeq
+    const syncSeq = ++syncReqSeq
     isSyncing.value = true
     try {
       const [fxRes, quoteRes] = await Promise.allSettled([
         marketApi.syncExchangeRates(),
         marketApi.syncAll(),
       ])
-      if (ratesReqSeq !== startSeq) return false
+      if (syncSeq !== syncReqSeq) return false
 
       await Promise.allSettled([fetchRates(), fetchHoldingsSummary(), fetchHistory()])
-      if (ratesReqSeq !== startSeq + 1) return false
+      if (syncSeq !== syncReqSeq) return false
       lastSyncAt.value = new Date().toLocaleTimeString()
 
       const fxOk = fxRes.status === 'fulfilled'
@@ -181,10 +182,12 @@ export const useMarketStore = defineStore('market', () => {
       }
       return true
     } catch (err) {
-      console.error('Market sync failed:', err)
+      if (syncSeq === syncReqSeq) {
+        console.error('Market sync failed:', err)
+      }
       return false
     } finally {
-      if (ratesReqSeq <= startSeq + 1) {
+      if (syncSeq === syncReqSeq) {
         isSyncing.value = false
       }
     }
@@ -332,6 +335,7 @@ export const useMarketStore = defineStore('market', () => {
     holdingsReqSeq++
     historyReqSeq++
     indicesReqSeq++
+    syncReqSeq++
     isLoadingRates.value = false
     isLoadingHistory.value = false
     isLoadingHoldings.value = false

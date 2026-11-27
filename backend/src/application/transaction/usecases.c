@@ -407,11 +407,39 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
         return -1;
     }
 
-    if (target_linked_id > 0 && !tx_asset_exists(pool, cmd->user_id, target_linked_id)) {
+    int64_t acct_ledger_id = 0, acct_id = 0;
+    asset_get_ledger_and_account(
+        (csilk_db_pool_t*)pool, target_asset_id, &acct_ledger_id, &acct_id);
+    if (cmd->ledger_id > 0 && acct_ledger_id > 0 && acct_ledger_id != cmd->ledger_id) {
         csilk_json_free(old_rows);
         out_res->code = 1002;
-        snprintf(out_res->message, sizeof(out_res->message), "关联资金账户无效");
+        snprintf(out_res->message, sizeof(out_res->message), "标的资产不属于当前账本");
         return -1;
+    }
+
+    if (target_linked_id > 0) {
+        if (!tx_asset_exists(pool, cmd->user_id, target_linked_id)) {
+            csilk_json_free(old_rows);
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "关联资金账户无效");
+            return -1;
+        }
+        int64_t linked_ledger_id = 0, linked_acct_id = 0;
+        asset_get_ledger_and_account(
+            (csilk_db_pool_t*)pool, target_linked_id, &linked_ledger_id, &linked_acct_id);
+        if (cmd->ledger_id > 0 && linked_ledger_id > 0 && linked_ledger_id != cmd->ledger_id) {
+            csilk_json_free(old_rows);
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "关联资金账户不属于当前账本");
+            return -1;
+        }
+        if (acct_ledger_id > 0 && linked_ledger_id > 0 && acct_ledger_id != linked_ledger_id) {
+            csilk_json_free(old_rows);
+            out_res->code = 1002;
+            snprintf(
+                out_res->message, sizeof(out_res->message), "标的资产与关联资金账户不属于同一账本");
+            return -1;
+        }
     }
 
     {

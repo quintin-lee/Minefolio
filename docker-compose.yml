@@ -58,6 +58,8 @@ services:
       - postgres
     environment:
       POSTGRES_USER: ${MINEFOLIO_DB_USER:-minefolio}
+      # --profile postgres 启动时必须设置非空 MINEFOLIO_DB_PASSWORD（例如在 .env 中配置），
+      # 否则 postgres 镜像会因 POSTGRES_PASSWORD 为空而拒绝初始化（此处保留 :- 以免影响默认 SQLite 启动）。
       POSTGRES_PASSWORD: ${MINEFOLIO_DB_PASSWORD:-}
       POSTGRES_DB: ${MINEFOLIO_DB_NAME:-minefolio}
       POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C.UTF-8"
@@ -124,13 +126,16 @@ services:
       - im
     working_dir: /app
     volumes:
-      - ./gateway:/app
+      - ./gateway:/app:ro
+      - im_gateway_data:/data
     environment:
       MINEFOLIO_API: "http://minefolio:8080"
       ONEBOT_WS_URL: "ws://napcat:3001"
       ONEBOT_API_URL: "http://napcat:3000"
       ONEBOT_ACCESS_TOKEN: "${NAPCAT_ACCESS_TOKEN:-}"
       ONEBOT_BIND_TOKEN: "${ONEBOT_BIND_TOKEN:-}"
+      CACHE_FILE: "/data/im_bindings.json"
+      MINEFOLIO_IM_CACHE_FILE: "/data/im_bindings.json"
       NODE_ENV: "production"
     command: ["node", "adapters/onebot-server.js"]
     depends_on:
@@ -164,4 +169,5 @@ volumes:
   napcat-qq:
   napcat-config:
   napcat-plugins:
+  im_gateway_data:
   ilink_state:

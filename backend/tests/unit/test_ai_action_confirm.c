@@ -14,6 +14,7 @@
 #include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
 #include "application/account/usecases.h"
 #include "core/financial/money.h"
+#include "core/ledger/ledger_engine.h"
 #include "csilk/csilk.h"
 
 static void
@@ -120,6 +121,7 @@ main(int argc, char** argv)
     }
 
     const char* test_db = "/tmp/test_ai_action_confirm.db";
+    ledger_register_balance_hooks();
     csilk_db_pool_t* pool = NULL;
     init_test_db(test_db, &pool);
 
@@ -880,6 +882,24 @@ main(int argc, char** argv)
         ai_tool_context_free(ed_def_ctx);
         printf("  ✅ Shared-ledger operator expense & transfer confirm updated balances & stamped ledger_id=%lld (ignoring default fallback)\n",
                (long long)sh_lid);
+    }
+
+    /* ----------------------------------------------------------------- */
+    /* Test 10: ai_confirm_has_explicit_ledger rejects "0"/invalid IDs   */
+    /* ----------------------------------------------------------------- */
+    printf("[Test 10] Verifying ai_confirm_has_explicit_ledger...\n");
+    {
+        assert(ai_confirm_has_explicit_ledger(NULL, NULL, 0) == false);
+        assert(ai_confirm_has_explicit_ledger("", "", 0) == false);
+        assert(ai_confirm_has_explicit_ledger("0", NULL, 0) == false);
+        assert(ai_confirm_has_explicit_ledger(NULL, "0", 0) == false);
+        assert(ai_confirm_has_explicit_ledger("0", "0", 0) == false);
+        assert(ai_confirm_has_explicit_ledger("-1", "abc", -2) == false);
+        assert(ai_confirm_has_explicit_ledger("2", NULL, 0) == true);
+        assert(ai_confirm_has_explicit_ledger(NULL, "3", 0) == true);
+        assert(ai_confirm_has_explicit_ledger(NULL, NULL, 4) == true);
+        assert(ai_confirm_has_explicit_ledger("0", "5", 0) == true);
+        printf("  ✅ ai_confirm_has_explicit_ledger only treats positive parsed IDs as explicit\n");
     }
 
     if (saved_draft_token) {

@@ -9,6 +9,7 @@
 #include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
 #include "application/account/usecases.h"
 #include "core/financial/money.h"
+#include "core/ledger/ledger_engine.h"
 
 static void
 seed_test_user_and_assets(csilk_db_pool_t* pool,
@@ -136,6 +137,8 @@ main(int argc, char** argv)
     printf("============================================================\n");
     printf("   TEST SUITE: AI Batch Confirmation Protocol (mf_batch_v1)  \n");
     printf("============================================================\n");
+
+    ledger_register_balance_hooks();
 
     /* ------------------------------------------------------------- */
     /* Test 1: Batch Hash Determinism Across Multiple Actions        */

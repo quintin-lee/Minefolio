@@ -251,6 +251,14 @@ ai_message_mark_action_executed(csilk_db_pool_t* pool, int64_t user_id, const ch
  * - 令牌由 propose_* 工具在用户会话内签发（300s TTL、绑定参数哈希）；
  * - 参数与令牌不符 / 令牌过期 / 重放 → 拒绝，不落账。
  */
+bool
+ai_confirm_has_explicit_ledger(const char* lid_header, const char* lid_query, int64_t body_lid)
+{
+    int64_t h_lid = (lid_header && lid_header[0]) ? parse_query_int_strict(lid_header, 0) : 0;
+    int64_t q_lid = (lid_query && lid_query[0]) ? parse_query_int_strict(lid_query, 0) : 0;
+    return (h_lid > 0) || (q_lid > 0) || (body_lid > 0);
+}
+
 void
 api_ai_action_confirm_handler(csilk_ctx_t* c)
 {
@@ -294,8 +302,7 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
     const char* lid_header = csilk_get_header(c, "X-Ledger-Id");
     const char* lid_query = csilk_get_query(c, "ledger_id");
     int64_t     body_lid = db_get_int(body, "ledger_id");
-    bool        has_explicit_ledger =
-        (lid_header && lid_header[0]) || (lid_query && lid_query[0]) || (body_lid > 0);
+    bool    has_explicit_ledger = ai_confirm_has_explicit_ledger(lid_header, lid_query, body_lid);
     int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
     if (ledger_id < 0) {
         csilk_json_free(body);

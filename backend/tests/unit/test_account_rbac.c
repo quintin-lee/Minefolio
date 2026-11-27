@@ -25,6 +25,7 @@
 #include "services/ai/policy/permission.h"
 #include "common/db.h"
 #include "common/ledger_utils.h"
+#include "core/ledger/ledger_engine.h"
 #include "config/secret.h"
 #include "csilk/csilk.h"
 #include <assert.h>
@@ -1584,6 +1585,7 @@ int main(void) {
     printf("Starting Account RBAC & Field Masking Tests\n");
     printf("========================================\n");
 
+    ledger_register_balance_hooks();
     test_domain_rules();
 
     csilk_db_pool_t* pool = setup_test_db();

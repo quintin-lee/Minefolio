@@ -6,6 +6,7 @@
 #include "domain/auth/repository.h"
 #include "common/db.h"
 #include "common/ledger_utils.h"
+#include "core/ledger/ledger_engine.h"
 #include "config/secret.h"
 #include "csilk/csilk.h"
 #include <assert.h>
@@ -43,6 +44,7 @@ static csilk_db_pool_t* setup_test_db(void) {
 
 int main(void) {
     printf("=== Starting Report Services Unit Tests ===\n");
+    ledger_register_balance_hooks();
     csilk_db_pool_t* pool = setup_test_db();
 
     int64_t user_id = 0;

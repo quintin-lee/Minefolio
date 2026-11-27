@@ -262,6 +262,60 @@ describe('store logout race isolation (async epoch guards)', () => {
     expect(localStorage.getItem('minefolio_cached_rates')).toBeNull()
   })
 
+  it('market store: stale syncAllQuotes() settling after reset() does not clear session B isSyncing', async () => {
+    const store = useMarketStore()
+
+    // Session A starts syncAllQuotes()
+    const dFxA = deferred<Record<string, number>>()
+    const dAllA = deferred<any>()
+    ;(marketApi.syncExchangeRates as any).mockReturnValueOnce(dFxA.promise)
+    ;(marketApi.syncAll as any).mockReturnValueOnce(dAllA.promise)
+
+    const pA = store.syncAllQuotes()
+    expect(store.isSyncing).toBe(true)
+
+    // Session A logs out -> reset()
+    store.reset()
+    expect(store.isSyncing).toBe(false)
+
+    // Session B logs in and starts a fresh syncAllQuotes()
+    const dFxB = deferred<Record<string, number>>()
+    const dAllB = deferred<any>()
+    const dRatesB = deferred<Record<string, number>>()
+    const dHoldB = deferred<any>()
+    const dHistB = deferred<any[]>()
+    ;(marketApi.syncExchangeRates as any).mockReturnValueOnce(dFxB.promise)
+    ;(marketApi.syncAll as any).mockReturnValueOnce(dAllB.promise)
+    ;(marketApi.getExchangeRates as any).mockReturnValueOnce(dRatesB.promise)
+    ;(marketApi.getMultiCurrencySummary as any).mockReturnValueOnce(dHoldB.promise)
+    ;(marketApi.getFxHistory as any).mockReturnValueOnce(dHistB.promise)
+
+    const pB = store.syncAllQuotes()
+    expect(store.isSyncing).toBe(true)
+
+    // Session A's requests settle late -> must be discarded and must NOT clear session B's isSyncing
+    dFxA.resolve({ USD: 9.99 })
+    dAllA.resolve({ synced: 1 })
+    const resA = await pA
+
+    expect(resA).toBe(false)
+    expect(store.isSyncing).toBe(true)
+    expect(store.lastSyncAt).toBeNull()
+
+    // Session B settles normally
+    dFxB.resolve({ USD: 7.25 })
+    dAllB.resolve({ synced: 2 })
+    await Promise.resolve()
+    dRatesB.resolve({ USD: 7.25 })
+    dHoldB.resolve({ total_cny: 1000 })
+    dHistB.resolve([])
+    const resB = await pB
+
+    expect(resB).toBe(true)
+    expect(store.isSyncing).toBe(false)
+    expect(store.lastSyncAt).not.toBeNull()
+  })
+
   it('useFinancialEntities: discards stale loadEntities after resetFinancialEntities() and lets new epoch load proceed', async () => {
     const dAcc1 = deferred<any[]>()
     const dAsset1 = deferred<any>()
