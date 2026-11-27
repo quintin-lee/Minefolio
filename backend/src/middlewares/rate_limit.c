@@ -40,19 +40,11 @@ rate_limit_effective_ip(csilk_ctx_t* c, char* out, size_t out_cap)
     if (!out || out_cap == 0) {
         return;
     }
-    if (!rate_limit_trust_proxy()) {
-        /* 未显式启用可信代理时，忽略客户端可伪造的 X-Forwarded-For / X-Real-IP 头，
-         * 防止攻击者通过轮换伪造头绕过登录/2FA/bind-auth 暴力破解限流。 */
-        const char* xff = csilk_get_header(c, "X-Forwarded-For");
-        const char* xri = csilk_get_header(c, "X-Real-IP");
-        if ((xff && xff[0]) || (xri && xri[0])) {
-            snprintf(out, out_cap, "untrusted-fwd");
-            return;
-        }
-    }
-    const char* ip = csilk_get_client_ip(c);
+    /* 未开启 TRUST_PROXY 时，直接提取 TCP Socket 对端真实 IP（忽略可伪造的 XFF/X-Real-IP），
+     * 既阻止伪造请求头绕过限流，也避免将所有带转发头的请求折叠为同一全局桶引发 DoS。 */
+    const char* ip = rate_limit_trust_proxy() ? csilk_get_client_ip(c) : csilk_get_peer_ip(c);
     if (!ip || !ip[0]) {
-        snprintf(out, out_cap, "127.0.0.1");
+        snprintf(out, out_cap, "unknown");
         return;
     }
     /* 清洗非 IP 字符，防止超长或特殊控制字符污染桶键 */
@@ -66,7 +58,7 @@ rate_limit_effective_ip(csilk_ctx_t* c, char* out, size_t out_cap)
     }
     out[n] = '\0';
     if (n == 0) {
-        snprintf(out, out_cap, "127.0.0.1");
+        snprintf(out, out_cap, "unknown");
     }
 }
 

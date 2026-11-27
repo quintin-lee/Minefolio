@@ -22,6 +22,7 @@
 #include "services/ai/tools/context.h"
 #include "services/ai/tools/mcp/mcp_client.h"
 #include "middlewares/csrf_middleware.h"
+#include "middlewares/rate_limit.h"
 #include "csilk/csilk.h"
 #include <arpa/inet.h>
 #include <assert.h>
@@ -1147,6 +1148,93 @@ test_db_dsn_redaction(void)
     assert(strcmp(out, "./data/minefolio.db") == 0);
 }
 
+static void
+test_rate_limit_uses_peer_ip_when_proxy_untrusted(void)
+{
+    printf("[11] Rate limit uses real peer IP instead of untrusted-fwd bucket...\n");
+    signal(SIGPIPE, SIG_IGN);
+    config_secret_set_test_override("TRUST_PROXY", "0");
+    unsetenv("MINEFOLIO_TRUST_PROXY");
+
+    csrf_test_srv_t srv = {0};
+    atomic_init(&srv.exited, 0);
+    srv.port = csrf_pick_loopback_port();
+    srv.app = csilk_app_new(NULL);
+    assert(srv.app != NULL);
+
+    csilk_config_t* cfg = csilk_app_config(srv.app);
+    assert(cfg != NULL);
+    csilk_server_config_t scfg = cfg->server;
+    scfg.worker_threads = 1;
+    scfg.idle_timeout_ms = 10000;
+    csilk_app_set_server_config(srv.app, scfg);
+    free(cfg);
+
+    csilk_app_get(srv.app, "/healthz", csrf_test_ok_handler);
+    csilk_app_use_group(srv.app, "/api", rate_limit_auth_middleware);
+    csilk_app_post(srv.app, "/api/auth/login", csrf_test_ok_handler);
+
+    srv.srv = csilk_app_server(srv.app);
+    assert(srv.srv != NULL);
+    assert(pthread_create(&srv.thread, NULL, csrf_test_srv_runner, &srv) == 0);
+
+    bool ready = false;
+    for (int i = 0; i < 200; i++) {
+        if (atomic_load_explicit(&srv.exited, memory_order_acquire) != 0) {
+            break;
+        }
+        int fd = csrf_connect_loopback(srv.port);
+        if (fd >= 0) {
+            const char* req = "GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+            char        resp[512] = {0};
+            if (csrf_send_all(fd, req, strlen(req)) == 0 &&
+                csrf_read_http_response(fd, resp, sizeof(resp), 500) > 0 &&
+                strstr(resp, "HTTP/1.1 200") != NULL) {
+                close(fd);
+                ready = true;
+                break;
+            }
+            close(fd);
+        }
+        struct timespec ts = {0, 15000000L};
+        nanosleep(&ts, NULL);
+    }
+    assert(ready);
+
+    char resp[2048];
+    /* First 5 requests with distinct spoofed XFF + next 5 without XFF must share loopback peer bucket */
+    for (int i = 0; i < 10; i++) {
+        char req[512];
+        if (i < 5) {
+            snprintf(req,
+                     sizeof(req),
+                     "POST /api/auth/login HTTP/1.1\r\nHost: localhost\r\n"
+                     "X-Forwarded-For: 203.0.113.%d\r\nContent-Length: 2\r\n"
+                     "Connection: close\r\n\r\n{}",
+                     i + 1);
+        } else {
+            snprintf(req,
+                     sizeof(req),
+                     "POST /api/auth/login HTTP/1.1\r\nHost: localhost\r\n"
+                     "Content-Length: 2\r\nConnection: close\r\n\r\n{}");
+        }
+        csrf_send_http(srv.port, req, resp, sizeof(resp));
+        assert(strstr(resp, "HTTP/1.1 200") != NULL);
+    }
+
+    /* 11th request even with a new spoofed XFF must hit 429 on the same peer IP */
+    const char* req11 =
+        "POST /api/auth/login HTTP/1.1\r\nHost: localhost\r\n"
+        "X-Forwarded-For: 198.51.100.99\r\nContent-Length: 2\r\n"
+        "Connection: close\r\n\r\n{}";
+    csrf_send_http(srv.port, req11, resp, sizeof(resp));
+    assert(strstr(resp, "HTTP/1.1 429") != NULL);
+
+    csilk_server_stop(srv.srv);
+    pthread_join(srv.thread, NULL);
+    csilk_app_free(srv.app);
+}
+
 int
 main(void)
 {
@@ -1162,6 +1250,7 @@ main(void)
     test_receipt_base64_padding();
     test_config_get_str_oob_regression();
     test_csrf_middleware_oauth_and_no_duplicate_cookie();
+    test_rate_limit_uses_peer_ip_when_proxy_untrusted();
 
     cleanup_db_files();
     printf("=== All Security & Audit Regression Tests Passed ===\n");
