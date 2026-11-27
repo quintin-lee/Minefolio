@@ -14,6 +14,7 @@
 #include "common/ctx.h"
 #include "common/jwt.h"
 #include "config/secret.h"
+#include "csilk/core/ctx/context.h"
 #include "csilk/core/ctx/response.h"
 #include <pthread.h>
 #include <stdbool.h>
@@ -40,25 +41,58 @@ rate_limit_effective_ip(csilk_ctx_t* c, char* out, size_t out_cap)
     if (!out || out_cap == 0) {
         return;
     }
-    /* 未开启 TRUST_PROXY 时，直接提取 TCP Socket 对端真实 IP（忽略可伪造的 XFF/X-Real-IP），
-     * 既阻止伪造请求头绕过限流，也避免将所有带转发头的请求折叠为同一全局桶引发 DoS。 */
-    const char* ip = rate_limit_trust_proxy() ? csilk_get_client_ip(c) : csilk_get_peer_ip(c);
-    if (!ip || !ip[0]) {
+    if (!c) {
         snprintf(out, out_cap, "unknown");
         return;
     }
-    /* 清洗非 IP 字符，防止超长或特殊控制字符污染桶键 */
-    size_t n = 0;
-    for (const char* p = ip; *p && n + 1 < out_cap; p++) {
-        unsigned char ch = (unsigned char)*p;
-        if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') ||
-            ch == '.' || ch == ':') {
-            out[n++] = (char)ch;
+    /* 未开启 TRUST_PROXY 时，临时屏蔽 X-Forwarded-For / X-Real-IP 请求头，
+     * 使原版 csilk v1.2.0 的 csilk_get_client_ip(c) 退回到底层 TCP socket 对端真实 IP，
+     * 既阻止伪造请求头绕过限流，又保持与上游 csilk v1.2.0 的严格源码兼容。 */
+    bool trust_proxy = rate_limit_trust_proxy();
+    bool has_xff = false;
+    bool has_xreal = false;
+    char xff_save[512] = {0};
+    char xreal_save[256] = {0};
+
+    if (!trust_proxy) {
+        const char* orig_xff = csilk_get_header(c, "X-Forwarded-For");
+        if (orig_xff && orig_xff[0] != '\0') {
+            snprintf(xff_save, sizeof(xff_save), "%s", orig_xff);
+            has_xff = true;
+            csilk_set_request_header(c, "X-Forwarded-For", "");
+        }
+        const char* orig_xreal = csilk_get_header(c, "X-Real-IP");
+        if (orig_xreal && orig_xreal[0] != '\0') {
+            snprintf(xreal_save, sizeof(xreal_save), "%s", orig_xreal);
+            has_xreal = true;
+            csilk_set_request_header(c, "X-Real-IP", "");
         }
     }
-    out[n] = '\0';
-    if (n == 0) {
+
+    const char* ip = csilk_get_client_ip(c);
+    if (!ip || !ip[0]) {
         snprintf(out, out_cap, "unknown");
+    } else {
+        /* 清洗非 IP 字符，防止超长或特殊控制字符污染桶键 */
+        size_t n = 0;
+        for (const char* p = ip; *p && n + 1 < out_cap; p++) {
+            unsigned char ch = (unsigned char)*p;
+            if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') ||
+                (ch >= 'A' && ch <= 'F') || ch == '.' || ch == ':') {
+                out[n++] = (char)ch;
+            }
+        }
+        out[n] = '\0';
+        if (n == 0) {
+            snprintf(out, out_cap, "unknown");
+        }
+    }
+
+    if (has_xff) {
+        csilk_set_request_header(c, "X-Forwarded-For", xff_save);
+    }
+    if (has_xreal) {
+        csilk_set_request_header(c, "X-Real-IP", xreal_save);
     }
 }
 
