@@ -231,6 +231,10 @@ quote_engine_fetch_quote(const char* symbol, const char* source_type, market_quo
         return -1;
     }
 
+    if (atomic_load(&g_quote_stop)) {
+        return -1;
+    }
+
     if (market_mock_enabled()) {
         return market_mock_fetch_single(symbol, out_quote);
     }
@@ -480,23 +484,81 @@ populate_mock_sparkline(double curr, double change_pct, double* out_spark, int c
     }
 }
 
+static bool
+indices_cache_is_stale_locked(time_t now)
+{
+    return (g_indices_cache.count == 0) ||
+           ((now - g_indices_cache.last_updated) > INDICES_CACHE_TTL_SEC);
+}
+
+static const global_index_item_t*
+find_cached_index_by_symbol(const global_index_item_t* items, int count, const char* symbol)
+{
+    if (!items || count <= 0 || !symbol) {
+        return NULL;
+    }
+    for (int i = 0; i < count; i++) {
+        if (strcmp(items[i].symbol, symbol) == 0 && items[i].current_price > 0) {
+            return &items[i];
+        }
+    }
+    return NULL;
+}
+
 /* 计算并回填指数缓存：在锁外做 HTTP 拉取（避免阻塞读路径），
-   写共享缓存时短暂持锁，刷新期间读路径继续服务旧数据（stale-while-revalidate）。
+   全部 15 条指数拉取完成后一次性持锁原子替换缓存，刷新期间读路径继续服务完整旧数据（stale-while-revalidate）。
    并发调用方须以 refresh_lock 串行化本函数（见 refresh_indices_cache_offlock）。 */
 static void
 refresh_indices_cache_offlock_impl(void)
 {
-    time_t now = time(NULL);
+    time_t              now = time(NULL);
+    market_clock_item_t local_clocks[8];
+    int                 local_clock_count = 0;
+    quote_engine_calc_market_clocks(now, local_clocks, 8, &local_clock_count);
 
-    /* 短暂持锁装配时钟与缓存头部 */
+    int                 n = (int)(sizeof(g_preset_indices) / sizeof(g_preset_indices[0]));
+    global_index_item_t local_items[MAX_PRESET_INDICES];
+    int                 local_count = 0;
+
+    global_index_item_t prev_items[MAX_PRESET_INDICES];
+    int                 prev_count = 0;
     pthread_mutex_lock(&g_indices_cache.lock);
-    g_indices_cache.clock_count = 0;
-    quote_engine_calc_market_clocks(now, g_indices_cache.clocks, 8, &g_indices_cache.clock_count);
-    int n = sizeof(g_preset_indices) / sizeof(g_preset_indices[0]);
-    g_indices_cache.count = 0;
+    prev_count = g_indices_cache.count;
+    if (prev_count > MAX_PRESET_INDICES) {
+        prev_count = MAX_PRESET_INDICES;
+    }
+    if (prev_count > 0) {
+        memcpy(prev_items, g_indices_cache.items, sizeof(global_index_item_t) * (size_t)prev_count);
+    }
     pthread_mutex_unlock(&g_indices_cache.lock);
 
-    for (int i = 0; i < n; i++) {
+    int active_attempted = 0;
+    int active_succeeded = 0;
+
+    for (int i = 0; i < n && local_count < MAX_PRESET_INDICES; i++) {
+        const char* mkt =
+            get_market_clock_id(g_preset_indices[i].category, g_preset_indices[i].symbol);
+        bool active = is_market_active(mkt, local_clocks, local_clock_count);
+        if (active) {
+            active_attempted++;
+        }
+
+        const global_index_item_t* prev_item =
+            find_cached_index_by_symbol(prev_items, prev_count, g_preset_indices[i].symbol);
+
+        /* 锁外做 HTTP 拉取，避免长时间持有读缓存锁阻塞读路径 */
+        market_quote_t q;
+        bool fetched = (active &&
+                        quote_engine_fetch_quote(
+                            g_preset_indices[i].symbol, g_preset_indices[i].source, &q) == 0 &&
+                        q.current_price > 0);
+        if (fetched) {
+            active_succeeded++;
+        } else if (prev_item) {
+            local_items[local_count++] = *prev_item;
+            continue;
+        }
+
         global_index_item_t item;
         memset(&item, 0, sizeof(item));
         strncpy(item.symbol, g_preset_indices[i].symbol, sizeof(item.symbol) - 1);
@@ -505,16 +567,7 @@ refresh_indices_cache_offlock_impl(void)
         strncpy(item.region_flag, g_preset_indices[i].flag, sizeof(item.region_flag) - 1);
         strncpy(item.currency, g_preset_indices[i].currency, sizeof(item.currency) - 1);
 
-        const char* mkt =
-            get_market_clock_id(g_preset_indices[i].category, g_preset_indices[i].symbol);
-        bool active = is_market_active(mkt, g_indices_cache.clocks, g_indices_cache.clock_count);
-
-        /* 锁外做 HTTP 拉取，避免长时间持有读缓存锁阻塞读路径 */
-        market_quote_t q;
-        if (active &&
-            quote_engine_fetch_quote(g_preset_indices[i].symbol, g_preset_indices[i].source, &q) ==
-                0 &&
-            q.current_price > 0) {
+        if (fetched) {
             item.current_price = q.current_price;
             item.change_percent = q.change_percent;
             snprintf(item.quote_time, sizeof(item.quote_time), "%s", q.quote_time);
@@ -538,18 +591,40 @@ refresh_indices_cache_offlock_impl(void)
         item.sparkline_count = 8;
         populate_mock_sparkline(item.current_price, item.change_percent, item.sparkline, 8);
 
-        /* 短暂持锁写单个条目 */
-        pthread_mutex_lock(&g_indices_cache.lock);
-        global_index_item_t* slot = &g_indices_cache.items[g_indices_cache.count];
-        *slot = item;
-        g_indices_cache.count++;
-        pthread_mutex_unlock(&g_indices_cache.lock);
+        local_items[local_count++] = item;
     }
 
+    time_t finished_at = time(NULL);
     pthread_mutex_lock(&g_indices_cache.lock);
-    g_indices_cache.last_updated = now;
-    g_indices_cache.generation++;
+    if (prev_count > 0 && active_attempted > 0 && active_succeeded == 0) {
+        memcpy(g_indices_cache.clocks,
+               local_clocks,
+               sizeof(market_clock_item_t) * (size_t)local_clock_count);
+        g_indices_cache.clock_count = local_clock_count;
+    } else {
+        memcpy(
+            g_indices_cache.items, local_items, sizeof(global_index_item_t) * (size_t)local_count);
+        g_indices_cache.count = local_count;
+        memcpy(g_indices_cache.clocks,
+               local_clocks,
+               sizeof(market_clock_item_t) * (size_t)local_clock_count);
+        g_indices_cache.clock_count = local_clock_count;
+        g_indices_cache.last_updated = finished_at;
+        g_indices_cache.generation++;
+    }
     pthread_mutex_unlock(&g_indices_cache.lock);
+}
+
+/* 须在持有 g_indices_cache.refresh_lock 时调用：双重检查缓存是否仍陈旧后再刷新。 */
+static void
+refresh_indices_cache_if_stale_locked(void)
+{
+    pthread_mutex_lock(&g_indices_cache.lock);
+    bool still_stale = indices_cache_is_stale_locked(time(NULL));
+    pthread_mutex_unlock(&g_indices_cache.lock);
+    if (still_stale) {
+        refresh_indices_cache_offlock_impl();
+    }
 }
 
 /* 串行化入口：以 refresh_lock 保护 refresh_indices_cache_offlock_impl，
@@ -716,12 +791,21 @@ quote_engine_get_indices(const char*          category,
        持锁仅做数据拷贝，不再阻塞于 HTTP。 */
     pthread_mutex_lock(&g_indices_cache.lock);
     time_t now = time(NULL);
-    bool   stale = (g_indices_cache.count == 0) ||
-                   ((now - g_indices_cache.last_updated) > INDICES_CACHE_TTL_SEC);
+    bool   has_cached = (g_indices_cache.count > 0);
+    bool   stale = indices_cache_is_stale_locked(now);
     pthread_mutex_unlock(&g_indices_cache.lock);
 
     if (stale) {
-        refresh_indices_cache_offlock();
+        if (has_cached) {
+            if (pthread_mutex_trylock(&g_indices_cache.refresh_lock) == 0) {
+                refresh_indices_cache_if_stale_locked();
+                pthread_mutex_unlock(&g_indices_cache.refresh_lock);
+            }
+        } else {
+            pthread_mutex_lock(&g_indices_cache.refresh_lock);
+            refresh_indices_cache_if_stale_locked();
+            pthread_mutex_unlock(&g_indices_cache.refresh_lock);
+        }
     }
 
     pthread_mutex_lock(&g_indices_cache.lock);

@@ -1,5 +1,6 @@
 #include "services/report_asset_service.h"
 #include "services/report_expense_service.h"
+#include "services/market/exchange_rate_service.h"
 #include "application/category/usecases.h"
 #include "application/report/commands.h"
 #include "domain/auth/repository.h"
@@ -8,6 +9,7 @@
 #include "config/secret.h"
 #include "csilk/csilk.h"
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -170,11 +172,50 @@ int main(void) {
     csilk_json_free(res.data_payload);
     printf("  [OK] report_fx_pnl\n");
 
-    // 7. report_position_overview
+    // 7. report_position_overview (with multi-currency daily_pnl verification)
+    assert(exchange_rate_set("USD", 7.20) == 0);
+
+    csilk_json_t* cny_row = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM assets WHERE user_id=? AND name='现金钱包' LIMIT 1;",
+        (const char*[]){uid_str, NULL});
+    assert(cny_row && csilk_json_array_size(cny_row) == 1);
+    int64_t cny_asset_id = db_get_int(csilk_json_array_get(cny_row, 0), "id");
+    csilk_json_free(cny_row);
+
+    csilk_json_t* usd_row = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM assets WHERE user_id=? AND name='Apple Inc' LIMIT 1;",
+        (const char*[]){uid_str, NULL});
+    assert(usd_row && csilk_json_array_size(usd_row) == 1);
+    int64_t usd_asset_id = db_get_int(csilk_json_array_get(usd_row, 0), "id");
+    csilk_json_free(usd_row);
+
+    char cny_aid_str[32], usd_aid_str[32], log_ts[32];
+    snprintf(cny_aid_str, sizeof(cny_aid_str), "%lld", (long long)cny_asset_id);
+    snprintf(usd_aid_str, sizeof(usd_aid_str), "%lld", (long long)usd_asset_id);
+    snprintf(log_ts, sizeof(log_ts), "%s 12:00:00", today_str);
+
+    assert(csilk_db_exec_param(
+               pool,
+               "INSERT INTO asset_balance_logs "
+               "(asset_id, user_id, delta, balance_after, source_type, source_id, note, created_at) "
+               "VALUES (?, ?, 100.0, 2100.0, 'test_fx', 1, 'USD delta', ?);",
+               (const char*[]){usd_aid_str, uid_str, log_ts, NULL}) == 0);
+
+    assert(csilk_db_exec_param(
+               pool,
+               "INSERT INTO asset_balance_logs "
+               "(asset_id, user_id, delta, balance_after, source_type, source_id, note, created_at) "
+               "VALUES (?, ?, 50.0, 10050.0, 'test_fx', 2, 'CNY delta', ?);",
+               (const char*[]){cny_aid_str, uid_str, log_ts, NULL}) == 0);
+
     report_position_overview(pool, &q, &res);
     assert(res.code == 0 && res.data_payload != NULL);
+    double daily_pnl = db_get_num(res.data_payload, "daily_pnl");
+    assert(fabs(daily_pnl - 770.00) < 1e-4);
     csilk_json_free(res.data_payload);
-    printf("  [OK] report_position_overview\n");
+    printf("  [OK] report_position_overview (daily_pnl=%.2f)\n", daily_pnl);
 
     // 8. report_expense_monthly
     report_expense_monthly(pool, &q, &res);

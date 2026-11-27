@@ -368,18 +368,18 @@ report_position_overview(void* pool, const report_query_t* q, report_result_t* o
             today_sql,
             sizeof(today_sql),
             db_is_postgres()
-                ? "SELECT c.asset_type, COALESCE(SUM(abl.delta), 0.0) as total_delta "
+                ? "SELECT c.asset_type, a.currency, COALESCE(SUM(abl.delta), 0.0) as total_delta "
                   "FROM asset_balance_logs abl "
                   "JOIN assets a ON abl.asset_id = a.id "
                   "JOIN categories c ON a.category_id = c.id "
                   "WHERE %s AND abl.created_at::date = ?::date AND " MF_RBAC_ASSET_UNMASKED_SQL(
-                      "a") " GROUP BY c.asset_type"
-                : "SELECT c.asset_type, COALESCE(SUM(abl.delta), 0.0) as total_delta "
+                      "a") " GROUP BY c.asset_type, a.currency"
+                : "SELECT c.asset_type, a.currency, COALESCE(SUM(abl.delta), 0.0) as total_delta "
                   "FROM asset_balance_logs abl "
                   "JOIN assets a ON abl.asset_id = a.id "
                   "JOIN categories c ON a.category_id = c.id "
                   "WHERE %s AND date(abl.created_at) = ? AND " MF_RBAC_ASSET_UNMASKED_SQL(
-                      "a") " GROUP BY c.asset_type",
+                      "a") " GROUP BY c.asset_type, a.currency",
             (q->ledger_id > 0) ? MF_LEDGER_SHARED_BALANCE_LOG_SQL("abl", "a") : "abl.user_id = ?");
         const char* dparams[10];
         int         dp = 0;
@@ -397,15 +397,32 @@ report_position_overview(void* pool, const report_query_t* q, report_result_t* o
         dparams[dp] = NULL;
         csilk_json_t* dlog = csilk_db_query_param_json((csilk_db_pool_t*)pool, today_sql, dparams);
         if (dlog) {
-            size_t dn = csilk_json_array_size(dlog);
+            decimal_t daily_pnl_dec = decimal_zero();
+            size_t    dn = csilk_json_array_size(dlog);
             for (size_t i = 0; i < dn; i++) {
                 const csilk_json_t* r = csilk_json_array_get(dlog, i);
-                double              delta = db_get_num(r, "total_delta");
-                const char*         atype = csilk_json_get_string(r, "asset_type");
-                int                 is_liab =
+                decimal_t           delta_d = db_get_decimal(r, "total_delta");
+                const char*         cur = csilk_json_get_string(r, "currency");
+                double    fx_rate = exchange_rate_get_to_cny((cur && cur[0]) ? cur : "CNY");
+                decimal_t rate_d, converted_d;
+                if (decimal_from_double(fx_rate, 6, &rate_d) != DECIMAL_OK ||
+                    decimal_mul(delta_d, rate_d, &converted_d) != DECIMAL_OK) {
+                    continue;
+                }
+                const char* atype = csilk_json_get_string(r, "asset_type");
+                int         is_liab =
                     (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
                                strcmp(atype, "other_liability") == 0));
-                daily_pnl += is_liab ? -delta : delta;
+                if (is_liab) {
+                    converted_d = decimal_neg(converted_d);
+                }
+                decimal_add(daily_pnl_dec, converted_d, &daily_pnl_dec);
+            }
+            decimal_t rounded_pnl = decimal_zero();
+            if (decimal_round(daily_pnl_dec, 2, ROUND_HALF_UP, &rounded_pnl) == DECIMAL_OK) {
+                daily_pnl = decimal_to_double(rounded_pnl);
+            } else {
+                daily_pnl = decimal_to_double(daily_pnl_dec);
             }
             csilk_json_free(dlog);
         }
