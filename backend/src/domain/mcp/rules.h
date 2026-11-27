@@ -42,3 +42,9 @@ bool mf_mcp_rule_validate_command(const char* command);
  * 规则：1000 ≤ timeout_ms ≤ 120000
  */
 bool mf_mcp_rule_validate_timeout_ms(int timeout_ms);
+
+/**
+ * @brief 校验 MCP 服务器凭证引用 (secret_ref) 白名单
+ * 规则：仅允许 "MCP_SECRET_" 前缀后跟至少 1 个 [A-Za-z0-9_] 字符（总长度 ≤ 127）
+ */
+bool mf_mcp_secret_ref_valid(const char* ref);

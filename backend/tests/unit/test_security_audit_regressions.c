@@ -12,18 +12,24 @@
 #include "infrastructure/repositories/daily_expense_repo_impl.h"
 #include "infrastructure/repositories/ledger_repo_impl.h"
 #include "application/category/usecases.h"
+#include "application/mcp/usecases.h"
 #include "application/report/commands.h"
 #include "application/task/async_task_manager.h"
 #include "services/report_asset_service.h"
 #include "services/ai/tools/registry.h"
 #include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/context.h"
+#include "services/ai/tools/mcp/mcp_client.h"
 #include "csilk/csilk.h"
+#include <arpa/inet.h>
 #include <assert.h>
 #include <math.h>
+#include <netinet/in.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 static const char* TEST_DB_PATH = "/tmp/test_mf_sec_audit_reg.db";
@@ -313,6 +319,283 @@ test_db_backed_regressions(csilk_db_pool_t* pool)
     int64_t tid = mf_async_task_submit(
         pool, user_id, ledger_id, "test_job", NULL, "init", dummy_async_fn, &cleaned, cleanup_dummy_arg, NULL);
     assert(tid == -1 && cleaned == 1);
+
+    /* MCP secret_ref allowlist & admin-only RBAC on create/update */
+    assert(mf_auth_repo_is_instance_admin(pool, user_id) == 1);
+    int64_t normal_uid = 0;
+    rc = mf_auth_repo_create(pool, "sec_normal_user", "hash_sec_normal_1234", &normal_uid);
+    assert(rc == 0 && normal_uid > 0);
+    assert(mf_auth_repo_is_instance_admin(pool, normal_uid) == 0);
+
+    mf_mcp_usecase_result_t mres = {0};
+    int64_t                 norm_srv_id = 0;
+    mf_mcp_create_cmd_t     norm_cmd = {
+        .user_id = normal_uid,
+        .name = "norm_srv_sec",
+        .transport = "http",
+        .url = "https://8.8.8.8/mcp",
+        .secret_ref = "MCP_SECRET_GITHUB_TOKEN",
+        .timeout_ms = 5000,
+    };
+    assert(mf_mcp_usecase_create(pool, &norm_cmd, &norm_srv_id, &mres) != 0);
+    assert(mres.code == 1004);
+
+    norm_cmd.secret_ref = "JWT_SECRET";
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_create(pool, &norm_cmd, &norm_srv_id, &mres) != 0);
+    assert(mres.code == 1004);
+
+    norm_cmd.secret_ref = "";
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_create(pool, &norm_cmd, &norm_srv_id, &mres) == 0);
+    assert(mres.code == 0 && norm_srv_id > 0);
+
+    mf_mcp_update_cmd_t norm_upd = {
+        .user_id = normal_uid,
+        .server_id = norm_srv_id,
+        .name = "norm_srv_sec",
+        .transport = "http",
+        .url = "https://8.8.8.8/mcp",
+        .secret_ref = "MCP_SECRET_GITHUB_TOKEN",
+        .timeout_ms = 5000,
+        .enabled = true,
+    };
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_update(pool, &norm_upd, &mres) != 0);
+    assert(mres.code == 1004);
+
+    int64_t             admin_srv_id = 0;
+    mf_mcp_create_cmd_t admin_cmd = {
+        .user_id = user_id,
+        .name = "admin_srv_sec",
+        .transport = "http",
+        .url = "https://8.8.8.8/mcp",
+        .secret_ref = "JWT_SECRET",
+        .timeout_ms = 5000,
+    };
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_create(pool, &admin_cmd, &admin_srv_id, &mres) != 0);
+    assert(mres.code == 1002);
+
+    admin_cmd.secret_ref = "MCP_SECRET_../x";
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_create(pool, &admin_cmd, &admin_srv_id, &mres) != 0);
+    assert(mres.code == 1002);
+
+    admin_cmd.secret_ref = "MCP_SECRET_GITHUB_TOKEN";
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_create(pool, &admin_cmd, &admin_srv_id, &mres) == 0);
+    assert(mres.code == 0 && admin_srv_id > 0);
+
+    mf_mcp_update_cmd_t admin_upd = {
+        .user_id = user_id,
+        .server_id = admin_srv_id,
+        .name = "admin_srv_sec",
+        .transport = "http",
+        .url = "https://8.8.8.8/mcp",
+        .secret_ref = "JWT_SECRET",
+        .timeout_ms = 5000,
+        .enabled = true,
+    };
+    memset(&mres, 0, sizeof(mres));
+    assert(mf_mcp_usecase_update(pool, &admin_upd, &mres) != 0);
+    assert(mres.code == 1002);
+}
+
+typedef struct {
+    int  listen_fd;
+    int  expected_reqs;
+    char captured[4][4096];
+} mock_mcp_http_srv_t;
+
+static void*
+mock_mcp_http_server_thread(void* arg)
+{
+    mock_mcp_http_srv_t* srv = (mock_mcp_http_srv_t*)arg;
+    const char*          body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":1}}";
+    char                 resp[512];
+    snprintf(resp,
+             sizeof(resp),
+             "HTTP/1.1 200 OK\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: %zu\r\n"
+             "Connection: close\r\n\r\n%s",
+             strlen(body),
+             body);
+
+    for (int i = 0; i < srv->expected_reqs; i++) {
+        int cfd = accept(srv->listen_fd, NULL, NULL);
+        if (cfd < 0) {
+            break;
+        }
+        size_t total = 0;
+        while (total + 1 < sizeof(srv->captured[i])) {
+            ssize_t n = recv(cfd, srv->captured[i] + total, sizeof(srv->captured[i]) - 1 - total, 0);
+            if (n <= 0) {
+                break;
+            }
+            total += (size_t)n;
+            srv->captured[i][total] = '\0';
+            if (strstr(srv->captured[i], "\r\n\r\n") != NULL &&
+                strstr(srv->captured[i], "\"method\"") != NULL) {
+                break;
+            }
+        }
+        size_t sent = 0;
+        size_t rlen = strlen(resp);
+        while (sent < rlen) {
+            ssize_t w = send(cfd, resp + sent, rlen - sent, 0);
+            if (w <= 0) {
+                break;
+            }
+            sent += (size_t)w;
+        }
+        close(cfd);
+    }
+    return NULL;
+}
+
+static void
+test_secret_path_traversal_and_mcp_crlf(void)
+{
+    printf("[5] config_secret_get traversal, mf_mcp_secret_ref_valid, MCP HTTP CRLF defense...\n");
+
+    char sec_buf[256] = {0};
+    assert(config_secret_get("../../etc/passwd", sec_buf, sizeof(sec_buf)) == NULL);
+    assert(config_secret_get("foo/bar", sec_buf, sizeof(sec_buf)) == NULL);
+    assert(config_secret_get("MINEFOLIO_../../etc/passwd", sec_buf, sizeof(sec_buf)) == NULL);
+    assert(config_secret_get("MINEFOLIO_", sec_buf, sizeof(sec_buf)) == NULL);
+
+    assert(mf_mcp_secret_ref_valid("JWT_SECRET") == false);
+    assert(mf_mcp_secret_ref_valid("MCP_SECRET_../x") == false);
+    assert(mf_mcp_secret_ref_valid("MCP_SECRET_") == false);
+    assert(mf_mcp_secret_ref_valid("MCP_SECRET_BAD-NAME") == false);
+    assert(mf_mcp_secret_ref_valid(NULL) == false);
+    assert(mf_mcp_secret_ref_valid("") == false);
+    assert(mf_mcp_secret_ref_valid("MCP_SECRET_GITHUB_TOKEN") == true);
+    assert(mf_mcp_secret_ref_valid("MCP_SECRET_a1_B2") == true);
+
+    /* Spin up local loopback HTTP mock to verify assembled wire headers */
+    int lfd = socket(AF_INET, SOCK_STREAM, 0);
+    assert(lfd >= 0);
+    int yes = 1;
+    setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+    assert(bind(lfd, (struct sockaddr*)&addr, sizeof(addr)) == 0);
+    assert(listen(lfd, 8) == 0);
+
+    socklen_t alen = sizeof(addr);
+    assert(getsockname(lfd, (struct sockaddr*)&addr, &alen) == 0);
+    int port = (int)ntohs(addr.sin_port);
+
+    mock_mcp_http_srv_t srv = {.listen_fd = lfd, .expected_reqs = 4};
+    pthread_t           th;
+    assert(pthread_create(&th, NULL, mock_mcp_http_server_thread, &srv) == 0);
+
+    config_secret_set_test_mode(true);
+    config_secret_set_test_override("MINEFOLIO_MCP_ALLOW_LOCAL", "1");
+    config_secret_set_test_override("MCP_SECRET_TEST_CRLF", "tok\r\nX-Injected-Auth: evil");
+    config_secret_set_test_override("MCP_SECRET_TEST_GOOD", "valid_mcp_token_99");
+
+    char url[128];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/mcp", port);
+
+    /* Req 1: headers_json with CRLF in value and key must be skipped while good header remains */
+    {
+        mf_mcp_server_t s = {
+            .name = "hdr_crlf",
+            .transport = MCP_TRANSPORT_HTTP,
+            .timeout_ms = 5000,
+        };
+        snprintf(s.url, sizeof(s.url), "%s", url);
+        snprintf(s.headers_json,
+                 sizeof(s.headers_json),
+                 "{\"X-Good\":\"ok\",\"X-Bad-Val\":\"a\\r\\nX-Injected: evil\",\"X-Bad\\nKey\":\"1\"}");
+        mf_mcp_client_t* c = mf_mcp_client_new(&s);
+        assert(c != NULL);
+        char  err[256] = {0};
+        char* resp = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
+        assert(resp != NULL);
+        free(resp);
+        mf_mcp_client_free(c);
+
+        assert(strstr(srv.captured[0], "X-Good: ok") != NULL);
+        assert(strstr(srv.captured[0], "X-Injected:") == NULL);
+        assert(strstr(srv.captured[0], "X-Bad-Val:") == NULL);
+        assert(strstr(srv.captured[0], "X-Bad") == NULL);
+    }
+
+    /* Req 2: secret_ref token containing CRLF must not be emitted in Authorization header */
+    {
+        mf_mcp_server_t s = {
+            .name = "sec_crlf",
+            .transport = MCP_TRANSPORT_HTTP,
+            .timeout_ms = 5000,
+        };
+        snprintf(s.url, sizeof(s.url), "%s", url);
+        snprintf(s.secret_ref, sizeof(s.secret_ref), "MCP_SECRET_TEST_CRLF");
+        mf_mcp_client_t* c = mf_mcp_client_new(&s);
+        assert(c != NULL);
+        char  err[256] = {0};
+        char* resp = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
+        assert(resp != NULL);
+        free(resp);
+        mf_mcp_client_free(c);
+
+        assert(strstr(srv.captured[1], "X-Injected-Auth:") == NULL);
+        assert(strstr(srv.captured[1], "Authorization:") == NULL);
+    }
+
+    /* Req 3: non-MCP_SECRET_ secret_ref must not be read/sent even if present in config/env */
+    {
+        mf_mcp_server_t s = {
+            .name = "sec_non_allow",
+            .transport = MCP_TRANSPORT_HTTP,
+            .timeout_ms = 5000,
+        };
+        snprintf(s.url, sizeof(s.url), "%s", url);
+        snprintf(s.secret_ref, sizeof(s.secret_ref), "JWT_SECRET");
+        mf_mcp_client_t* c = mf_mcp_client_new(&s);
+        assert(c != NULL);
+        char  err[256] = {0};
+        char* resp = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
+        assert(resp != NULL);
+        free(resp);
+        mf_mcp_client_free(c);
+
+        assert(strstr(srv.captured[2], "Authorization:") == NULL);
+        assert(strstr(srv.captured[2], "test_jwt_secret_sec_regressions_32b") == NULL);
+    }
+
+    /* Req 4: valid MCP_SECRET_* token without CRLF is sent in Authorization header */
+    {
+        mf_mcp_server_t s = {
+            .name = "sec_good",
+            .transport = MCP_TRANSPORT_HTTP,
+            .timeout_ms = 5000,
+        };
+        snprintf(s.url, sizeof(s.url), "%s", url);
+        snprintf(s.secret_ref, sizeof(s.secret_ref), "MCP_SECRET_TEST_GOOD");
+        mf_mcp_client_t* c = mf_mcp_client_new(&s);
+        assert(c != NULL);
+        char  err[256] = {0};
+        char* resp = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
+        assert(resp != NULL);
+        free(resp);
+        mf_mcp_client_free(c);
+
+        assert(strstr(srv.captured[3], "Authorization: Bearer valid_mcp_token_99") != NULL);
+    }
+
+    pthread_join(th, NULL);
+    close(lfd);
+    config_secret_set_test_override("MINEFOLIO_MCP_ALLOW_LOCAL", NULL);
+    config_secret_set_test_override("MCP_SECRET_TEST_CRLF", NULL);
+    config_secret_set_test_override("MCP_SECRET_TEST_GOOD", NULL);
 }
 
 int
@@ -325,6 +608,7 @@ main(void)
 
     csilk_db_pool_t* pool = setup_test_db();
     test_db_backed_regressions(pool);
+    test_secret_path_traversal_and_mcp_crlf();
 
     cleanup_db_files();
     printf("=== All Security & Audit Regression Tests Passed ===\n");

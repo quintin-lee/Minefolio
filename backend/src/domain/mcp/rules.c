@@ -251,3 +251,31 @@ mf_mcp_rule_validate_timeout_ms(int timeout_ms)
 {
     return timeout_ms >= 1000 && timeout_ms <= 120000;
 }
+
+bool
+mf_mcp_secret_ref_valid(const char* ref)
+{
+    static const char prefix[] = "MCP_SECRET_";
+    const size_t      plen = sizeof(prefix) - 1;
+    if (!ref || strncmp(ref, prefix, plen) != 0) {
+        return false;
+    }
+    const char* p = ref + plen;
+    if (!*p) {
+        return false;
+    }
+    size_t len = plen;
+    for (; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        bool          ok =
+            (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+        if (!ok) {
+            return false;
+        }
+        len++;
+        if (len > 127) {
+            return false;
+        }
+    }
+    return true;
+}

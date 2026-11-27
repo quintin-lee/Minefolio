@@ -13,11 +13,13 @@
 
 #include "services/ai/tools/mcp/mcp_client.h"
 #include "services/ai/tools/mcp/mcp_config.h"
+#include "domain/mcp/rules.h"
 #include "common/http_safety.h"
 #include "config/secret.h"
 #include "csilk/core/server/server.h"
 
 #include <curl/curl.h>
+#include <openssl/crypto.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -135,8 +137,13 @@ append_header_json(const char* headers_json, struct curl_slist** headers)
         const char*         key = csilk_json_object_key(obj, i);
         const csilk_json_t* val = csilk_json_object_val(obj, i);
         if (val && csilk_json_is_string(val)) {
-            char hdr[512];
-            snprintf(hdr, sizeof(hdr), "%s: %s", key ? key : "", csilk_json_string_value(val));
+            const char* v = csilk_json_string_value(val);
+            if (!key || !key[0] || strpbrk(key, "\r\n:") != NULL || !v ||
+                strpbrk(v, "\r\n") != NULL) {
+                continue;
+            }
+            char hdr[600];
+            snprintf(hdr, sizeof(hdr), "%s: %s", key, v);
             *headers = curl_slist_append(*headers, hdr);
         }
     }
@@ -179,22 +186,24 @@ http_call(mf_mcp_client_t*    c,
     struct curl_slist* headers = NULL;
     headers = curl_slist_append(headers, "Content-Type: application/json");
     headers = curl_slist_append(headers, "Accept: application/json, text/event-stream");
-    if (c->session_id && c->session_id[0]) {
-        char hdr[256];
+    if (c->session_id && c->session_id[0] && !strpbrk(c->session_id, "\r\n")) {
+        char hdr[320];
         snprintf(hdr, sizeof(hdr), "Mcp-Session-Id: %s", c->session_id);
         headers = curl_slist_append(headers, hdr);
     }
     /* 用户自定义 headers */
     append_header_json(s->headers_json, &headers);
-    /* 凭证：secret_ref 非空时附 Authorization */
-    if (s->secret_ref[0]) {
+    /* 凭证：secret_ref 非空时附 Authorization（白名单复核 + CRLF 拦截 + 内存擦除） */
+    if (s->secret_ref[0] && mf_mcp_secret_ref_valid(s->secret_ref)) {
         char        tok[512];
         const char* t = config_env_get(s->secret_ref, tok, sizeof(tok), "");
-        if (t && t[0]) {
-            char hdr[512];
+        if (t && t[0] && !strpbrk(t, "\r\n")) {
+            char hdr[600];
             snprintf(hdr, sizeof(hdr), "Authorization: Bearer %s", t);
             headers = curl_slist_append(headers, hdr);
+            OPENSSL_cleanse(hdr, sizeof(hdr));
         }
+        OPENSSL_cleanse(tok, sizeof(tok));
     }
 
     struct curl_slist* resolve_list = mf_http_curl_apply_security(curl, resolve_entry, NULL, false);
