@@ -124,8 +124,14 @@ int main(void) {
     printf("PASS: test_2fa_verify_login_backup_code_case_and_spaces_tolerant\n");
 
     /* 测试 TOTP 动态码全角数字 (如 １２３４５６) 与 150s (5步) 时钟漂移校验通过
-     * (通过 MINEFOLIO_TOTP_WINDOW_STEPS=5 显式放宽步长窗口，且先于当前步校验以保持防重放单调性) */
-    setenv("MINEFOLIO_TOTP_WINDOW_STEPS", "5", 1);
+     * (通过 MINEFOLIO_TOTP_WINDOW_STEPS=6 显式放宽步长窗口以预留 1 步边界余量，
+     *  先完成 bcrypt 登录再生成动态码，且先于当前步校验以保持防重放单调性) */
+    setenv("MINEFOLIO_TOTP_WINDOW_STEPS", "6", 1);
+    login_data = NULL;
+    memset(&login_res, 0, sizeof(login_res));
+    assert(auth_usecase_login(pool, &login_cmd, NULL, &login_data, &login_res) == 0);
+    const char* temp_tok_fw = csilk_json_get_string(login_data, "temp_token");
+
     char drift_totp[8] = {0};
     assert(csilk_totp_generate_code("JBSWY3DPEHPK3PXP", (uint64_t)time(NULL) - 150, drift_totp, sizeof(drift_totp)) == 0);
     char fullwidth_totp[32] = {0};
@@ -137,10 +143,6 @@ int main(void) {
     }
     fullwidth_totp[fw_len] = '\0';
 
-    login_data = NULL;
-    memset(&login_res, 0, sizeof(login_res));
-    assert(auth_usecase_login(pool, &login_cmd, NULL, &login_data, &login_res) == 0);
-    const char* temp_tok_fw = csilk_json_get_string(login_data, "temp_token");
     verify_2fa_login_cmd_t verify_cmd_fw = {
         .temp_token = temp_tok_fw,
         .code = fullwidth_totp,
@@ -155,15 +157,16 @@ int main(void) {
     printf("PASS: test_2fa_verify_login_fullwidth_digits_and_clock_drift_tolerant\n");
 
     /* 测试 TOTP 动态码带空格容错 (如 123 456) */
+    login_data = NULL;
+    memset(&login_res, 0, sizeof(login_res));
+    assert(auth_usecase_login(pool, &login_cmd, NULL, &login_data, &login_res) == 0);
+    const char* temp_tok_totp = csilk_json_get_string(login_data, "temp_token");
+
     char valid_totp[8] = {0};
     assert(csilk_totp_generate_code("JBSWY3DPEHPK3PXP", (uint64_t)time(NULL), valid_totp, sizeof(valid_totp)) == 0);
     char totp_with_space[16] = {0};
     snprintf(totp_with_space, sizeof(totp_with_space), " %.3s %.3s ", valid_totp, valid_totp + 3);
 
-    login_data = NULL;
-    memset(&login_res, 0, sizeof(login_res));
-    assert(auth_usecase_login(pool, &login_cmd, NULL, &login_data, &login_res) == 0);
-    const char* temp_tok_totp = csilk_json_get_string(login_data, "temp_token");
     verify_2fa_login_cmd_t verify_cmd_totp = {
         .temp_token = temp_tok_totp,
         .code = totp_with_space,

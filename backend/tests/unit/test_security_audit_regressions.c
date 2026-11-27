@@ -1342,10 +1342,7 @@ test_totp_replay_and_window_hardening(csilk_db_pool_t* pool)
     csilk_json_free(setup_data);
 
     char cur2[8] = {0};
-    char drift4[8] = {0};
-    uint64_t now_ts = (uint64_t)time(NULL);
-    assert(csilk_totp_generate_code(secret2, now_ts, cur2, sizeof(cur2)) == 0);
-    assert(csilk_totp_generate_code(secret2, now_ts - 120, drift4, sizeof(drift4)) == 0);
+    assert(csilk_totp_generate_code(secret2, (uint64_t)time(NULL), cur2, sizeof(cur2)) == 0);
 
     enable_2fa_cmd_t en2 = {.user_id = u2.id, .code = cur2};
     csilk_json_t*    en2_data = NULL;
@@ -1356,6 +1353,9 @@ test_totp_replay_and_window_hardening(csilk_db_pool_t* pool)
     csilk_json_t*    log2_data = NULL;
     assert(auth_usecase_login(pool, &log2, NULL, &log2_data, &ares) == 0);
     const char* tok2 = csilk_json_get_string(log2_data, "temp_token");
+
+    char drift4[8] = {0};
+    assert(csilk_totp_generate_code(secret2, (uint64_t)time(NULL) - 120, drift4, sizeof(drift4)) == 0);
 
     verify_2fa_login_cmd_t v2_fail = {.temp_token = tok2, .code = drift4};
     csilk_json_t*          v2_data = NULL;
