@@ -36,8 +36,11 @@ int quote_engine_get_indices(const char*          category,
                              int                  max_clocks,
                              int*                 out_clock_count);
 
-/* Synchronize global market indices directly to database, skipping closed markets */
+/* Synchronize global market indices directly to database, skipping closed markets when already live */
 int quote_engine_sync_indices_to_db(void* pool);
+
+/* Force-synchronize all global market indices (including closed markets' latest close) to database */
+int quote_engine_force_sync_indices_to_db(void* pool);
 
 /* Request in-flight HTTP quote calls to abort promptly during graceful shutdown */
 void quote_engine_request_stop(void);

@@ -441,6 +441,80 @@ quote_engine_test_connection(const char* proxy, char* out_msg, size_t msg_cap, i
     return -1;
 }
 
+static int
+nth_sunday_mday(int year, int mon0, int nth)
+{
+    struct tm t = {0};
+    t.tm_year = year - 1900;
+    t.tm_mon = mon0;
+    t.tm_mday = 1;
+    timegm(&t);
+    int first_sun = 1 + (7 - t.tm_wday) % 7;
+    return first_sun + (nth - 1) * 7;
+}
+
+static int
+last_sunday_mday(int year, int mon0)
+{
+    struct tm t = {0};
+    t.tm_year = (mon0 == 11) ? (year + 1 - 1900) : (year - 1900);
+    t.tm_mon = (mon0 + 1) % 12;
+    t.tm_mday = 1;
+    time_t    next_first = timegm(&t);
+    time_t    last_day = next_first - 86400;
+    struct tm lt;
+    gmtime_r(&last_day, &lt);
+    return lt.tm_mday - lt.tm_wday;
+}
+
+static bool
+is_us_dst_utc(time_t utc)
+{
+    struct tm u;
+    gmtime_r(&utc, &u);
+    int year = u.tm_year + 1900;
+
+    struct tm start_tm = {0};
+    start_tm.tm_year = u.tm_year;
+    start_tm.tm_mon = 2; /* March */
+    start_tm.tm_mday = nth_sunday_mday(year, 2, 2);
+    start_tm.tm_hour = 7; /* 02:00 EST (UTC-5) = 07:00 UTC */
+    time_t dst_start = timegm(&start_tm);
+
+    struct tm end_tm = {0};
+    end_tm.tm_year = u.tm_year;
+    end_tm.tm_mon = 10; /* November */
+    end_tm.tm_mday = nth_sunday_mday(year, 10, 1);
+    end_tm.tm_hour = 6; /* 02:00 EDT (UTC-4) = 06:00 UTC */
+    time_t dst_end = timegm(&end_tm);
+
+    return utc >= dst_start && utc < dst_end;
+}
+
+static bool
+is_eu_dst_utc(time_t utc)
+{
+    struct tm u;
+    gmtime_r(&utc, &u);
+    int year = u.tm_year + 1900;
+
+    struct tm start_tm = {0};
+    start_tm.tm_year = u.tm_year;
+    start_tm.tm_mon = 2; /* March */
+    start_tm.tm_mday = last_sunday_mday(year, 2);
+    start_tm.tm_hour = 1; /* 01:00 UTC */
+    time_t dst_start = timegm(&start_tm);
+
+    struct tm end_tm = {0};
+    end_tm.tm_year = u.tm_year;
+    end_tm.tm_mon = 9; /* October */
+    end_tm.tm_mday = last_sunday_mday(year, 9);
+    end_tm.tm_hour = 1; /* 01:00 UTC */
+    time_t dst_end = timegm(&end_tm);
+
+    return utc >= dst_start && utc < dst_end;
+}
+
 int
 quote_engine_calc_market_clocks(time_t               now,
                                 market_clock_item_t* out_clocks,
@@ -451,6 +525,9 @@ quote_engine_calc_market_clocks(time_t               now,
         return -1;
     }
 
+    int london_offset = is_eu_dst_utc(now) ? 1 : 0;
+    int ny_offset = is_us_dst_utc(now) ? -4 : -5;
+
     struct {
         const char* market;
         const char* name;
@@ -460,11 +537,11 @@ quote_engine_calc_market_clocks(time_t               now,
         int         open_h2, open_m2, close_h2, close_m2;
         int         pre_h, pre_m;
     } configs[] = {
-        {"SSE_SZSE", "A股 (沪深)", "Asia/Shanghai",    8,  9, 30, 11, 30, 13, 0,  15, 0, 9, 15},
-        {"HKEX",     "港股",       "Asia/Hong_Kong",   8,  9, 30, 12, 0,  13, 0,  16, 0, 9, 0 },
-        {"TSE",      "东京",       "Asia/Tokyo",       9,  9, 0,  11, 30, 12, 30, 15, 0, 8, 30},
-        {"LSE",      "伦敦",       "Europe/London",    1,  8, 0,  16, 30, 0,  0,  0,  0, 7, 0 },
-        {"NYSE",     "美股",       "America/New_York", -4, 9, 30, 16, 0,  0,  0,  0,  0, 4, 0 },
+        {"SSE_SZSE", "A股 (沪深)", "Asia/Shanghai",    8,             9, 30, 11, 30, 13, 0,  15, 0, 9, 15},
+        {"HKEX",     "港股",       "Asia/Hong_Kong",   8,             9, 30, 12, 0,  13, 0,  16, 0, 9, 0 },
+        {"TSE",      "东京",       "Asia/Tokyo",       9,             9, 0,  11, 30, 12, 30, 15, 0, 8, 30},
+        {"LSE",      "伦敦",       "Europe/London",    london_offset, 8, 0,  16, 30, 0,  0,  0,  0, 7, 0 },
+        {"NYSE",     "美股",       "America/New_York", ny_offset,     9, 30, 16, 0,  0,  0,  0,  0, 4, 0 },
     };
 
     *out_count = 5;
@@ -557,6 +634,7 @@ static struct {
     pthread_mutex_t     refresh_lock; /* 串行化刷新（HTTP）本身，避免并发刷新重复拉取 */
     time_t              last_updated;
     global_index_item_t items[MAX_PRESET_INDICES];
+    bool                item_is_live[MAX_PRESET_INDICES];
     int                 count;
     market_clock_item_t clocks[8];
     int                 clock_count;
@@ -565,6 +643,7 @@ static struct {
     .lock = PTHREAD_MUTEX_INITIALIZER,
     .refresh_lock = PTHREAD_MUTEX_INITIALIZER,
     .last_updated = 0,
+    .item_is_live = {false},
     .count = 0,
     .clock_count = 0,
     .generation = 0,
@@ -606,17 +685,55 @@ is_market_active(const char* market_id, const market_clock_item_t* clocks, int c
 }
 
 static void
-populate_mock_sparkline(double curr, double change_pct, double* out_spark, int count)
+populate_ohlc_sparkline(double  prev_close,
+                        double  open_price,
+                        double  high_price,
+                        double  low_price,
+                        double  curr,
+                        double  change_pct,
+                        double* out_spark,
+                        int*    out_count)
 {
-    if (!out_spark || count <= 0) {
+    if (!out_spark || !out_count) {
         return;
     }
-    double base = curr / (1.0 + change_pct / 100.0);
-    for (int i = 0; i < count; i++) {
-        double ratio = (double)i / (double)(count - 1);
-        double wobble = ((i % 3) - 1) * (curr * 0.001);
-        out_spark[i] = base + (curr - base) * ratio + wobble;
+    double raw[5];
+    int    n = 0;
+    if (prev_close > 0.0) {
+        raw[n++] = prev_close;
     }
+    if (open_price > 0.0) {
+        raw[n++] = open_price;
+    }
+    if (change_pct >= 0.0) {
+        if (low_price > 0.0) {
+            raw[n++] = low_price;
+        }
+        if (high_price > 0.0) {
+            raw[n++] = high_price;
+        }
+    } else {
+        if (high_price > 0.0) {
+            raw[n++] = high_price;
+        }
+        if (low_price > 0.0) {
+            raw[n++] = low_price;
+        }
+    }
+    if (curr > 0.0) {
+        raw[n++] = curr;
+    }
+
+    int out_n = 0;
+    for (int i = 0; i < n && out_n < 12; i++) {
+        if (out_n == 0 || raw[i] != out_spark[out_n - 1]) {
+            out_spark[out_n++] = raw[i];
+        }
+    }
+    if (out_n == 1 && curr > 0.0) {
+        out_spark[out_n++] = curr;
+    }
+    *out_count = out_n;
 }
 
 static bool
@@ -626,25 +743,25 @@ indices_cache_is_stale_locked(time_t now)
            ((now - g_indices_cache.last_updated) > INDICES_CACHE_TTL_SEC);
 }
 
-static const global_index_item_t*
-find_cached_index_by_symbol(const global_index_item_t* items, int count, const char* symbol)
+static int
+find_cached_index_pos_by_symbol(const global_index_item_t* items, int count, const char* symbol)
 {
     if (!items || count <= 0 || !symbol) {
-        return NULL;
+        return -1;
     }
     for (int i = 0; i < count; i++) {
         if (strcmp(items[i].symbol, symbol) == 0 && items[i].current_price > 0) {
-            return &items[i];
+            return i;
         }
     }
-    return NULL;
+    return -1;
 }
 
 /* 计算并回填指数缓存：在锁外做 HTTP 拉取（避免阻塞读路径），
    全部 15 条指数拉取完成后一次性持锁原子替换缓存，刷新期间读路径继续服务完整旧数据（stale-while-revalidate）。
    并发调用方须以 refresh_lock 串行化本函数（见 refresh_indices_cache_offlock）。 */
 static void
-refresh_indices_cache_offlock_impl(void)
+refresh_indices_cache_offlock_impl(bool force_all)
 {
     time_t              now = time(NULL);
     market_clock_item_t local_clocks[8];
@@ -653,9 +770,11 @@ refresh_indices_cache_offlock_impl(void)
 
     int                 n = (int)(sizeof(g_preset_indices) / sizeof(g_preset_indices[0]));
     global_index_item_t local_items[MAX_PRESET_INDICES];
+    bool                local_is_live[MAX_PRESET_INDICES] = {false};
     int                 local_count = 0;
 
     global_index_item_t prev_items[MAX_PRESET_INDICES];
+    bool                prev_is_live[MAX_PRESET_INDICES] = {false};
     int                 prev_count = 0;
     pthread_mutex_lock(&g_indices_cache.lock);
     prev_count = g_indices_cache.count;
@@ -664,6 +783,7 @@ refresh_indices_cache_offlock_impl(void)
     }
     if (prev_count > 0) {
         memcpy(prev_items, g_indices_cache.items, sizeof(global_index_item_t) * (size_t)prev_count);
+        memcpy(prev_is_live, g_indices_cache.item_is_live, sizeof(bool) * (size_t)prev_count);
     }
     pthread_mutex_unlock(&g_indices_cache.lock);
 
@@ -674,23 +794,29 @@ refresh_indices_cache_offlock_impl(void)
         const char* mkt =
             get_market_clock_id(g_preset_indices[i].category, g_preset_indices[i].symbol);
         bool active = is_market_active(mkt, local_clocks, local_clock_count);
-        if (active) {
+
+        int  prev_idx =
+            find_cached_index_pos_by_symbol(prev_items, prev_count, g_preset_indices[i].symbol);
+        bool has_live_prev = (prev_idx >= 0 && prev_is_live[prev_idx]);
+
+        /* 休市期间若尚未抓到过真实收盘行情（或显式 force_all），仍抓一次真实最新收盘报价 */
+        bool should_fetch = force_all || active || !has_live_prev;
+        if (should_fetch) {
             active_attempted++;
         }
 
-        const global_index_item_t* prev_item =
-            find_cached_index_by_symbol(prev_items, prev_count, g_preset_indices[i].symbol);
-
         /* 锁外做 HTTP 拉取，避免长时间持有读缓存锁阻塞读路径 */
         market_quote_t q;
-        bool fetched = (active &&
+        memset(&q, 0, sizeof(q));
+        bool fetched = (should_fetch &&
                         quote_engine_fetch_quote(
                             g_preset_indices[i].symbol, g_preset_indices[i].source, &q) == 0 &&
                         q.current_price > 0);
         if (fetched) {
             active_succeeded++;
-        } else if (prev_item) {
-            local_items[local_count++] = *prev_item;
+        } else if (prev_idx >= 0) {
+            local_is_live[local_count] = prev_is_live[prev_idx];
+            local_items[local_count++] = prev_items[prev_idx];
             continue;
         }
 
@@ -705,26 +831,103 @@ refresh_indices_cache_offlock_impl(void)
         if (fetched) {
             item.current_price = q.current_price;
             item.change_percent = q.change_percent;
-            snprintf(item.quote_time, sizeof(item.quote_time), "%s", q.quote_time);
+            if (q.quote_time[0]) {
+                snprintf(item.quote_time, sizeof(item.quote_time), "%s", q.quote_time);
+            } else {
+                struct tm tm_q;
+                localtime_r(&now, &tm_q);
+                strftime(item.quote_time, sizeof(item.quote_time), "%Y-%m-%d %H:%M:%S", &tm_q);
+            }
+
+            if (q.prev_close > 0.0 && q.change_amount != 0.0) {
+                item.change_amount = q.change_amount;
+                item.prev_close = q.prev_close;
+            } else if (q.prev_close > 0.0) {
+                item.prev_close = q.prev_close;
+                item.change_amount = q.current_price - q.prev_close;
+            } else if (q.change_amount != 0.0) {
+                item.change_amount = q.change_amount;
+                item.prev_close = q.current_price - q.change_amount;
+            } else {
+                double denom = 1.0 + item.change_percent / 100.0;
+                item.change_amount =
+                    (denom != 0.0) ? (item.current_price * (item.change_percent / 100.0) / denom)
+                                   : 0.0;
+                item.prev_close = item.current_price - item.change_amount;
+            }
+
+            item.open_price = q.open_price > 0.0 ? q.open_price : item.prev_close;
+            item.high_price = q.high_price > 0.0
+                                  ? q.high_price
+                                  : (item.current_price > item.open_price ? item.current_price
+                                                                          : item.open_price);
+            item.low_price = q.low_price > 0.0
+                                 ? q.low_price
+                                 : (item.current_price < item.open_price ? item.current_price
+                                                                         : item.open_price);
+
+            if (q.sparkline_count >= 2) {
+                int cnt = q.sparkline_count > 12 ? 12 : q.sparkline_count;
+                for (int s = 0; s < cnt; s++) {
+                    item.sparkline[s] = q.sparkline[s];
+                }
+                item.sparkline_count = cnt;
+            } else if (has_live_prev && prev_items[prev_idx].sparkline_count >= 2) {
+                int pcnt = prev_items[prev_idx].sparkline_count;
+                if (pcnt > 12) {
+                    pcnt = 12;
+                }
+                for (int s = 0; s < pcnt; s++) {
+                    item.sparkline[s] = prev_items[prev_idx].sparkline[s];
+                }
+                if (item.sparkline[pcnt - 1] != item.current_price) {
+                    if (pcnt < 12) {
+                        item.sparkline[pcnt++] = item.current_price;
+                    } else {
+                        memmove(item.sparkline, item.sparkline + 1, sizeof(double) * 11);
+                        item.sparkline[11] = item.current_price;
+                    }
+                }
+                item.sparkline_count = pcnt;
+            } else {
+                populate_ohlc_sparkline(item.prev_close,
+                                        item.open_price,
+                                        item.high_price,
+                                        item.low_price,
+                                        item.current_price,
+                                        item.change_percent,
+                                        item.sparkline,
+                                        &item.sparkline_count);
+            }
+            local_is_live[local_count] = true;
         } else {
+            /* 未取到真实行情时仅在内存兜底展示，标记为非实时（不覆盖数据库真实行） */
             item.current_price = g_preset_indices[i].def_price;
             item.change_percent = g_preset_indices[i].def_change;
             struct tm tm_q;
             localtime_r(&now, &tm_q);
             strftime(item.quote_time, sizeof(item.quote_time), "%Y-%m-%d %H:%M:%S", &tm_q);
+
+            double denom = 1.0 + item.change_percent / 100.0;
+            item.change_amount =
+                (denom != 0.0) ? (item.current_price * (item.change_percent / 100.0) / denom)
+                               : 0.0;
+            item.prev_close = item.current_price - item.change_amount;
+            item.open_price = item.prev_close;
+            item.high_price =
+                item.current_price > item.open_price ? item.current_price : item.open_price;
+            item.low_price =
+                item.current_price < item.open_price ? item.current_price : item.open_price;
+            populate_ohlc_sparkline(item.prev_close,
+                                    item.open_price,
+                                    item.high_price,
+                                    item.low_price,
+                                    item.current_price,
+                                    item.change_percent,
+                                    item.sparkline,
+                                    &item.sparkline_count);
+            local_is_live[local_count] = false;
         }
-
-        item.change_amount = item.current_price * (item.change_percent / 100.0) /
-                             (1.0 + item.change_percent / 100.0);
-        item.prev_close = item.current_price - item.change_amount;
-        item.open_price = item.prev_close * (1.0 + (item.change_percent * 0.3) / 100.0);
-        item.high_price = item.current_price > item.open_price ? item.current_price * 1.004
-                                                               : item.open_price * 1.003;
-        item.low_price = item.current_price < item.open_price ? item.current_price * 0.996
-                                                              : item.open_price * 0.997;
-
-        item.sparkline_count = 8;
-        populate_mock_sparkline(item.current_price, item.change_percent, item.sparkline, 8);
 
         local_items[local_count++] = item;
     }
@@ -739,6 +942,7 @@ refresh_indices_cache_offlock_impl(void)
     } else {
         memcpy(
             g_indices_cache.items, local_items, sizeof(global_index_item_t) * (size_t)local_count);
+        memcpy(g_indices_cache.item_is_live, local_is_live, sizeof(bool) * (size_t)local_count);
         g_indices_cache.count = local_count;
         memcpy(g_indices_cache.clocks,
                local_clocks,
@@ -758,155 +962,117 @@ refresh_indices_cache_if_stale_locked(void)
     bool still_stale = indices_cache_is_stale_locked(time(NULL));
     pthread_mutex_unlock(&g_indices_cache.lock);
     if (still_stale) {
-        refresh_indices_cache_offlock_impl();
+        refresh_indices_cache_offlock_impl(false);
     }
 }
 
 /* 串行化入口：以 refresh_lock 保护 refresh_indices_cache_offlock_impl，
    避免多个线程重复拉取 HTTP。 */
 static void
-refresh_indices_cache_offlock(void)
+refresh_indices_cache_offlock(bool force_all)
 {
     pthread_mutex_lock(&g_indices_cache.refresh_lock);
-    refresh_indices_cache_offlock_impl();
+    refresh_indices_cache_offlock_impl(force_all);
     pthread_mutex_unlock(&g_indices_cache.refresh_lock);
 }
 
-int
-quote_engine_sync_indices_to_db(void* pool)
+static int
+quote_engine_sync_indices_to_db_internal(void* pool, bool force_all)
 {
     if (!pool) {
         return -1;
     }
 
     /* 串行化指数刷新（HTTP），避免并发同步任务重复拉取 */
-    refresh_indices_cache_offlock();
+    refresh_indices_cache_offlock(force_all);
 
     time_t              now = time(NULL);
     market_clock_item_t clocks[8];
     int                 clock_count = 0;
     quote_engine_calc_market_clocks(now, clocks, 8, &clock_count);
 
-    int n = sizeof(g_preset_indices) / sizeof(g_preset_indices[0]);
-
+    int n = (int)(sizeof(g_preset_indices) / sizeof(g_preset_indices[0]));
     for (int i = 0; i < n; i++) {
         const char* mkt =
             get_market_clock_id(g_preset_indices[i].category, g_preset_indices[i].symbol);
-        bool active = is_market_active(mkt, clocks, clock_count);
-        if (!active) {
+        if (!is_market_active(mkt, clocks, clock_count)) {
             scheduler_event_publish_market_closed(mkt);
         }
+    }
 
-        global_index_item_t item;
-        memset(&item, 0, sizeof(item));
-        strncpy(item.symbol, g_preset_indices[i].symbol, sizeof(item.symbol) - 1);
-        strncpy(item.name, g_preset_indices[i].name, sizeof(item.name) - 1);
-        strncpy(item.category, g_preset_indices[i].category, sizeof(item.category) - 1);
-        strncpy(item.region_flag, g_preset_indices[i].flag, sizeof(item.region_flag) - 1);
-        strncpy(item.currency, g_preset_indices[i].currency, sizeof(item.currency) - 1);
+    global_index_item_t snapshot[MAX_PRESET_INDICES];
+    bool                snapshot_live[MAX_PRESET_INDICES] = {false};
+    int                 snapshot_count = 0;
 
-        /* 非活跃时段：短持锁复用缓存（读路径在锁外回填），不再持锁做 HTTP */
-        if (!active) {
-            pthread_mutex_lock(&g_indices_cache.lock);
-            bool found = false;
-            for (int j = 0; j < g_indices_cache.count; j++) {
-                if (strcmp(g_indices_cache.items[j].symbol, g_preset_indices[i].symbol) == 0 &&
-                    g_indices_cache.items[j].current_price > 0) {
-                    item = g_indices_cache.items[j];
-                    found = true;
-                    break;
-                }
-            }
-            pthread_mutex_unlock(&g_indices_cache.lock);
-            if (found) {
-                char sp_json[256];
-                snprintf(sp_json,
-                         sizeof(sp_json),
-                         "[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f]",
-                         item.sparkline[0],
-                         item.sparkline[1],
-                         item.sparkline[2],
-                         item.sparkline[3],
-                         item.sparkline[4],
-                         item.sparkline[5],
-                         item.sparkline[6],
-                         item.sparkline[7]);
-                mf_market_repo_upsert_index(pool,
-                                            item.symbol,
-                                            item.name,
-                                            item.category,
-                                            item.region_flag,
-                                            item.current_price,
-                                            item.change_amount,
-                                            item.change_percent,
-                                            item.prev_close,
-                                            item.open_price,
-                                            item.high_price,
-                                            item.low_price,
-                                            item.currency,
-                                            item.quote_time,
-                                            sp_json);
-                continue;
-            }
+    pthread_mutex_lock(&g_indices_cache.lock);
+    snapshot_count = g_indices_cache.count;
+    if (snapshot_count > MAX_PRESET_INDICES) {
+        snapshot_count = MAX_PRESET_INDICES;
+    }
+    if (snapshot_count > 0) {
+        memcpy(snapshot, g_indices_cache.items, sizeof(global_index_item_t) * (size_t)snapshot_count);
+        memcpy(snapshot_live, g_indices_cache.item_is_live, sizeof(bool) * (size_t)snapshot_count);
+    }
+    pthread_mutex_unlock(&g_indices_cache.lock);
+
+    for (int i = 0; i < snapshot_count; i++) {
+        /* 仅将真实拉取成功的行情落库，绝不用硬编码兜底值覆盖数据库已有真实数据 */
+        if (!snapshot_live[i] || snapshot[i].current_price <= 0) {
+            continue;
         }
 
-        market_quote_t q;
-        if (quote_engine_fetch_quote(g_preset_indices[i].symbol, g_preset_indices[i].source, &q) ==
-                0 &&
-            q.current_price > 0) {
-            item.current_price = q.current_price;
-            item.change_percent = q.change_percent;
-            snprintf(item.quote_time, sizeof(item.quote_time), "%s", q.quote_time);
-        } else {
-            item.current_price = g_preset_indices[i].def_price;
-            item.change_percent = g_preset_indices[i].def_change;
-            struct tm tm_q;
-            localtime_r(&now, &tm_q);
-            strftime(item.quote_time, sizeof(item.quote_time), "%Y-%m-%d %H:%M:%S", &tm_q);
+        const global_index_item_t* item = &snapshot[i];
+        char                       sp_json[512];
+        size_t                     off = 0;
+        sp_json[off++] = '[';
+        int sp_cnt = item->sparkline_count;
+        if (sp_cnt > 12) {
+            sp_cnt = 12;
         }
-
-        item.change_amount = item.current_price * (item.change_percent / 100.0) /
-                             (1.0 + item.change_percent / 100.0);
-        item.prev_close = item.current_price - item.change_amount;
-        item.open_price = item.prev_close * (1.0 + (item.change_percent * 0.3) / 100.0);
-        item.high_price = item.current_price > item.open_price ? item.current_price * 1.004
-                                                               : item.open_price * 1.003;
-        item.low_price = item.current_price < item.open_price ? item.current_price * 0.996
-                                                              : item.open_price * 0.997;
-        item.sparkline_count = 8;
-        populate_mock_sparkline(item.current_price, item.change_percent, item.sparkline, 8);
-
-        char sp_json[256];
-        snprintf(sp_json,
-                 sizeof(sp_json),
-                 "[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f]",
-                 item.sparkline[0],
-                 item.sparkline[1],
-                 item.sparkline[2],
-                 item.sparkline[3],
-                 item.sparkline[4],
-                 item.sparkline[5],
-                 item.sparkline[6],
-                 item.sparkline[7]);
+        for (int s = 0; s < sp_cnt; s++) {
+            int w = snprintf(sp_json + off,
+                             sizeof(sp_json) - off,
+                             "%s%.2f",
+                             s > 0 ? "," : "",
+                             item->sparkline[s]);
+            if (w < 0 || (size_t)w >= sizeof(sp_json) - off - 2) {
+                break;
+            }
+            off += (size_t)w;
+        }
+        sp_json[off++] = ']';
+        sp_json[off] = '\0';
 
         mf_market_repo_upsert_index(pool,
-                                    item.symbol,
-                                    item.name,
-                                    item.category,
-                                    item.region_flag,
-                                    item.current_price,
-                                    item.change_amount,
-                                    item.change_percent,
-                                    item.prev_close,
-                                    item.open_price,
-                                    item.high_price,
-                                    item.low_price,
-                                    item.currency,
-                                    item.quote_time,
+                                    item->symbol,
+                                    item->name,
+                                    item->category,
+                                    item->region_flag,
+                                    item->current_price,
+                                    item->change_amount,
+                                    item->change_percent,
+                                    item->prev_close,
+                                    item->open_price,
+                                    item->high_price,
+                                    item->low_price,
+                                    item->currency,
+                                    item->quote_time,
                                     sp_json);
     }
 
     return 0;
+}
+
+int
+quote_engine_sync_indices_to_db(void* pool)
+{
+    return quote_engine_sync_indices_to_db_internal(pool, false);
+}
+
+int
+quote_engine_force_sync_indices_to_db(void* pool)
+{
+    return quote_engine_sync_indices_to_db_internal(pool, true);
 }
 
 int

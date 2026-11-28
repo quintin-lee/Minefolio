@@ -303,8 +303,9 @@ market_usecase_sync_all(
         return -1;
     }
 
-    /* 1. Refresh global exchange rates for forex boards and multi-currency reporting */
+    /* 1. Refresh global exchange rates & global market indices */
     exchange_rate_refresh_all();
+    quote_engine_force_sync_indices_to_db(pool);
 
     /* 2. Sync user assets */
     int synced = 0, failed = 0;
@@ -686,7 +687,6 @@ market_usecase_get_indices(void*                    pool,
     struct tm     tm_now;
     localtime_r(&t_now, &tm_now);
     strftime(updated_at_str, sizeof(updated_at_str), "%Y-%m-%d %H:%M:%S", &tm_now);
-    csilk_json_add_string(root, "updated_at", updated_at_str);
 
     /* 序列化 market_clocks */
     csilk_json_t* clocks_arr = csilk_json_array();
@@ -703,9 +703,23 @@ market_usecase_get_indices(void*                    pool,
     csilk_json_add_array(root, "market_clocks", clocks_arr);
 
     if (db_rows && csilk_json_is_array(db_rows) && csilk_json_array_size(db_rows) > 0) {
-        /* 100% 只读数据库，0 外部网络 IO！ */
+        /* 100% 只读数据库，0 外部网络 IO；使用数据库真实同步时间 */
+        const char* latest_ts = NULL;
+        size_t      row_n = csilk_json_array_size(db_rows);
+        for (size_t i = 0; i < row_n; i++) {
+            csilk_json_t* r = csilk_json_array_get(db_rows, i);
+            const char*   cand = csilk_json_get_string(r, "updated_at");
+            if (!cand || !cand[0]) {
+                cand = csilk_json_get_string(r, "quote_time");
+            }
+            if (cand && cand[0] && (!latest_ts || strcmp(cand, latest_ts) > 0)) {
+                latest_ts = cand;
+            }
+        }
+        csilk_json_add_string(root, "updated_at", (latest_ts && latest_ts[0]) ? latest_ts : updated_at_str);
         csilk_json_add_array(root, "indices", db_rows);
     } else {
+        csilk_json_add_string(root, "updated_at", updated_at_str);
         if (db_rows) {
             csilk_json_free(db_rows);
         }
