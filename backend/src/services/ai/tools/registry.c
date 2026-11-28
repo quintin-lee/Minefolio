@@ -10,11 +10,13 @@
 #include "services/ai/tools/web_search_tool.h"
 #include "services/ai/tools/batch_tool.h"
 #include "services/ai/tools/skill_tool.h"
+#include "services/ai/tools/metadata_tool.h"
+#include "services/ai/tools/budget_tool.h"
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_TOOLS 64
+#define MAX_TOOLS AI_TOOL_MAX_TOOLS
 
 static ai_tool_t        s_registered_tools[MAX_TOOLS];
 static size_t           s_tool_count = 0;
@@ -80,6 +82,8 @@ registry_init_impl(void)
     ai_tool_web_search_register_all();
     ai_tool_batch_register_all();
     ai_tool_skill_register_all();
+    ai_tool_metadata_register_all();
+    ai_tool_budget_register_all();
 
     pthread_mutex_lock(&s_registry_mutex);
     rebuild_caches_locked();
@@ -176,6 +180,26 @@ ai_tool_find(const char* name)
     }
     pthread_mutex_unlock(&s_registry_mutex);
     return found;
+}
+
+const char*
+ai_tool_find_confirm_tool_by_action(const char* action_type)
+{
+    if (!action_type || !action_type[0]) {
+        return NULL;
+    }
+    ai_tool_registry_init();
+    pthread_mutex_lock(&s_registry_mutex);
+    const char* name = NULL;
+    for (size_t i = 0; i < s_tool_count; i++) {
+        const ai_tool_t* t = &s_registered_tools[i];
+        if (t->internal_only && t->action_type && strcmp(t->action_type, action_type) == 0) {
+            name = t->name;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s_registry_mutex);
+    return name;
 }
 
 const ai_tool_t**

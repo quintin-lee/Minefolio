@@ -1,5 +1,6 @@
 #include "services/ai/tools/cashflow_tool.h"
-#include "services/ai/tools/schema.h"
+#include "services/ai/tools/tool_spec.h"
+#include "services/ai/tools/tool_helpers.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
 #include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
@@ -13,8 +14,8 @@ exec_get_summary(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csil
 {
     (void)tool;
     (void)args;
-    if (!ctx || !ctx->pool || ctx->user_id <= 0) {
-        return strdup("{\"error\":\"invalid context\"}");
+    if (!ai_tool_ctx_valid(ctx)) {
+        return ai_tool_json_error("invalid context", 0);
     }
 
     int64_t       total_assets_cnt = 0;
@@ -95,35 +96,7 @@ exec_get_summary(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csil
     csilk_json_add_number(res, "monthly_expense", cur_expense);
     csilk_json_add_number(res, "net_savings", net_savings);
     csilk_json_add_number(res, "savings_rate_pct", savings_rate);
-
-    size_t len = 0;
-    char*  s = csilk_json_serialize(res, &len);
-    csilk_json_free(res);
-    return s;
-}
-
-static char*
-exec_get_categories(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csilk_json_t* args)
-{
-    (void)tool;
-    if (!ctx || !ctx->pool || ctx->user_id <= 0) {
-        return strdup("{\"error\":\"invalid context\"}");
-    }
-
-    const char*   type = args ? csilk_json_get_string(args, "type") : NULL;
-    csilk_json_t* list = mf_ai_repo_category_list(ctx->pool, ctx->user_id, type);
-
-    csilk_json_t* res = csilk_json_object();
-    if (list) {
-        csilk_json_add_array(res, "categories", list);
-    } else {
-        csilk_json_add_array(res, "categories", csilk_json_array());
-    }
-
-    size_t len = 0;
-    char*  s = csilk_json_serialize(res, &len);
-    csilk_json_free(res);
-    return s;
+    return ai_tool_json_serialize_free(res);
 }
 
 static char*
@@ -174,67 +147,34 @@ exec_get_exchange_rate(const ai_tool_t*         tool,
     csilk_json_add_string(res, "base_currency", base);
     csilk_json_add_string(res, "target_currency", target);
     csilk_json_add_number(res, "rate", rate);
-
-    size_t len = 0;
-    char*  s = csilk_json_serialize(res, &len);
-    csilk_json_free(res);
-    return s;
+    return ai_tool_json_serialize_free(res);
 }
+
+static const ai_tool_spec_t s_cashflow_tool_specs[] = {
+    {
+        .name = "get_summary",
+        .description = "查询当前用户的总净资产、总资产、总负债与当月总收支宏观概览",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_get_summary,
+    },
+    {
+        .name = "get_exchange_rate",
+        .description = "查询多币种外汇即时参考汇率与折算基准",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_get_exchange_rate,
+        .param_count = 2,
+        .params = {
+            AI_TOOL_PARAM("base_currency", "string", "基础币种，如 USD, HKD"),
+            AI_TOOL_PARAM("target_currency", "string", "目标币种，如 CNY, USD"),
+        },
+    },
+};
 
 void
 ai_tool_cashflow_register_all(void)
 {
-    /* 1. get_summary */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-
-        ai_tool_t t = {
-            .name = "get_summary",
-            .description = "查询当前用户的总净资产、总资产、总负债与当月总收支宏观概览",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_get_summary,
-        };
-        ai_tool_register(&t);
-    }
-
-    /* 2. get_categories */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s, "type", "string", "分类类型：expense 或 income");
-
-        ai_tool_t t = {
-            .name = "get_categories",
-            .description = "获取用户的日常收支分类树与预设消费标签",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_get_categories,
-        };
-        ai_tool_register(&t);
-    }
-
-    /* 3. get_exchange_rate */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s, "base_currency", "string", "基础币种，如 USD, HKD");
-        ai_schema_add_prop(s, "target_currency", "string", "目标币种，如 CNY, USD");
-
-        ai_tool_t t = {
-            .name = "get_exchange_rate",
-            .description = "查询多币种外汇即时参考汇率与折算基准",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_get_exchange_rate,
-        };
-        ai_tool_register(&t);
-    }
+    ai_tool_register_specs(s_cashflow_tool_specs,
+                           sizeof(s_cashflow_tool_specs) / sizeof(s_cashflow_tool_specs[0]));
 }

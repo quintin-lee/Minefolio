@@ -85,6 +85,31 @@ csilk_json_t*
 mf_ai_repo_daily_expense_monthly_by_category(void* pool, int64_t user_id, const char* pattern);
 
 /**
+ * @brief 获取日常收支按分类历史月均消费（排除指定月份模式，RBAC 过滤未脱敏资产）
+ */
+csilk_json_t* mf_ai_repo_daily_expense_hist_avg_by_category(void*       pool,
+                                                            int64_t     user_id,
+                                                            const char* exclude_month_pattern);
+
+/**
+ * @brief 查询用户储蓄/预算目标列表
+ */
+csilk_json_t* mf_ai_repo_savings_goals_list(void* pool, int64_t user_id);
+
+/**
+ * @brief 创建或更新用户储蓄/预算目标（goal_id > 0 为更新，否则新建）
+ */
+int mf_ai_repo_savings_goal_upsert(void*       pool,
+                                   int64_t     user_id,
+                                   int64_t     goal_id,
+                                   const char* name,
+                                   double      target_amount,
+                                   double      current_amount,
+                                   const char* deadline,
+                                   const char* note,
+                                   int64_t*    out_id);
+
+/**
  * @brief 获取日常收支月度总额
  */
 csilk_json_t*

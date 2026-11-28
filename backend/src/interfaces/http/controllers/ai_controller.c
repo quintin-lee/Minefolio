@@ -285,12 +285,8 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
     strncpy(token_buf, draft_token, sizeof(token_buf) - 1);
 
     csilk_db_pool_t* pool = db_get_pool();
-    const char*      tool_name = NULL;
-    if (strcmp(action_type, "daily_expense") == 0) {
-        tool_name = "confirm_proposed_expense";
-    } else if (strcmp(action_type, "transfer") == 0) {
-        tool_name = "confirm_proposed_transfer";
-    } else {
+    const char*      tool_name = ai_tool_find_confirm_tool_by_action(action_type);
+    if (!tool_name) {
         csilk_json_free(body);
         respond_bad_request(c, "未知的 action_type");
         return;

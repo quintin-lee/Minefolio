@@ -249,6 +249,97 @@ mf_ai_repo_daily_expense_monthly_by_category(void* pool, int64_t user_id, const 
 }
 
 csilk_json_t*
+mf_ai_repo_daily_expense_hist_avg_by_category(void*       pool,
+                                              int64_t     user_id,
+                                              const char* exclude_month_pattern)
+{
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    const char* excl = (exclude_month_pattern && exclude_month_pattern[0]) ? exclude_month_pattern
+                                                                           : "0000-00%";
+    return csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "SELECT category_id, COALESCE(category_name,'未分类') as category_name, "
+        "AVG(m_sum) as avg_amount FROM ("
+        "  SELECT de.category_id, c.name as category_name, "
+        "  substr(CAST(de.expense_date AS TEXT),1,7) as ym, SUM(de.amount) as m_sum "
+        "  FROM daily_expenses de "
+        "  LEFT JOIN categories c ON c.id = de.category_id "
+        "  LEFT JOIN assets _ra ON de.asset_id = _ra.id "
+        "  WHERE de.user_id=? AND de.expense_type='expense' "
+        "  AND CAST(de.expense_date AS TEXT) NOT LIKE ? "
+        "  AND " MF_RBAC_ASSET_UNMASKED_SQL("_ra") " "
+                                                   "  GROUP BY de.category_id, c.name, ym"
+                                                   ") sub GROUP BY category_id, category_name",
+        (const char*[]){uid, excl, uid, uid, NULL});
+}
+
+csilk_json_t*
+mf_ai_repo_savings_goals_list(void* pool, int64_t user_id)
+{
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    return csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "SELECT id, name, target_amount, current_amount, "
+        "COALESCE(deadline, '') as deadline, COALESCE(note, '') as note, created_at "
+        "FROM savings_goals WHERE user_id=? "
+        "ORDER BY CASE WHEN deadline IS NULL OR deadline = '' THEN 1 ELSE 0 END, deadline ASC, id "
+        "ASC",
+        (const char*[]){uid, NULL});
+}
+
+int
+mf_ai_repo_savings_goal_upsert(void*       pool,
+                               int64_t     user_id,
+                               int64_t     goal_id,
+                               const char* name,
+                               double      target_amount,
+                               double      current_amount,
+                               const char* deadline,
+                               const char* note,
+                               int64_t*    out_id)
+{
+    if (!pool || user_id <= 0 || !name || !name[0] || target_amount <= 0.0) {
+        return -1;
+    }
+    char uid[32], tgt_s[64], cur_s[64];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(tgt_s, sizeof(tgt_s), "%.2f", target_amount);
+    snprintf(cur_s, sizeof(cur_s), "%.2f", current_amount >= 0.0 ? current_amount : 0.0);
+    const char* dl = (deadline && deadline[0]) ? deadline : "";
+    const char* nt = (note && note[0]) ? note : "";
+
+    csilk_json_t* res = NULL;
+    if (goal_id > 0) {
+        char gid[32];
+        snprintf(gid, sizeof(gid), "%lld", (long long)goal_id);
+        res = csilk_db_query_param_json(
+            (csilk_db_pool_t*)pool,
+            "UPDATE savings_goals SET name=?, target_amount=?, current_amount=?, deadline=?, "
+            "note=? WHERE id=? AND user_id=? RETURNING id",
+            (const char*[]){name, tgt_s, cur_s, dl, nt, gid, uid, NULL});
+    } else {
+        res = csilk_db_query_param_json(
+            (csilk_db_pool_t*)pool,
+            "INSERT INTO savings_goals (user_id, name, target_amount, current_amount, deadline, "
+            "note) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+            (const char*[]){uid, name, tgt_s, cur_s, dl, nt, NULL});
+    }
+    if (!res || csilk_json_array_size(res) == 0) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        return -1;
+    }
+    if (out_id) {
+        *out_id = db_get_int(csilk_json_array_get(res, 0), "id");
+    }
+    csilk_json_free(res);
+    return 0;
+}
+
+csilk_json_t*
 mf_ai_repo_daily_expense_monthly_totals(void* pool, int64_t user_id, const char* pattern)
 {
     char uid[32];
