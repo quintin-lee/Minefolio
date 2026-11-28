@@ -91,7 +91,7 @@ describe('mobile router offline cold start', () => {
     ;(systemApi.status as ReturnType<typeof vi.fn>).mockResolvedValue({
       initialized: true,
       user_count: 1,
-      version: '1.4.1',
+      version: '1.5.0',
     })
 
     const auth = useAuthStore()

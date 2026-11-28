@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.0] - 2026-11-28
+
+### Added
+- **Mobile Feature Parity (P0 & P1)**:
+  - Added mobile Asset Detail, Market, and News routes with responsive mobile navigation adaptation.
+  - Aligned mobile AI chat with workflows, receipt attachments, thinking mode, and session actions.
+  - Added transaction filters, receipt scanner, asset drill-down, dashboard charts, holdings charts, and multi-tab reports on mobile, backed by a dedicated P0/P1 mobile parity unit test suite.
+- **GitHub Actions CI & Release for IM Gateway (`Dockerfile.gateway`, `.github/workflows/ci.yml`)**:
+  - Added `docker-build-gateway` job with non-root runtime smoke tests and in-container `npm test`, publishing `ghcr.io/<repo>-gateway` alongside backend and frontend images.
+  - Added `type=semver,pattern={{version}}` tags across all three GHCR images (`minefolio`, `minefolio-frontend`, `minefolio-gateway`) and wired `docker-build-gateway` into the `release` job gate and release notes.
+
+### Changed
+- **Non-Root IM Gateway Hardening (`Dockerfile.gateway`, `.dockerignore`, `docker-compose*.yml`, `.gitea/workflows/deploy.yml`)**:
+  - Switched `Dockerfile.gateway` to run as dedicated non-root user `minefolio` (UID/GID `10001`), pre-created `0700` `/data` and `/state` mount points, kept `/app` owned by `root:root`, and excluded local gateway runtime state from the Docker build context.
+  - Updated `docker-compose.im.yml` to use `ghcr.io/quintin-lee/minefolio-gateway`, added idempotent `10001:10001` volume ownership migration to `.gitea/workflows/deploy.yml`, and synced `.env.example` and `README.md`.
+- **Version Bump**: Synchronized version to `1.5.0` across backend, frontend, Android (`versionCode` 8 → 9), Compose manifests, tests, and documentation.
+
+### Fixed
+- **Global Amount Masking**: Added unified amount masking helpers/styles and covered previously unmasked monetary values across desktop views, mobile views, AI chat cards, starters, mentions, and tool summaries, with regression tests.
+- **Global Market Indices & Quote Drivers**: Fixed quote driver parsing, symbol normalization, and OHLC extraction; prevented stale index overwrites; handled DST market clocks properly; removed hardcoded CN chart hours; wired manual index sync; and fixed DB pool / secret override cleanup in market indices unit tests.
+
+---
+
 ## [1.4.1] - 2026-11-28
 
 ### Added

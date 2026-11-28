@@ -17,7 +17,7 @@
 # ============================================================================
 services:
   minefolio:
-    image: ghcr.io/quintin-lee/minefolio:${MINEFOLIO_VERSION:-1.4.1}
+    image: ghcr.io/quintin-lee/minefolio:${MINEFOLIO_VERSION:-1.5.0}
     container_name: minefolio
     expose:
       - "8080"
@@ -79,7 +79,7 @@ services:
     restart: unless-stopped
 
   nginx:
-    image: ghcr.io/quintin-lee/minefolio-frontend:${MINEFOLIO_VERSION:-1.4.1}
+    image: ghcr.io/quintin-lee/minefolio-frontend:${MINEFOLIO_VERSION:-1.5.0}
     container_name: minefolio-nginx
     ports:
       - "80:80"
@@ -123,7 +123,7 @@ services:
   # minefolio-gateway 镜像以非 root 用户 (UID/GID 10001) 运行；
   # 从旧版 root 卷升级时，需对既有 im_gateway_data / ilink_state 执行一次 chown -R 10001:10001。
   im-gateway:
-    image: ghcr.io/quintin-lee/minefolio-gateway:${MINEFOLIO_VERSION:-1.4.1}
+    image: ghcr.io/quintin-lee/minefolio-gateway:${MINEFOLIO_VERSION:-1.5.0}
     container_name: minefolio-im-gateway
     profiles:
       - im
@@ -147,7 +147,7 @@ services:
 
   # 微信 iLink 用户级独立实例网关 (每实例独立子进程与 state 目录)
   ilink-gateway:
-    image: ghcr.io/quintin-lee/minefolio-gateway:${MINEFOLIO_VERSION:-1.4.1}
+    image: ghcr.io/quintin-lee/minefolio-gateway:${MINEFOLIO_VERSION:-1.5.0}
     container_name: minefolio-ilink-gateway
     profiles:
       - im

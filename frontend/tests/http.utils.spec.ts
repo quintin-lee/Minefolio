@@ -132,14 +132,14 @@ describe('http utils', () => {
         json: async () => ({
           code: 0,
           message: 'ok',
-          data: { initialized: true, version: '1.4.1' },
+          data: { initialized: true, version: '1.5.0' },
         }),
       }) as any
 
       try {
         const result = await testServerConnection('http://192.168.1.88:8080')
         expect(result.ok).toBe(true)
-        expect(result.version).toBe('1.4.1')
+        expect(result.version).toBe('1.5.0')
         expect(result.initialized).toBe(true)
         expect(result.message).toContain('连接成功')
       } finally {

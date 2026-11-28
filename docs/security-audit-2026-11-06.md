@@ -1,6 +1,6 @@
 # Minefolio 全量代码安全审查与漏洞审计报告
 
-> ⚠️ **历史快照报告**：本文是 `master @ 613d9f5a` 时点的安全审计存档，文中规模数字（17 域、22 仓储、148 路由等）与漏洞清单反映当时状态，不代表当前安全水位。现状以 `docs/superpowers/specs/2026-08-10-minefolio-design.md`（已按 v1.4.1 重写）、`docs/architecture.md` 与代码为准；修复情况请查阅 `CHANGELOG.md`。
+> ⚠️ **历史快照报告**：本文是 `master @ 613d9f5a` 时点的安全审计存档，文中规模数字（17 域、22 仓储、148 路由等）与漏洞清单反映当时状态，不代表当前安全水位。现状以 `docs/superpowers/specs/2026-08-10-minefolio-design.md`（已按 v1.5.0 重写）、`docs/architecture.md` 与代码为准；修复情况请查阅 `CHANGELOG.md`。
 
 - **审计日期**：2026-11-06
 - **审计基准分支**：`master @ 613d9f5a`

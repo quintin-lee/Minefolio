@@ -14,7 +14,7 @@
 #include <stdio.h>
 
 #ifndef MINEFOLIO_VERSION
-#define MINEFOLIO_VERSION "1.4.1"
+#define MINEFOLIO_VERSION "1.5.0"
 #endif
 
 void

@@ -72,7 +72,7 @@ vi.mock('@/api/ai', () => ({
 
 vi.mock('@/api/system', () => ({
   systemApi: {
-    status: vi.fn().mockResolvedValue({ version: '1.4.1', is_initialized: true }),
+    status: vi.fn().mockResolvedValue({ version: '1.5.0', is_initialized: true }),
   },
 }))
 

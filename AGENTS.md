@@ -244,7 +244,7 @@ cd android && ./gradlew clean assembleDebug   # local development only (default 
 CI builds `assembleRelease` with a stable signing key injected from secrets (`ANDROID_KEYSTORE_BASE64`,
 `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`); see Known Gotchas #15.
 Never commit keystore files. Each release must bump `versionCode` in `frontend/android/app/build.gradle`
-(currently `8` / `versionName 1.4.1`).
+(currently `9` / `versionName 1.5.0`).
 
 ### Full Verification
 
@@ -625,7 +625,7 @@ docker exec minefolio /app/reset-password reset admin --password-file /tmp/pw --
 12. **Chat auto-scroll on history prepend**: Do NOT watch `chat.messages.length` to trigger auto-scroll — prepending older pages changes the length and forces the view to the bottom. Instead, watch only the **last message ID** to detect genuinely new appended content.
 13. **UTC date drift in forms**: `new Date().toISOString().slice(0, 10)` returns UTC, not local. In UTC+ timezones between 00:00–08:00, this yields yesterday's date. Use `localToday()` from `@/utils/format` instead.
 14. **Transaction dialog fee field**: Always reset `form.fee` to 0 in the new-transaction branch of `openDialog()`, and map `Number(txn.fee) || 0` in the edit branch. Clear `fee` in `onTransactionTypeChange()` when switching away from buy/sell to prevent stale fees from being sent on non-investment transactions.
-15. **Release APK signing and upgrades**: CI must build `assembleRelease` with the `ANDROID_KEYSTORE_*` secrets so the signing certificate stays stable across builds; never commit `*.jks` / `*.keystore`. Bump `versionCode` for every release (currently `8`, `versionName 1.4.1`) or Android will refuse to install over an equal version. Old APKs signed with the previous debug key still need a one-time uninstall before the first signed release can be installed.
+15. **Release APK signing and upgrades**: CI must build `assembleRelease` with the `ANDROID_KEYSTORE_*` secrets so the signing certificate stays stable across builds; never commit `*.jks` / `*.keystore`. Bump `versionCode` for every release (currently `9`, `versionName 1.5.0`) or Android will refuse to install over an equal version. Old APKs signed with the previous debug key still need a one-time uninstall before the first signed release can be installed.
 
 ## Commit Convention
 
