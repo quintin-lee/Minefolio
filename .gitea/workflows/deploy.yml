@@ -208,7 +208,7 @@ jobs:
 
           echo "🐳 拉取镜像并启动..."
           ssh_run \
-            "cd '${TARGET_DIR}' && if sudo docker compose version >/dev/null 2>&1; then DC='sudo docker compose'; else DC='sudo docker-compose'; fi && \$DC pull && \$DC up -d && \$DC ps"
+            "cd '${TARGET_DIR}' && if sudo docker compose version >/dev/null 2>&1; then DC='sudo docker compose'; else DC='sudo docker-compose'; fi && \$DC pull && for vol in \$(sudo docker volume ls -q | grep -E '(^|_)(im_gateway_data|ilink_state)\$' || true); do sudo docker run --rm --user 0:0 --entrypoint sh -v \"\${vol}:/target\" 'ghcr.io/quintin-lee/minefolio:${VERSION}' -c 'chown -R 10001:10001 /target && chmod 700 /target'; done && \$DC up -d && \$DC ps"
 
           # 成功部署后写入版本历史，供 rollback.sh 回滚
           ssh_run \

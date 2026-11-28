@@ -120,6 +120,8 @@ services:
     restart: unless-stopped
 
   # IM 网关服务 (桥接 NapCat 与 Minefolio)
+  # minefolio-gateway 镜像以非 root 用户 (UID/GID 10001) 运行；
+  # 从旧版 root 卷升级时，需对既有 im_gateway_data / ilink_state 执行一次 chown -R 10001:10001。
   im-gateway:
     image: ghcr.io/quintin-lee/minefolio-gateway:${MINEFOLIO_VERSION:-1.4.1}
     container_name: minefolio-im-gateway
