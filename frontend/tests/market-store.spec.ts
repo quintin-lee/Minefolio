@@ -150,18 +150,20 @@ describe('market store', () => {
     expect(store.indices[0].symbol).toBe('^GSPC')
   })
 
-  it('syncAllQuotes runs both fx and quotes sync and refreshes rates', async () => {
+  it('syncAllQuotes runs both fx and quotes sync and refreshes rates and indices', async () => {
     const store = useMarketStore()
     vi.mocked(marketApi.syncExchangeRates).mockResolvedValueOnce({ USD: 7.25, EUR: 7.88 })
     vi.mocked(marketApi.syncAll).mockResolvedValueOnce({ synced_count: 5, failed_count: 0 })
     vi.mocked(marketApi.getExchangeRates).mockResolvedValueOnce({ USD: 7.25, EUR: 7.88 })
     vi.mocked(marketApi.getMultiCurrencySummary).mockResolvedValueOnce({} as any)
     vi.mocked(marketApi.getFxHistory).mockResolvedValueOnce([])
+    vi.mocked(marketApi.getIndices).mockResolvedValueOnce({ updated_at: '', market_clocks: [], indices: [] } as any)
 
     const success = await store.syncAllQuotes()
     expect(success).toBe(true)
     expect(marketApi.syncExchangeRates).toHaveBeenCalled()
     expect(marketApi.syncAll).toHaveBeenCalled()
+    expect(marketApi.getIndices).toHaveBeenCalled()
     expect(store.lastSyncAt).toBeTruthy()
     expect(store.isSyncing).toBe(false)
   })

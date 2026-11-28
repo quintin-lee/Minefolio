@@ -11,6 +11,8 @@
 #include "common/market_types.h"
 #include "config/secret.h"
 #include "services/market/quote_engine.h"
+#include "services/market/quote_driver.h"
+#include "infrastructure/repositories/market_repo_impl.h"
 
 static void test_market_clocks_calc(void) {
     market_clock_item_t clocks[8];
@@ -188,10 +190,183 @@ test_quote_engine_swr_concurrent_and_failed_refresh(void)
     printf("PASS: test_quote_engine_swr_concurrent_and_failed_refresh\n");
 }
 
+static void
+test_tencent_parse_empty_fields_and_ohlc(void)
+{
+    /* A股指数实测报文：第29字段为空（~~），旧 strtok_r 实现会左移1位导致涨跌幅变成最高价 */
+    const char* sh_line =
+        "v_sh000001=\"1~上证指数~000001~3606.49~3476.88~3482.38~634626966~0~0~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~~20261127161427~129.61~3.73~3610.72~3467.41~3606.49/634626966/929777242144\";";
+    market_quote_t q;
+    assert(driver_tencent_parse_line(sh_line, &q) == 0);
+    assert(fabs(q.current_price - 3606.49) < 1e-4);
+    assert(fabs(q.prev_close - 3476.88) < 1e-4);
+    assert(fabs(q.open_price - 3482.38) < 1e-4);
+    assert(fabs(q.change_amount - 129.61) < 1e-4);
+    assert(fabs(q.change_percent - 3.73) < 1e-4);
+    assert(fabs(q.high_price - 3610.72) < 1e-4);
+    assert(fabs(q.low_price - 3467.41) < 1e-4);
+    assert(strcmp(q.quote_time, "2026-11-27 16:14:27") == 0);
+    assert(strcmp(q.currency, "CNY") == 0);
+
+    const char* hk_line =
+        "v_hkHSI=\"100~恒生指数~HSI~22694.770~22226.880~22263.700~25714049.4366~0~0~22694.770~0~0~0~0~0~0~0~0~0~22694.770~0~0~0~0~0~0~0~0~0~0.0~2026/11/27 18:30:57~467.890~2.11~22781.030~22263.700\";";
+    assert(driver_tencent_parse_line(hk_line, &q) == 0);
+    assert(fabs(q.current_price - 22694.770) < 1e-4);
+    assert(fabs(q.change_amount - 467.890) < 1e-4);
+    assert(fabs(q.change_percent - 2.11) < 1e-4);
+    assert(fabs(q.high_price - 22781.030) < 1e-4);
+    assert(fabs(q.low_price - 22263.700) < 1e-4);
+    assert(strcmp(q.quote_time, "2026-11-27 18:30:57") == 0);
+    assert(strcmp(q.currency, "HKD") == 0);
+
+    const char* jj_line =
+        "v_jj110011=\"110011~易方达精选~0.0000~0.0000~~4.2064~5.9964~-0.1638~2026-08-27~\";";
+    assert(driver_tencent_parse_line(jj_line, &q) == 0);
+    assert(fabs(q.current_price - 4.2064) < 1e-4);
+    assert(fabs(q.change_percent - (-0.1638)) < 1e-4);
+    assert(strcmp(q.quote_time, "2026-08-27") == 0);
+
+    printf("PASS: test_tencent_parse_empty_fields_and_ohlc\n");
+}
+
+static void
+test_crypto_symbol_normalization(void)
+{
+    char pair[64];
+    driver_crypto_normalize_pair("BTC-USD", pair, sizeof(pair));
+    assert(strcmp(pair, "BTCUSDT") == 0);
+    driver_crypto_normalize_pair("eth-usd", pair, sizeof(pair));
+    assert(strcmp(pair, "ETHUSDT") == 0);
+    driver_crypto_normalize_pair("btc", pair, sizeof(pair));
+    assert(strcmp(pair, "BTCUSDT") == 0);
+    driver_crypto_normalize_pair("SOLUSDT", pair, sizeof(pair));
+    assert(strcmp(pair, "SOLUSDT") == 0);
+    printf("PASS: test_crypto_symbol_normalization\n");
+}
+
+static void
+test_yahoo_encode_and_parse(void)
+{
+    char enc[64];
+    driver_yahoo_encode_symbol("^GSPC", enc, sizeof(enc));
+    assert(strcmp(enc, "%5EGSPC") == 0);
+    driver_yahoo_encode_symbol("GC=F", enc, sizeof(enc));
+    assert(strcmp(enc, "GC%3DF") == 0);
+
+    const char* json =
+        "{\"chart\":{\"result\":[{\"meta\":{\"currency\":\"USD\",\"symbol\":\"BTC-USD\","
+        "\"regularMarketPrice\":59660.08,\"chartPreviousClose\":59866.066,"
+        "\"regularMarketChangePercent\":-3.297,\"regularMarketDayHigh\":60164.19,"
+        "\"regularMarketDayLow\":59672.88,\"regularMarketTime\":1795844705},"
+        "\"indicators\":{\"quote\":[{\"open\":[61500.0],\"close\":[61000.0,60200.0,59660.08]}]}}]}}";
+    market_quote_t q;
+    assert(driver_yahoo_parse_chart_json(json, "BTC-USD", &q) == 0);
+    assert(fabs(q.current_price - 59660.08) < 1e-4);
+    assert(fabs(q.change_percent - (-3.297)) < 1e-4);
+    assert(fabs(q.open_price - 61500.0) < 1e-4);
+    assert(fabs(q.high_price - 60164.19) < 1e-4);
+    assert(fabs(q.low_price - 59672.88) < 1e-4);
+    assert(q.sparkline_count == 3);
+    assert(fabs(q.sparkline[0] - 61000.0) < 1e-4);
+    assert(fabs(q.sparkline[2] - 59660.08) < 1e-4);
+    assert(q.quote_time[0] != '\0');
+    printf("PASS: test_yahoo_encode_and_parse\n");
+}
+
+static void
+test_market_clocks_dst_winter(void)
+{
+    market_clock_item_t clocks[8];
+    int                 count = 0;
+
+    /* 2026-11-27 14:00:00 UTC (周五冬令时: 伦敦 GMT 14:00=open, 纽约 EST 09:00=pre) */
+    struct tm tm_w = {0};
+    tm_w.tm_year = 2026 - 1900;
+    tm_w.tm_mon = 10;
+    tm_w.tm_mday = 27;
+    tm_w.tm_hour = 14;
+    time_t winter_14 = timegm(&tm_w);
+    assert(quote_engine_calc_market_clocks(winter_14, clocks, 8, &count) == 0);
+    assert(strcmp(clocks[3].market, "LSE") == 0);
+    assert(strcmp(clocks[3].status, "open") == 0);
+    assert(strcmp(clocks[4].market, "NYSE") == 0);
+    assert(strcmp(clocks[4].status, "pre") == 0);
+
+    /* 15:00 UTC -> 纽约 EST 10:00=open */
+    assert(quote_engine_calc_market_clocks(winter_14 + 3600, clocks, 8, &count) == 0);
+    assert(strcmp(clocks[4].status, "open") == 0);
+    printf("PASS: test_market_clocks_dst_winter\n");
+}
+
+static void
+test_failed_sync_never_overwrites_db_with_def_price(void)
+{
+    const char* test_db = "/tmp/test_mf_market_indices_nolive.db";
+    unlink(test_db);
+    char shm[256], wal[256];
+    snprintf(shm, sizeof(shm), "%s-shm", test_db);
+    snprintf(wal, sizeof(wal), "%s-wal", test_db);
+    unlink(shm);
+    unlink(wal);
+
+    config_secret_set_test_mode(true);
+    config_secret_set_test_override("DB_DRIVER", "sqlite");
+    config_secret_set_test_override("DB_DSN", test_db);
+    config_secret_set_test_override("JWT_SECRET", "test_jwt_secret_market_indices_32b!");
+
+    csilk_db_pool_t* pool = NULL;
+    assert(db_init(&pool) == 0 && pool != NULL);
+    assert(db_run_migrations(pool) == 0);
+
+    assert(mf_market_repo_upsert_index(pool,
+                                       "sh000001",
+                                       "上证指数",
+                                       "cn",
+                                       "🇨🇳",
+                                       3606.49,
+                                       129.61,
+                                       3.73,
+                                       3476.88,
+                                       3482.38,
+                                       3610.72,
+                                       3467.41,
+                                       "CNY",
+                                       "2026-11-27 16:14:27",
+                                       "[3476.88,3482.38,3606.49]") == 0);
+
+    /* 模拟无网络失败时强行同步：绝不应拿硬编码 3285.40 覆盖 DB */
+    quote_engine_request_stop();
+    assert(quote_engine_force_sync_indices_to_db(pool) == 0);
+    quote_engine_reset_stop();
+
+    csilk_json_t* rows = mf_market_repo_get_indices(pool, "cn");
+    assert(rows != NULL && csilk_json_is_array(rows));
+    double sh_price = 0.0;
+    for (size_t i = 0; i < csilk_json_array_size(rows); i++) {
+        csilk_json_t* r = csilk_json_array_get(rows, i);
+        const char*   sym = csilk_json_get_string(r, "symbol");
+        if (sym && strcmp(sym, "sh000001") == 0) {
+            sh_price = db_get_num(r, "current_price");
+        }
+    }
+    csilk_json_free(rows);
+    assert(fabs(sh_price - 3606.49) < 1e-4);
+
+    unlink(test_db);
+    unlink(shm);
+    unlink(wal);
+    printf("PASS: test_failed_sync_never_overwrites_db_with_def_price\n");
+}
+
 int main(void) {
     setenv("MINEFOLIO_MARKET_MOCK", "1", 1);
     printf("=== Running Unit Test: Market Indices & Clocks ===\n");
+    test_tencent_parse_empty_fields_and_ohlc();
+    test_crypto_symbol_normalization();
+    test_yahoo_encode_and_parse();
     test_market_clocks_calc();
+    test_market_clocks_dst_winter();
+    test_failed_sync_never_overwrites_db_with_def_price();
     test_quote_engine_get_indices_cache();
     test_market_usecase_indices();
     test_quote_engine_swr_concurrent_and_failed_refresh();
