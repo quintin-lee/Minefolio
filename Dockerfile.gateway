@@ -17,14 +17,31 @@ LABEL org.opencontainers.image.title="Minefolio IM Gateway"
 
 WORKDIR /app
 
-# package.json is copied first for layer cache readability; no npm install needed.
-COPY gateway/package.json ./
-COPY gateway ./
+# Run as a dedicated non-root user (UID/GID 10001, aligned with the main
+# backend image so backup.sh --include-im can also read 0600/0700 volumes).
+# Pre-create /data and /state with 0700 so newly initialized Docker named
+# volumes inherit minefolio:minefolio ownership.
+# Upgrade note: existing deployments upgrading from root-owned volumes must
+# run a one-time `chown -R 10001:10001` on im_gateway_data and ilink_state.
+RUN addgroup -g 10001 -S minefolio \
+    && adduser -u 10001 -S -D -H -s /sbin/nologin -G minefolio minefolio \
+    && mkdir -p /data /state \
+    && chown minefolio:minefolio /data /state \
+    && chmod 0700 /data /state
 
-ENV NODE_ENV=production
+# package.json is copied first for layer cache readability; no npm install needed.
+# Keep /app owned by root so runtime processes cannot modify application code.
+COPY --chown=root:root gateway/package.json ./
+COPY --chown=root:root gateway ./
+
+ENV NODE_ENV=production \
+    MINEFOLIO_IM_CACHE_FILE=/data/im_bindings.json \
+    ILINK_STATE_DIR=/state
 
 # OneBot HTTP/WS API and NapCat WebUI ports inside the container.
 # The iLink gateway does not listen; exposing these is harmless.
 EXPOSE 3000 3001 3002 6099
+
+USER minefolio
 
 CMD ["node", "adapters/onebot-server.js"]
