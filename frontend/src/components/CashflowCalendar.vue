@@ -68,7 +68,7 @@
             >
               <span class="event-type-dot"></span>
               <span class="event-name" :title="ev.name">{{ ev.name }}</span>
-              <span class="event-amt">+¥{{ formatNumber(ev.amount) }}</span>
+              <span class="event-amt mf-amount-mask">+¥{{ formatNumber(ev.amount) }}</span>
             </div>
           </div>
         </div>
@@ -93,7 +93,7 @@
             <span class="dot" :class="ev.is_actual ? 'actual' : 'projected'"></span>
             <span class="agenda-event-name">{{ ev.name }}</span>
           </div>
-          <span class="agenda-event-amt">+¥{{ formatNumber(ev.amount) }}</span>
+          <span class="agenda-event-amt mf-amount-mask">+¥{{ formatNumber(ev.amount) }}</span>
         </div>
       </div>
     </div>
@@ -111,7 +111,7 @@
           <el-descriptions-item label="收益项目">{{ selectedEvent.name }}</el-descriptions-item>
           <el-descriptions-item label="预期到账日期">{{ selectedEvent.date }}</el-descriptions-item>
           <el-descriptions-item label="预计金额">
-            <strong :style="{ color: 'var(--mf-success)' }">¥{{ Number(selectedEvent.amount).toFixed(2) }} {{ selectedEvent.currency }}</strong>
+            <strong class="mf-amount-mask" :style="{ color: 'var(--mf-success)' }">¥{{ Number(selectedEvent.amount).toFixed(2) }} {{ selectedEvent.currency }}</strong>
           </el-descriptions-item>
           <el-descriptions-item label="收款账户">{{ selectedEvent.target_asset_name || '资金账户' }}</el-descriptions-item>
         </el-descriptions>

@@ -48,7 +48,7 @@
           <el-option
             v-for="item in fundingAssets"
             :key="item.id"
-            :label="`${assetLabel(item)} (余额: ¥${Number(item.current_value).toFixed(2)})`"
+            :label="`${assetLabel(item)} (余额: ${maskAmountText('¥' + Number(item.current_value).toFixed(2))})`"
             :value="item.id"
           />
         </el-select>
@@ -123,6 +123,7 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { cashflowApi } from '@/api/cashflow'
 import { localToday, assetLabel } from '@/utils/format'
+import { maskAmountText } from '@/stores/display-settings'
 import { useResponsiveFormLabel } from '@/composables/useResponsiveFormLabel'
 import type { Asset, CashflowSchedule } from '@/types'
 

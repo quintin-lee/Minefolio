@@ -20,7 +20,7 @@
         </div>
         <div class="metric-card">
           <span class="metric-label">{{ t('market.holdings.netWorthRatio') }}</span>
-          <span class="metric-value text-primary">
+          <span class="metric-value mf-amount-unmasked text-primary">
             {{ foreignRatio.toFixed(1) }}%
           </span>
         </div>
@@ -42,9 +42,9 @@
         >
           <span class="chip-flag">{{ getFlag(bucket.currency) }}</span>
           <span class="chip-code">{{ bucket.currency }}</span>
-          <span class="chip-orig">{{ bucket.original_assets.toLocaleString() }}</span>
+          <span class="chip-orig mf-amount-mask">{{ bucket.original_assets.toLocaleString() }}</span>
           <span class="chip-arrow">→</span>
-          <span class="chip-converted">{{ formatCurrency(bucket.converted_net_worth, marketStore.baseCurrency) }}</span>
+          <span class="chip-converted mf-amount-mask">{{ formatCurrency(bucket.converted_net_worth, marketStore.baseCurrency) }}</span>
           <span class="chip-ratio">({{ foreignAssetsTotal > 0 ? ((bucket.converted_net_worth / foreignAssetsTotal) * 100).toFixed(1) : '0.0' }}%)</span>
         </div>
       </div>

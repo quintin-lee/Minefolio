@@ -9,7 +9,7 @@
         <span>{{ badge }}</span>
       </div>
     </div>
-    <div class="summary-value tabular-nums" :class="valueClass">{{ value }}</div>
+    <div class="summary-value tabular-nums" :class="[valueClass, { 'mf-amount-mask': maskable }]">{{ value }}</div>
     <div v-if="subtext" class="summary-subtext">{{ subtext }}</div>
   </div>
 </template>
@@ -17,7 +17,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   label: string
   value: string | number
   type?: 'neutral' | 'income' | 'expense' | 'asset' | 'liability' | 'highlight' | 'gain' | 'loss'
@@ -25,7 +25,10 @@ const props = defineProps<{
   badgeType?: 'success' | 'danger' | 'warning' | 'primary' | 'neutral' | 'gain' | 'loss'
   subtext?: string
   extraClass?: string
-}>()
+  maskable?: boolean
+}>(), {
+  maskable: true,
+})
 
 const typeClass = computed(() => {
   const map: Record<string, string> = {

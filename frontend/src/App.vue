@@ -11,9 +11,11 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import en from 'element-plus/es/locale/lang/en'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
+import { useDisplaySettingsStore } from '@/stores/display-settings'
 
 const auth = useAuthStore()
 const theme = useThemeStore()
+useDisplaySettingsStore()
 const { locale } = useI18n()
 
 const epLocale = computed(() => (locale.value === 'en-US' ? en : zhCn))

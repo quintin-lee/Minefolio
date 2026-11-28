@@ -1771,6 +1771,8 @@ html.light .mf-skeleton-block {
    Amount Masking – when data-amount-masked="true" on <html>
    Blurs all financial numeric values to protect privacy in shared screens.
    ========================================================================= */
+[data-amount-masked="true"] .mf-amount-mask,
+[data-amount-masked="true"] .mf-amount-pill,
 [data-amount-masked="true"] .stat-value,
 [data-amount-masked="true"] .amount-cell,
 [data-amount-masked="true"] .amount-text,
@@ -1795,12 +1797,20 @@ html.light .mf-skeleton-block {
   transition: filter 0.3s ease;
 }
 
+[data-amount-masked="true"] .mf-amount-unmasked {
+  filter: none;
+  user-select: auto;
+  -webkit-user-select: auto;
+}
+
 /* Keep chart tooltips and labels unmasked so layout stays functional */
 [data-amount-masked="true"] .el-table .el-table__body td {
   position: relative;
 }
 
 /* Smooth transition when unmasking */
+.mf-amount-mask,
+.mf-amount-pill,
 .mono-amount,
 .stat-value,
 .amount-cell,

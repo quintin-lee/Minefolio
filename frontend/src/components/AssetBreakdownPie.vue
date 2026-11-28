@@ -3,7 +3,7 @@
     <div ref="chartRef" class="chart-canvas"></div>
     <div class="donut-center-metric">
       <div class="center-title">{{ activeItem ? activeItem.name : '配置总计' }}</div>
-      <div class="center-val tabular-nums">{{ displaySettings.showAmount ? formatCurrency(activeItem ? activeItem.value : totalValue) : '****' }}</div>
+      <div class="center-val mf-amount-mask tabular-nums">{{ formatCurrency(activeItem ? activeItem.value : totalValue) }}</div>
       <div v-if="activeItem" class="center-pct tabular-nums">{{ activeItem.pct.toFixed(1) }}%</div>
       <div v-else class="center-sub muted-text">100%</div>
     </div>

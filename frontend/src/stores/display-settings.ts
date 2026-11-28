@@ -3,7 +3,7 @@
  * @description 管理金额显示/隐藏等全局 UI 偏好，状态持久化到 localStorage
  */
 
-import { defineStore } from 'pinia'
+import { defineStore, getActivePinia } from 'pinia'
 import { ref } from 'vue'
 
 const STORAGE_KEY = 'minefolio_display_settings'
@@ -63,6 +63,10 @@ export const useDisplaySettingsStore = defineStore('display-settings', () => {
     syncDomAttribute(val)
   }
 
+  function maskText(text: string, placeholder = '****'): string {
+    return showAmount.value ? text : placeholder
+  }
+
   // 初始化时同步 DOM 属性（处理 SSR / 首次 mount 场景）
   if (typeof document !== 'undefined') {
     syncDomAttribute(showAmount.value)
@@ -72,5 +76,15 @@ export const useDisplaySettingsStore = defineStore('display-settings', () => {
     showAmount,
     toggle,
     set,
+    maskText,
   }
 })
+
+/**
+ * Pinia-safe reactive helper for masking formatted amount text in templates/computeds.
+ * Falls back to unmasked text when rendered in isolated unit tests without an active Pinia instance.
+ */
+export function maskAmountText(text: string, placeholder = '****'): string {
+  if (!getActivePinia()) return text
+  return useDisplaySettingsStore().showAmount ? text : placeholder
+}

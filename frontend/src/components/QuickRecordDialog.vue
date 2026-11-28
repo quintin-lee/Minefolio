@@ -100,6 +100,7 @@ import { dailyExpensesApi } from '@/api/daily_expenses'
 import { transactionsApi } from '@/api/transactions'
 import { useCategoryStore } from '@/stores/category'
 import { formatCurrency, localToday, assetLabel } from '@/utils/format'
+import { maskAmountText } from '@/stores/display-settings'
 import type { Asset } from '@/types'
 
 const props = defineProps<{
@@ -159,7 +160,7 @@ const categoryOptions = computed(() => {
 })
 
 function formatAssetBalance(a: Asset) {
-  return formatCurrency(a.current_value ?? 0, a.currency)
+  return maskAmountText(formatCurrency(a.current_value ?? 0, a.currency))
 }
 
 async function loadAssets() {
