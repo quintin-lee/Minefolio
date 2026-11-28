@@ -95,31 +95,33 @@
 
     <!-- Skills Gallery -->
     <div v-loading="loading" class="skills-grid-container">
-      <div v-if="filteredSkills.length > 0" class="skills-grid">
-        <SkillCard
-          v-for="skill in filteredSkills"
-          :key="skill.id"
-          :skill="skill"
-          @edit="handleEdit"
-          @delete="handleDelete"
-          @toggle="handleToggle"
-          @test="handleTest"
-          @export="handleExport"
-        />
+      <div class="grid-scroll-area">
+        <div v-if="filteredSkills.length > 0" class="skills-grid">
+          <SkillCard
+            v-for="skill in filteredSkills"
+            :key="skill.id"
+            :skill="skill"
+            @edit="handleEdit"
+            @delete="handleDelete"
+            @toggle="handleToggle"
+            @test="handleTest"
+            @export="handleExport"
+          />
+        </div>
+
+        <el-empty
+          v-else-if="!loading"
+          description="未检索到匹配的 AI 专属技能"
+          class="empty-state"
+        >
+          <template #extra>
+            <el-button type="primary" plain @click="openCreate">新建第一个技能</el-button>
+            <el-button plain @click="handleResetDefaults">恢复预置金融技能</el-button>
+          </template>
+        </el-empty>
       </div>
 
-      <el-empty
-        v-else-if="!loading"
-        description="未检索到匹配的 AI 专属技能"
-        class="empty-state"
-      >
-        <template #extra>
-          <el-button type="primary" plain @click="openCreate">新建第一个技能</el-button>
-          <el-button plain @click="handleResetDefaults">恢复预置金融技能</el-button>
-        </template>
-      </el-empty>
-
-      <div v-if="total > 0" style="display: flex; justify-content: flex-end; margin-top: 16px;">
+      <div v-if="total > 0" class="pagination-bar">
         <el-pagination
           v-model:current-page="page"
           v-model:page-size="pageSize"
@@ -337,13 +339,17 @@ onMounted(() => {
 
 <style scoped>
 .skills-page {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 4px 0 24px 0;
+  gap: 16px;
+  padding: 0;
 }
 
 .page-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -398,6 +404,7 @@ onMounted(() => {
 }
 
 .toolbar-card {
+  flex-shrink: 0;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 12px;
@@ -463,13 +470,31 @@ onMounted(() => {
 }
 
 .skills-grid-container {
-  min-height: 320px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.grid-scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .skills-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   gap: 16px;
+}
+
+.pagination-bar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
 .empty-state {
@@ -480,6 +505,20 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
+  .skills-page {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+    padding: 0 0 16px 0;
+  }
+  .skills-grid-container {
+    flex: none;
+    overflow: visible;
+  }
+  .grid-scroll-area {
+    overflow: visible;
+    padding-right: 0;
+  }
   .page-header {
     flex-direction: column;
     align-items: stretch;

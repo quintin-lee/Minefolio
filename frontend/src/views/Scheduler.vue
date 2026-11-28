@@ -158,6 +158,7 @@
       <el-table
         v-if="filteredJobs.length > 0"
         :data="filteredJobs"
+        height="100%"
         class="premium-table jobs-table"
         row-class-name="premium-row"
         header-cell-class-name="premium-header"
@@ -682,13 +683,17 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .scheduler-page {
-  padding: 4px 0 24px 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
 }
 
 .page-header {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -731,6 +736,7 @@ onBeforeUnmount(() => {
 
 /* Metric Cards */
 .metrics-grid {
+  flex-shrink: 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
@@ -740,7 +746,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 18px 20px;
+  padding: 14px 18px;
   background: var(--mf-surface-card, var(--el-bg-color));
   border: 1px solid var(--mf-border, var(--el-border-color-lighter));
   border-radius: var(--mf-radius-md, 10px);
@@ -843,6 +849,7 @@ onBeforeUnmount(() => {
 
 /* Toolbar */
 .toolbar-card {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -888,10 +895,27 @@ onBeforeUnmount(() => {
 
 /* Table */
 .table-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--mf-surface-card, var(--el-bg-color));
   border: 1px solid var(--mf-border, var(--el-border-color-lighter));
   border-radius: 8px;
   padding: 14px;
+}
+
+.table-container :deep(.el-table) {
+  flex: 1;
+  min-height: 0;
+}
+
+.table-container .empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .premium-table {
@@ -1111,7 +1135,8 @@ onBeforeUnmount(() => {
 }
 
 .table-pagination {
-  margin-top: 16px;
+  margin-top: 12px;
+  flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
 }
@@ -1143,7 +1168,14 @@ onBeforeUnmount(() => {
 
 @media (max-width: 768px) {
   .scheduler-page {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
     padding: 0 0 16px 0;
+  }
+  .table-container {
+    flex: none;
+    overflow: visible;
   }
   .page-header {
     flex-direction: column;
