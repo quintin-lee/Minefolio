@@ -1,24 +1,18 @@
 <template>
   <div class="mcp-page">
     <!-- Header Banner -->
-    <div class="page-header">
-      <div class="header-intro">
-        <h1 class="page-title">
-          <Icon icon="ph:plugs-connected-duotone" class="title-icon" />
-          MCP 工具箱 (Model Context Protocol)
-        </h1>
-        <p class="page-subtitle">
-          连接与管理符合 Anthropic MCP 标准的外部数据与计算服务。模型在对话时将自动合并各启用的 MCP 工具并按需调用。
-        </p>
-      </div>
-
-      <div class="header-actions">
+    <PageHeader
+      :title="t('nav.mcp')"
+      icon="ph:plugs-connected-duotone"
+      subtitle="连接与管理外部数据与计算工具服务，模型在对话时将自动合并各启用的 MCP 工具并按需调用。"
+    >
+      <template #actions>
         <el-button
           plain
           @click="$router.push('/skills')"
         >
           <Icon icon="ph:magic-wand-duotone" class="btn-icon" />
-          Agent 技能库
+          技能库
         </el-button>
 
         <el-button
@@ -37,8 +31,8 @@
           <Icon icon="ph:plus-bold" class="btn-icon" />
           新建 MCP 服务
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- Filter & Stats Toolbar -->
     <div class="toolbar-card">
@@ -140,6 +134,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import type { McpServer, McpServerTool } from '@/types'
 import { listMcpServers, getMcpServerTools, deleteMcpServer, testMcpServer, refreshMcpServer } from '@/api/ai-mcp'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import McpCard from '@/components/mcp/McpCard.vue'
 import McpDialog from '@/components/mcp/McpDialog.vue'
 import McpToolsDrawer from '@/components/mcp/McpToolsDrawer.vue'
@@ -352,48 +348,6 @@ onMounted(() => {
   padding: 0;
 }
 
-.page-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-.header-intro {
-  max-width: 720px;
-}
-
-.page-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--el-text-color-primary);
-  margin: 0 0 6px 0;
-}
-
-.title-icon {
-  font-size: 26px;
-  color: var(--el-color-primary);
-}
-
-.page-subtitle {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  line-height: 1.5;
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 .btn-icon {
   margin-right: 4px;
   font-size: 15px;
@@ -514,20 +468,6 @@ onMounted(() => {
   .grid-scroll-area {
     overflow: visible;
     padding-right: 0;
-  }
-  .page-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-  }
-  .page-title {
-    font-size: 18px;
-  }
-  .page-subtitle {
-    display: none;
-  }
-  .header-actions {
-    width: 100%;
   }
 }
 </style>

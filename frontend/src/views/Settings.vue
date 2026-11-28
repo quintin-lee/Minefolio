@@ -1,11 +1,6 @@
 <template>
   <div class="settings-page">
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>{{ t('settings.title') }}</h2>
-      </div>
-    </div>
+    <PageHeader :title="t('nav.settings')" class="settings-page-header" />
 
     <el-tabs v-model="activeTab" class="settings-tabs" :tab-position="tabPosition" style="--el-tabs-ink-height: 3px;">
       <el-tab-pane name="profile" lazy>
@@ -106,6 +101,7 @@ import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { useAuthStore } from '@/stores/auth'
 import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import UserHeroCard from '@/components/settings/UserHeroCard.vue'
 import PasswordSettings from '@/components/settings/PasswordSettings.vue'
 import TwoFactorSettings from '@/components/settings/TwoFactorSettings.vue'
@@ -175,34 +171,10 @@ onErrorCaptured((err, instance, info) => {
   overflow: hidden;
 }
 
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.settings-page-header {
   padding: 0 0 16px 0;
   border-bottom: 1px solid var(--mf-border);
   background: var(--mf-background);
-  flex-shrink: 0;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.title-accent {
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(180deg, #6366f1, #8b5cf6);
-  border-radius: 2px;
-}
-
-.header-title h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--mf-text-main);
 }
 
 .settings-tabs {

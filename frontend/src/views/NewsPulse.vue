@@ -1,17 +1,12 @@
 <template>
   <div class="news-page">
     <!-- Header -->
-    <div class="page-header">
-      <div class="header-intro">
-        <h1 class="page-title">
-          <Icon icon="ph:newspaper-duotone" class="title-icon" />
-          市场脉搏 (AI 每日资讯分析)
-        </h1>
-        <p class="page-subtitle">
-          每日定时抓取金融要闻，AI 自动分析对您持仓的影响并给出操作建议。
-        </p>
-      </div>
-      <div class="header-actions">
+    <PageHeader
+      :title="t('nav.news')"
+      icon="ph:newspaper-duotone"
+      subtitle="每日定时抓取金融要闻，AI 自动分析对您持仓的影响并给出操作建议。"
+    >
+      <template #actions>
         <el-button
           plain
           :loading="triggering"
@@ -27,8 +22,8 @@
           <Icon icon="ph:arrows-clockwise" class="btn-icon" />
           刷新
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- Reports Timeline -->
     <div v-loading="loading" class="reports-timeline">
@@ -121,6 +116,8 @@ import { Icon } from '@iconify/vue'
 import { renderSafeMarkdown } from '@/utils/markdown'
 import type { AiNewsReport } from '@/types'
 import { listNewsReports, triggerNewsAnalysis, getNewsReportByDate } from '@/api/ai-news'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 
 const loading = ref(false)
 const triggering = ref(false)
@@ -328,47 +325,6 @@ onUnmounted(() => {
   padding: 4px 0 24px 0;
 }
 
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-.header-intro {
-  max-width: 720px;
-}
-
-.page-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--el-text-color-primary);
-  margin: 0 0 6px 0;
-}
-
-.title-icon {
-  font-size: 26px;
-  color: var(--el-color-primary);
-}
-
-.page-subtitle {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  line-height: 1.5;
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 .btn-icon {
   margin-right: 4px;
   font-size: 15px;
@@ -512,20 +468,4 @@ onUnmounted(() => {
   color: var(--el-text-color-placeholder);
 }
 
-@media (max-width: 768px) {
-  .page-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-  }
-  .page-title {
-    font-size: 18px;
-  }
-  .page-subtitle {
-    display: none;
-  }
-  .header-actions {
-    width: 100%;
-  }
-}
 </style>

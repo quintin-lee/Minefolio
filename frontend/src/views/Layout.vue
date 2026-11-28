@@ -95,7 +95,11 @@
               <Icon icon="ph:sidebar-simple" class="collapse-icon" />
             </div>
           </el-tooltip>
-          <h2 class="page-title">{{ pageTitle }}</h2>
+          <div class="header-breadcrumb">
+            <span v-if="currentNavGroup" class="breadcrumb-group">{{ currentNavGroup }}</span>
+            <span v-if="currentNavGroup" class="breadcrumb-sep">/</span>
+            <span class="page-title">{{ pageTitle }}</span>
+          </div>
           <div class="search-command-btn" @click="commandPaletteVisible = true">
             <Icon icon="ph:magnifying-glass" class="search-btn-icon" />
             <span class="search-btn-placeholder">快速搜索...</span>
@@ -250,30 +254,37 @@ function goTo(path: string) {
   router.push(path)
 }
 
-  const pageTitle = computed(() => {
-    if (route.path.startsWith('/assets/')) return t('nav.assets')
-    if (route.path.startsWith('/ai-traces/')) return t('nav.aiTraces')
-    const map: Record<string, string> = {
-      '/dashboard': t('nav.dashboard'),
-      '/assets': t('nav.assets'),
-      '/holdings': t('nav.holdings'),
-      '/market': t('nav.market'),
-      '/transactions': t('nav.transactions'),
-      '/daily-expenses': t('nav.dailyExpenses'),
-      '/plans': t('nav.plans'),
-      '/categories': t('nav.categories'),
-      '/reports': t('nav.reports'),
-      '/scheduler': t('nav.scheduler'),
-      '/audit-logs': t('nav.auditLogs'),
-      '/settings': t('nav.settings'),
-      '/chat': t('nav.aiChat'),
-      '/skills': t('nav.skills'),
-      '/mcp': t('nav.mcp'),
-      '/news': t('nav.news'),
-      '/ai-traces': t('nav.aiTraces'),
-    }
-    return map[route.path] || 'Minefolio'
-  })
+const routeMetaMap = computed<Record<string, { title: string; group: string }>>(() => ({
+  '/dashboard': { title: t('nav.dashboard'), group: t('navGroups.assetsOverview') },
+  '/assets': { title: t('nav.assets'), group: t('navGroups.assetsOverview') },
+  '/holdings': { title: t('nav.holdings'), group: t('navGroups.assetsOverview') },
+  '/reports': { title: t('nav.reports'), group: t('navGroups.assetsOverview') },
+  '/market': { title: t('nav.market'), group: t('navGroups.assetsOverview') },
+  '/transactions': { title: t('nav.transactions'), group: t('navGroups.incomeExpense') },
+  '/daily-expenses': { title: t('nav.dailyExpenses'), group: t('navGroups.incomeExpense') },
+  '/plans': { title: t('nav.plans'), group: t('navGroups.incomeExpense') },
+  '/categories': { title: t('nav.categories'), group: t('navGroups.incomeExpense') },
+  '/chat': { title: t('nav.aiChat'), group: t('navGroups.aiSpace') },
+  '/skills': { title: t('nav.skills'), group: t('navGroups.aiSpace') },
+  '/mcp': { title: t('nav.mcp'), group: t('navGroups.aiSpace') },
+  '/news': { title: t('nav.news'), group: t('navGroups.aiSpace') },
+  '/ai-traces': { title: t('nav.aiTraces'), group: t('navGroups.aiSpace') },
+  '/scheduler': { title: t('nav.scheduler'), group: t('navGroups.system') },
+  '/audit-logs': { title: t('nav.auditLogs'), group: t('navGroups.system') },
+  '/settings': { title: t('nav.settings'), group: t('navGroups.system') },
+}))
+
+const currentNavGroup = computed(() => {
+  if (route.path.startsWith('/assets/')) return t('navGroups.assetsOverview')
+  if (route.path.startsWith('/ai-traces/')) return t('navGroups.aiSpace')
+  return routeMetaMap.value[route.path]?.group || ''
+})
+
+const pageTitle = computed(() => {
+  if (route.path.startsWith('/assets/')) return t('nav.assets')
+  if (route.path.startsWith('/ai-traces/')) return t('nav.aiTraces')
+  return routeMetaMap.value[route.path]?.title || 'Minefolio'
+})
 
 async function handleCommand(cmd: string) {
   if (cmd === 'settings') {
@@ -495,10 +506,27 @@ async function handleCommand(cmd: string) {
 .collapse-icon {
   font-size: 19px;
 }
+.header-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.breadcrumb-group {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--mf-text-muted);
+  white-space: nowrap;
+}
+.breadcrumb-sep {
+  font-size: 12px;
+  color: var(--mf-text-placeholder);
+  user-select: none;
+}
 .page-title {
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--mf-text-main);
+  color: var(--mf-text-regular);
   margin: 0;
   white-space: nowrap;
   flex-shrink: 0;
@@ -681,8 +709,14 @@ async function handleCommand(cmd: string) {
   .header-right {
     gap: 6px;
   }
+  .breadcrumb-group,
+  .breadcrumb-sep {
+    display: none;
+  }
   .page-title {
     font-size: 15px;
+    font-weight: 600;
+    color: var(--mf-text-main);
     margin: 0;
     white-space: nowrap;
     overflow: hidden;

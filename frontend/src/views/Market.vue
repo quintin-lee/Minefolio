@@ -1,21 +1,15 @@
 <template>
   <div class="market-view-container">
     <!-- Top Hub Header -->
-    <div class="market-header">
-      <div class="header-left">
-        <div class="header-title">
-          <div class="title-accent"></div>
-          <h2>{{ t('market.title') }}</h2>
-        </div>
+    <PageHeader :title="t('nav.market')" class="market-header">
+      <template #extra>
         <el-tabs v-model="activeTab" class="market-tabs" @tab-change="handleTabChange">
-          <el-tab-pane :label="`💱 ${t('market.tabs.rates')}`" name="rates" />
-          <el-tab-pane :label="`📈 ${t('market.tabs.indices')}`" name="indices" />
+          <el-tab-pane :label="t('market.tabs.rates')" name="rates" />
+          <el-tab-pane :label="t('market.tabs.indices')" name="indices" />
         </el-tabs>
-      </div>
+      </template>
 
-      <!-- Header Global Controls -->
-      <div class="header-controls">
-        <!-- Base Currency Dropdown -->
+      <template #actions>
         <div class="control-item">
           <span class="control-label">{{ t('market.baseCurrency') }}:</span>
           <el-select
@@ -42,14 +36,14 @@
           :loading="marketStore.isSyncing"
           @click="handleSyncAll"
         >
-          🔄 {{ t('market.syncNow') }}
+          {{ t('market.syncNow') }}
         </el-button>
 
         <el-button @click="editDialogRef?.open()">
-          ⚙ {{ t('market.editRate.btnText') }}
+          {{ t('market.editRate.btnText') }}
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- Tab 1: Real-time FX Rates -->
     <div v-if="activeTab === 'rates'" class="tab-content">
@@ -89,6 +83,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { useMarketStore } from '@/stores/market'
+import PageHeader from '@/components/PageHeader.vue'
 import FxSkeleton from '@/components/market/FxSkeleton.vue'
 import FxRateCards from '@/components/market/FxRateCards.vue'
 import FxConverter from '@/components/market/FxConverter.vue'
@@ -130,43 +125,9 @@ onMounted(() => {
 }
 
 .market-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  row-gap: 12px;
   border-bottom: 1px solid var(--mf-border-subtle);
   padding-bottom: 8px;
   margin-bottom: 20px;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  min-width: 0;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.header-title h2 {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--mf-text-main);
-  margin: 0;
-  letter-spacing: -0.5px;
-}
-
-.title-accent {
-  width: 4px;
-  height: 18px;
-  background: var(--mf-primary);
-  border-radius: 2px;
 }
 
 .market-tabs :deep(.el-tabs__header) {
@@ -176,15 +137,6 @@ onMounted(() => {
 
 .market-tabs :deep(.el-tabs__nav-wrap::after) {
   display: none;
-}
-
-.header-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  row-gap: 8px;
-  margin-left: auto;
 }
 
 .control-item {

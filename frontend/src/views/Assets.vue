@@ -1,11 +1,7 @@
 <template>
   <div class="assets-page">
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>资产</h2>
-      </div>
-      <div class="header-actions">
+    <PageHeader :title="t('nav.assets')">
+      <template #actions>
         <el-button plain class="action-btn" @click="openAccountDialog()">
           <el-icon><Wallet /></el-icon> 账户
         </el-button>
@@ -16,21 +12,15 @@
         <el-button type="primary" class="action-btn" @click="openDialog()">
           <el-icon><Plus /></el-icon> 新增资产
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- 总资产概览 -->
-    <el-row :gutter="16" class="asset-summary">
-      <el-col :xs="24" :sm="12" :md="8">
-        <SummaryCard label="总资产" :value="formatCurrency(totalAssets)" :type="totalAssets > 0 ? 'asset' : 'neutral'" />
-      </el-col>
-      <el-col :xs="24" :sm="12" :md="8">
-        <SummaryCard label="总负债" :value="formatCurrency(totalLiabilities)" :type="Math.abs(totalLiabilities) > 0 ? 'liability' : 'neutral'" />
-      </el-col>
-      <el-col :xs="24" :sm="24" :md="8">
-        <SummaryCard label="净资产" :value="formatCurrency(netWorth)" :type="netWorth > 0 ? 'asset' : netWorth < 0 ? 'expense' : 'neutral'" />
-      </el-col>
-    </el-row>
+    <div class="summary-grid-3 asset-summary">
+      <SummaryCard label="总资产" :value="formatCurrency(totalAssets)" :type="totalAssets > 0 ? 'asset' : 'neutral'" />
+      <SummaryCard label="总负债" :value="formatCurrency(totalLiabilities)" :type="Math.abs(totalLiabilities) > 0 ? 'liability' : 'neutral'" />
+      <SummaryCard label="净资产" :value="formatCurrency(netWorth)" :type="netWorth > 0 ? 'asset' : netWorth < 0 ? 'expense' : 'neutral'" />
+    </div>
 
     <!-- 资产列表（按账户分组） -->
     <div class="table-container">
@@ -261,6 +251,8 @@ import { summaryApi } from '@/api/summary'
 import { marketApi } from '@/api/market'
 import { useCategoryStore } from '@/stores/category'
 import type { Asset, Category, Summary, MarketSearchItem, Account } from '@/types'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import SummaryCard from '@/components/SummaryCard.vue'
 import SymbolSelect from '@/components/SymbolSelect.vue'
 import PriceHistoryChart from '@/components/PriceHistoryChart.vue'
@@ -820,36 +812,25 @@ onUnmounted(() => {
   gap: 16px;
 }
 
+.summary-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .summary-grid-3 {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
+
 .action-btn {
   border-radius: var(--mf-radius-md);
   font-weight: 500;
   padding: 10px 16px;
   transition: all 0.2s ease;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.title-accent {
-  width: 4px;
-  height: 18px;
-  background-color: var(--el-color-primary);
-  border-radius: 2px;
-}
-
-.header-actions {
-  display: flex;
-  gap: 8px;
 }
 
 .asset-name-cell {

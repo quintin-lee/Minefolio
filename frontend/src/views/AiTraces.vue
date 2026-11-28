@@ -1,13 +1,8 @@
 <template>
   <div class="ai-traces-page">
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>AI 对话追踪</h2>
-      </div>
-    </div>
+    <PageHeader :title="t('nav.aiTraces')" />
 
-    <div class="stats-bar" v-if="stats">
+    <div class="stats-bar" v-if="stats && (stats.total_traces ?? 0) > 0">
       <div class="stat-card">
         <div class="stat-value">{{ stats.total_traces ?? 0 }}</div>
         <div class="stat-label">总调用次数</div>
@@ -94,8 +89,11 @@
             <el-button type="primary" link @click="openDetail(row.id)">详情</el-button>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty description="暂无 AI 对话追踪记录" :image-size="72" />
+        </template>
       </el-table>
-      <div class="pagination-bar">
+      <div v-if="total > 0" class="pagination-bar">
         <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper" background @current-change="loadData" @size-change="handleSizeChange" />
       </div>
     </div>
@@ -108,6 +106,8 @@
 import { ref, onMounted } from 'vue'
 import { listTraces, getTraceStats } from '@/api/ai-trace'
 import type { AiTrace, AiTraceStats } from '@/api/ai-trace'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import AiTraceDetail from './AiTraceDetail.vue'
 
 const traces = ref<AiTrace[]>([])
@@ -214,12 +214,13 @@ onMounted(async () => {
 }
 
 .stats-bar {
-  display: flex;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .stat-card {
-  flex: 1;
+  min-width: 0;
   background: var(--mf-surface);
   border-radius: var(--mf-radius-lg);
   padding: 20px;
@@ -336,14 +337,16 @@ onMounted(async () => {
   color: #64748b;
 }
 
+@media (max-width: 1024px) {
+  .stats-bar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 768px) {
   .ai-traces-page {
     height: auto;
     overflow: visible;
-  }
-
-  .stats-bar {
-    flex-wrap: wrap;
   }
 
   .filter-select {
@@ -361,6 +364,12 @@ onMounted(async () => {
 
   .table-container :deep(.el-table) {
     height: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .stats-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

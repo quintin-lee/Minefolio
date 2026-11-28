@@ -1,18 +1,12 @@
 <template>
   <div class="skills-page">
     <!-- Header Banner -->
-    <div class="page-header">
-      <div class="header-intro">
-        <h1 class="page-title">
-          <Icon icon="ph:magic-wand-duotone" class="title-icon" />
-          Agent Skills 技能库
-        </h1>
-        <p class="page-subtitle">
-          基于 Anthropic Agent Skills 规范的领域专属技能。模型在对话分析时通过 <code>use_skill</code> 自动激活并遵循专业准则。
-        </p>
-      </div>
-
-      <div class="header-actions">
+    <PageHeader
+      :title="t('nav.skills')"
+      icon="ph:magic-wand-duotone"
+      subtitle="基于 Agent Skills 规范的领域专属技能，对话分析时通过 use_skill 自动激活并遵循专业准则。"
+    >
+      <template #actions>
         <el-button
           plain
           @click="$router.push('/mcp')"
@@ -45,8 +39,8 @@
           <Icon icon="ph:plus-bold" class="btn-icon" />
           新建技能
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- Filter & Stats Toolbar -->
     <div class="toolbar-card">
@@ -148,6 +142,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import type { AiSkill } from '@/types'
 import { listSkills, deleteSkill, exportSkillMarkdown, resetDefaultSkills } from '@/api/skills'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import SkillCard from '@/components/skills/SkillCard.vue'
 import SkillDialog from '@/components/skills/SkillDialog.vue'
 import SkillImportDialog from '@/components/skills/SkillImportDialog.vue'
@@ -348,56 +344,6 @@ onMounted(() => {
   padding: 0;
 }
 
-.page-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-.header-intro {
-  max-width: 720px;
-}
-
-.page-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--el-text-color-primary);
-  margin: 0 0 6px 0;
-}
-
-.title-icon {
-  font-size: 26px;
-  color: var(--el-color-primary);
-}
-
-.page-subtitle {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  line-height: 1.5;
-  margin: 0;
-}
-
-.page-subtitle code {
-  background: var(--el-fill-color);
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: var(--el-color-primary);
-  font-family: var(--font-mono, monospace);
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 .btn-icon {
   margin-right: 4px;
   font-size: 15px;
@@ -518,20 +464,6 @@ onMounted(() => {
   .grid-scroll-area {
     overflow: visible;
     padding-right: 0;
-  }
-  .page-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-  }
-  .page-title {
-    font-size: 18px;
-  }
-  .page-subtitle {
-    display: none;
-  }
-  .header-actions {
-    width: 100%;
   }
 }
 </style>

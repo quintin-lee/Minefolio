@@ -1,20 +1,18 @@
 <template>
   <div class="dashboard">
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>仪表盘</h2>
-      </div>
-      <div class="header-currency-selector">
-        <span class="curr-label">基准折算:</span>
-        <el-radio-group v-model="selectedCurrency" size="small" @change="onCurrencyChange">
-          <el-radio-button value="CNY">CNY ¥</el-radio-button>
-          <el-radio-button value="USD">USD $</el-radio-button>
-          <el-radio-button value="EUR">EUR €</el-radio-button>
-          <el-radio-button value="HKD">HKD HK$</el-radio-button>
-        </el-radio-group>
-      </div>
-    </div>
+    <PageHeader :title="t('nav.dashboard')">
+      <template #actions>
+        <div class="header-currency-selector">
+          <span class="curr-label">基准折算:</span>
+          <el-radio-group v-model="selectedCurrency" size="small" @change="onCurrencyChange">
+            <el-radio-button value="CNY">CNY ¥</el-radio-button>
+            <el-radio-button value="USD">USD $</el-radio-button>
+            <el-radio-button value="EUR">EUR €</el-radio-button>
+            <el-radio-button value="HKD">HKD HK$</el-radio-button>
+          </el-radio-group>
+        </div>
+      </template>
+    </PageHeader>
 
     <!-- 首次加载展示 FinTech 骨架屏 -->
     <DashboardSkeleton v-if="loading && isFirstLoad" />
@@ -248,6 +246,9 @@
                 </span>
               </template>
             </el-table-column>
+            <template #empty>
+              <el-empty description="暂无最近收支记录" :image-size="64" />
+            </template>
           </el-table>
         </el-card>
       </el-col>
@@ -269,6 +270,8 @@ import { marketApi } from '@/api/market'
 import type { Summary, DailyExpense, MultiCurrencySummary, PositionOverview } from '@/types'
 import { amountClass, positiveAmountClass } from '@/utils/format'
 import { getSwrCache, setSwrCache } from '@/utils/swr-cache'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import DashboardSkeleton from '@/components/dashboard/DashboardSkeleton.vue'
 import NetWorthChart from '@/components/NetWorthChart.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'

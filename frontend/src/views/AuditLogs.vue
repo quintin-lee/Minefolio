@@ -1,11 +1,6 @@
 <template>
   <div class="audit-logs-page">
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>资产变动日志</h2>
-      </div>
-    </div>
+    <PageHeader :title="t('nav.auditLogs')" />
 
     <!-- 筛选 -->
     <div class="filter-panel">
@@ -64,8 +59,11 @@
             <span class="muted-text">{{ row.note || '—' }}</span>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty description="暂无资产变动日志" :image-size="72" />
+        </template>
       </el-table>
-      <div class="pagination-bar">
+      <div v-if="total > 0" class="pagination-bar">
         <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper" background @current-change="loadData" @size-change="handleSizeChange" />
       </div>
     </div>
@@ -78,6 +76,8 @@ import { ElMessage } from 'element-plus'
 import { assetLogsApi } from '@/api/asset_logs'
 import { assetsApi } from '@/api/assets'
 import { formatCurrency } from '@/utils/format'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import type { AssetBalanceLog, Asset } from '@/types'
 
 const logs = ref<AssetBalanceLog[]>([])

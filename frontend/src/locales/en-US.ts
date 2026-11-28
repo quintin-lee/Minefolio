@@ -10,7 +10,7 @@ export const enUS = {
     transfer: 'Transfer',
     reports: 'Reports',
     scheduler: 'Scheduler',
-    auditLogs: 'Logs',
+    auditLogs: 'Asset Logs',
     aiChat: 'AI Assistant',
     skills: 'Skill Library',
     mcp: 'MCP Tools',

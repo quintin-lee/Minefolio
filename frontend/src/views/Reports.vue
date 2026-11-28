@@ -12,17 +12,13 @@
       </div>
     </div>
 
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>报表</h2>
-      </div>
-      <div class="header-actions">
+    <PageHeader :title="t('nav.reports')">
+      <template #actions>
         <el-button type="primary" class="action-btn" @click="handlePrint">
           <el-icon><Printer /></el-icon> 打印 / 导出 PDF
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <el-tabs class="premium-tabs" type="card">
       <el-tab-pane label="收支分析">
@@ -341,6 +337,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Printer } from '@element-plus/icons-vue'
 import { reportsApi } from '@/api/reports'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ExpenseTrendBar from '@/components/ExpenseTrendBar.vue'
 import AssetTrendLine from '@/components/AssetTrendLine.vue'
