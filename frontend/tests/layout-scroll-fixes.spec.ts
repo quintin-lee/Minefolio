@@ -34,12 +34,11 @@ describe('layout and scrolling audit fixes', () => {
     expect(cat).toMatch(/\.panel-body-scroll\.is-table-body\s*\{[\s\S]*?overflow:\s*hidden;/)
   })
 
-  it('pins pagination inside the viewport on Scheduler.vue, Skills.vue, and Mcp.vue', () => {
+  it('unlocks natural table flow on Scheduler.vue while pinning pagination on Skills.vue and Mcp.vue', () => {
     const scheduler = read('src/views/Scheduler.vue')
-    expect(scheduler).toMatch(/\.scheduler-page\s*\{[\s\S]*?height:\s*100%;[\s\S]*?overflow:\s*hidden;/)
-    expect(scheduler).toMatch(/\.table-container\s*\{[\s\S]*?flex:\s*1;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/)
+    expect(scheduler).toMatch(/\.scheduler-page\s*\{[\s\S]*?min-height:\s*100%;/)
+    expect(scheduler).not.toMatch(/\.scheduler-page\s*\{[^}]*height:\s*100%;[^}]*overflow:\s*hidden;/s)
     expect(scheduler).toMatch(/\.table-pagination\s*\{[\s\S]*?flex-shrink:\s*0;/)
-    expect(scheduler).toContain('height="100%"')
 
     for (const file of ['src/views/Skills.vue', 'src/views/Mcp.vue']) {
       const src = read(file)

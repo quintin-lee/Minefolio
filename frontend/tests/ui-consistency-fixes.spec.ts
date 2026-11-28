@@ -261,12 +261,12 @@ describe('Transactions.vue compact narrow-screen columns and neutral zero cards'
     vi.clearAllMocks()
   })
 
-  it('hides low-priority columns at <=1200px, cleans up media listener, and renders neutral zero cards', async () => {
+  it('hides low-priority columns at <=1440px, cleans up media listener, and renders neutral zero cards', async () => {
     const addListener = vi.fn()
     const removeListener = vi.fn()
     const origMatchMedia = window.matchMedia
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-      matches: query.includes('1200px'),
+      matches: query.includes('1440px') || query.includes('1200px'),
       media: query,
       addEventListener: addListener,
       removeEventListener: removeListener,

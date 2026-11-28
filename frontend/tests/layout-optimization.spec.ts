@@ -55,15 +55,15 @@ describe('frontend layout optimization', () => {
     expect(mcpDrawer).toMatch(/\.tools-list\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s)
   })
 
-  it('unlocks narrow-screen scrolling under @media (max-width: 768px) for locked table views', () => {
-    for (const file of [
-      'src/views/AiTraces.vue',
-      'src/views/AuditLogs.vue',
-      'src/views/Holdings.vue',
-      'src/views/Plans.vue',
-    ]) {
+  it('unlocks natural scrolling on Holdings/Plans and narrow-screen scrolling on AiTraces/AuditLogs', () => {
+    for (const file of ['src/views/AiTraces.vue', 'src/views/AuditLogs.vue']) {
       const src = readSrc(file)
       expect(src).toMatch(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*height:\s*auto;[\s\S]*overflow:\s*visible;/s)
+    }
+    for (const file of ['src/views/Holdings.vue', 'src/views/Plans.vue']) {
+      const src = readSrc(file)
+      expect(src).toContain('min-height: 100%;')
+      expect(src).not.toMatch(/\.(holdings-page|plans-page)\s*\{[^}]*height:\s*100%;[^}]*overflow:\s*hidden;/s)
     }
   })
 
@@ -182,13 +182,16 @@ describe('frontend layout optimization', () => {
     const scheduler = readSrc('src/views/Scheduler.vue')
     expect(scheduler).not.toMatch(/\.scheduler-page\s*\{[^}]*padding:\s*24px;/s)
 
+    const pageHeader = readSrc('src/components/PageHeader.vue')
+    expect(pageHeader).toMatch(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.page-subtitle\s*\{\s*display:\s*none;\s*\}/s)
+
     for (const file of [
       'src/views/Mcp.vue',
       'src/views/Skills.vue',
       'src/views/NewsPulse.vue',
       'src/views/Scheduler.vue',
     ]) {
-      expect(readSrc(file)).toMatch(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.page-subtitle\s*\{\s*display:\s*none;\s*\}/s)
+      expect(readSrc(file)).toContain('<PageHeader')
     }
 
     for (const file of [
