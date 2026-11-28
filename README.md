@@ -95,8 +95,10 @@ docker compose ps
   ```bash
   docker pull ghcr.io/quintin-lee/minefolio:v1.4.1
   docker pull ghcr.io/quintin-lee/minefolio-frontend:v1.4.1
+  docker pull ghcr.io/quintin-lee/minefolio-gateway:v1.4.1   # 启用 im profile 时需要
   docker tag ghcr.io/quintin-lee/minefolio:v1.4.1 ghcr.io/quintin-lee/minefolio:latest
   docker tag ghcr.io/quintin-lee/minefolio-frontend:v1.4.1 ghcr.io/quintin-lee/minefolio-frontend:latest
+  docker tag ghcr.io/quintin-lee/minefolio-gateway:v1.4.1 ghcr.io/quintin-lee/minefolio-gateway:latest
   ```
 * **从本地源码构建镜像**（二次开发或自定义修改后）：
   ```bash
@@ -104,10 +106,12 @@ docker compose ps
   docker build -t ghcr.io/quintin-lee/minefolio:latest .
   # 构建前端 Nginx 镜像
   docker build -f Dockerfile.frontend -t ghcr.io/quintin-lee/minefolio-frontend:latest .
+  # 构建 IM 网关镜像（启用 im profile 时需要）
+  docker build -f Dockerfile.gateway -t ghcr.io/quintin-lee/minefolio-gateway:latest .
   # 启动更新后的容器
   docker compose up -d
   ```
-  > 注意：`docker-compose.yml` 未声明 `build:`，`docker compose up -d --build` 不会构建任何镜像——改完代码必须先执行上面两条 `docker build`，再 `up -d`。
+  > 注意：`docker-compose.yml` 未声明 `build:`，`docker compose up -d --build` 不会构建任何镜像——改完代码必须先执行上面的 `docker build`，再 `up -d`。
 * **随部署一起启动内置 PostgreSQL 容器（可选）**：
   默认部署使用 SQLite（持久化于 `minefolio-data` 卷），无需额外服务。
   如需让 `docker compose` 同时拉起一个 `db-postgres` 容器，在 `.env` 中启用 postgres profile：
@@ -227,7 +231,9 @@ Minefolio/
 │   └── build.sh                  # 一键生成 Release 生产部署包
 ├── Dockerfile                    # 多阶段自动化构建镜像（含 minefolio 与 reset-password）
 ├── Dockerfile.frontend           # 前端 Nginx 多阶段镜像
-└── docker-compose.yml            # 生产级多容器编排（支持 postgres 与 im profiles）
+├── Dockerfile.gateway            # IM 网关镜像（OneBot + iLink，非 root 运行）
+├── docker-compose.yml            # 生产级多容器编排（支持 postgres 与 im profiles）
+└── docker-compose.im.yml         # 独立 IM 网关编排（QQ / NapCat / iLink）
 ```
 
 ---
