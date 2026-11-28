@@ -74,9 +74,12 @@
           <div class="panel-container">
             <div class="panel-header">
               <h3>分类列表</h3>
+              <span class="panel-header-meta">本页 {{ filteredFlatCategories.length }} 项（共 {{ totalRoots }} 个一级分类）</span>
             </div>
-            <div class="panel-body-scroll">
-              <el-table :data="filteredFlatCategories" row-key="id" class="premium-table" header-cell-class-name="premium-header"
+            <div class="panel-body-scroll is-table-body">
+              <el-table :data="filteredFlatCategories" row-key="id" height="100%"
+                :tree-props="{ children: '__no_tree_children__', hasChildren: '__no_tree_has_children__' }"
+                class="premium-table" header-cell-class-name="premium-header"
                 :row-class-name="rowClassName" @row-click="onRowClick">
                 <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip>
                   <template #default="{ row }">
@@ -618,7 +621,7 @@ onActivated(() => {
 .panels-scroll-wrapper {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   margin: 0 -12px;
   padding: 0 12px;
 }
@@ -665,6 +668,9 @@ onActivated(() => {
   }
   .tree-panel-container {
     margin-bottom: 20px;
+  }
+  .panel-body-scroll.is-table-body {
+    overflow: visible;
   }
   .panel-body-scroll :deep(.el-table) {
     height: auto;
@@ -781,6 +787,10 @@ onActivated(() => {
 .panel-header {
   margin-bottom: 20px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .panel-header h3 {
@@ -788,6 +798,12 @@ onActivated(() => {
   font-size: 16px;
   font-weight: 600;
   color: var(--mf-text-main);
+  white-space: nowrap;
+}
+
+.panel-header-meta {
+  font-size: 12px;
+  color: var(--mf-text-muted);
   white-space: nowrap;
 }
 
@@ -816,6 +832,12 @@ onActivated(() => {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+}
+
+.panel-body-scroll.is-table-body {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .premium-tree {
@@ -913,6 +935,11 @@ onActivated(() => {
 
 .panel-body-scroll :deep(.el-table) {
   height: 100%;
+}
+
+.panel-body-scroll.is-table-body :deep(.el-table) {
+  flex: 1;
+  min-height: 0;
 }
 
 .panel-body-scroll :deep(.el-table__body-wrapper) {
