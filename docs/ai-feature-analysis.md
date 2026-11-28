@@ -1,6 +1,6 @@
 # Minefolio AI 功能全景分析与行动清单
 
-> ⚠️ **历史快照报告**：本文是 2026-10-27 时点的 AI 子系统分析存档，规模数字与行动清单反映当时状态，不代表当前 HEAD。现状以 `docs/superpowers/specs/2026-08-10-minefolio-design.md`（已按 v1.4.0 重写）、`docs/ai-runtime-architecture.md` 与代码为准。
+> ⚠️ **历史快照报告**：本文是 2026-10-27 时点的 AI 子系统分析存档，规模数字与行动清单反映当时状态，不代表当前 HEAD。现状以 `docs/superpowers/specs/2026-08-10-minefolio-design.md`（已按 v1.4.1 重写）、`docs/ai-runtime-architecture.md` 与代码为准。
 
 > 分析日期：2026-10-27 ｜ 范围：`backend/src/services/ai/`（约 15.7k 行）＋ `services/ai_service.c` / `ai_workflow_service.c` ＋ `interfaces/http/controllers/{ai,ai_mcp,ai_trace}_controller.c` ＋ `frontend/src` AI 面 ＋ 测试矩阵
 >

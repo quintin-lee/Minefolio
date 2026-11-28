@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.4.1] - 2026-11-28
+
+### Added
+- **Operations Tooling (`scripts/`)**: Added backup/restore for SQLite and Postgres, deployment rollback, a unified maintenance entrypoint, health diagnostics, database maintenance, JWT secret rotation, release management, and an integration test runner.
+- **Dedicated IM Gateway Image (`Dockerfile.gateway`)**: Built one Node-based image shared by the OneBot and iLink gateways; compose now uses the image instead of a bind-mounted source directory.
+
+### Changed
+- **Deployment Workflow (`.gitea/workflows/deploy.yml`)**: Uses the repository compose file, pins images to immutable commit-SHA tags, records deployment history for rollback, and no longer uploads `gateway/` for bind mounting.
+- **Version Bump**: Synchronized version to `1.4.1` across backend, frontend, Android (`versionCode` 7 → 8), tests, and documentation.
+
 ### Fixed
 - **Mobile AI SSE CORS Compatibility (`frontend/src/api/ai.ts`)**:
   - Updated native `fetch()` calls for AI SSE streaming (`chatStream` / `runWorkflowStream`) to pass `credentials: 'same-origin'` instead of `'include'`, fixing mobile WebView CORS preflight rejections against `Access-Control-Allow-Origin: *`.
