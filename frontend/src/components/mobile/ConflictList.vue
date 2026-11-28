@@ -9,8 +9,8 @@
           <template v-if="isPlaceholder(item)">（占位 ID）</template>
         </span>
         <div class="conflict-actions">
-          <el-button size="small" type="primary" plain @click="$emit('retry', item.id)">保留本地</el-button>
-          <el-button size="small" type="danger" plain @click="$emit('discard', item.id)">采用服务端</el-button>
+          <el-button type="primary" plain @click="$emit('retry', item.id)">保留本地</el-button>
+          <el-button type="danger" plain @click="$emit('discard', item.id)">采用服务端</el-button>
         </div>
       </div>
       <div class="conflict-diff">

@@ -12,14 +12,14 @@
       <div v-for="c in categories" :key="c.id" class="manage-row" :style="{ paddingLeft: `${c.parent_id ? 24 : 12}px` }">
         <span class="row-main">{{ c.name }}<small v-if="c.parent_id"> · 子分类</small></span>
         <span class="row-actions">
-          <el-button size="small" text type="primary" @click="openCategory(c)">编辑</el-button>
-          <el-button size="small" text type="danger" @click="removeCategory(c)">删除</el-button>
+          <el-button text type="primary" @click="openCategory(c)">编辑</el-button>
+          <el-button text type="danger" @click="removeCategory(c)">删除</el-button>
         </span>
       </div>
       <div v-if="catTotal > catPageSize" class="mobile-pager">
-        <el-button size="small" :disabled="catPage <= 1" @click="changeCatPage(catPage - 1)">上一页</el-button>
+        <el-button :disabled="catPage <= 1" @click="changeCatPage(catPage - 1)">上一页</el-button>
         <span class="pager-info">{{ catPage }} / {{ Math.max(1, Math.ceil(catTotal / catPageSize)) }}（共 {{ catTotal }}）</span>
-        <el-button size="small" :disabled="catPage * catPageSize >= catTotal" @click="changeCatPage(catPage + 1)">下一页</el-button>
+        <el-button :disabled="catPage * catPageSize >= catTotal" @click="changeCatPage(catPage + 1)">下一页</el-button>
       </div>
     </template>
 
@@ -28,14 +28,14 @@
       <div v-for="tag in tags" :key="tag.id" class="manage-row">
         <span class="row-main"><i class="dot" :style="{ background: tag.color || '#888' }" />{{ tag.name }}</span>
         <span class="row-actions">
-          <el-button size="small" text type="primary" @click="openTag(tag)">编辑</el-button>
-          <el-button size="small" text type="danger" @click="removeTag(tag)">删除</el-button>
+          <el-button text type="primary" @click="openTag(tag)">编辑</el-button>
+          <el-button text type="danger" @click="removeTag(tag)">删除</el-button>
         </span>
       </div>
       <div v-if="tagTotal > tagPageSize" class="mobile-pager">
-        <el-button size="small" :disabled="tagPage <= 1" @click="changeTagPage(tagPage - 1)">上一页</el-button>
+        <el-button :disabled="tagPage <= 1" @click="changeTagPage(tagPage - 1)">上一页</el-button>
         <span class="pager-info">{{ tagPage }} / {{ Math.max(1, Math.ceil(tagTotal / tagPageSize)) }}（共 {{ tagTotal }}）</span>
-        <el-button size="small" :disabled="tagPage * tagPageSize >= tagTotal" @click="changeTagPage(tagPage + 1)">下一页</el-button>
+        <el-button :disabled="tagPage * tagPageSize >= tagTotal" @click="changeTagPage(tagPage + 1)">下一页</el-button>
       </div>
     </template>
 

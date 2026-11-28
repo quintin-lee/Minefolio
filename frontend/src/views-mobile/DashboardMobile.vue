@@ -15,9 +15,9 @@
       <Icon icon="ph:arrow-right" class="ai-entry-arrow" />
     </button>
     <div class="kpi-row">
+      <div class="kpi-card green hero-kpi"><span>净资产</span><b>{{ formatCurrency(summary.net_worth) }}</b></div>
       <div class="kpi-card cyan"><span>总资产</span><b>{{ formatCurrency(summary.total_assets) }}</b></div>
       <div class="kpi-card red"><span>总负债</span><b>{{ formatCurrency(Math.abs(summary.total_liabilities)) }}</b></div>
-      <div class="kpi-card green"><span>净资产</span><b>{{ formatCurrency(summary.net_worth) }}</b></div>
     </div>
     <h3 class="section-title">本月收支</h3>
     <div class="mini-row">
@@ -127,29 +127,38 @@ onMounted(async () => {
 .ai-entry-text span { font-size: 11px; opacity: 0.8; }
 .ai-entry-arrow { font-size: 18px; opacity: 0.7; }
 .kpi-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  overflow-x: auto;
-  scroll-snap-type: x proximity;
-  scrollbar-width: none;
 }
-.kpi-row::-webkit-scrollbar { display: none; }
 .kpi-card {
-  flex: 1 0 132px;
-  min-width: 132px;
-  scroll-snap-align: start;
+  min-width: 0;
+  overflow: hidden;
   background: var(--mf-surface);
   border: 1px solid var(--mf-border);
   border-radius: 12px;
-  padding: 14px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   box-shadow: var(--mf-shadow-sm);
+}
+.kpi-card.hero-kpi {
+  grid-column: 1 / -1;
+  padding: 14px 16px;
 }
 .kpi-card.cyan b { color: var(--mf-info); } .kpi-card.red b { color: var(--mf-danger); } .kpi-card.green b { color: var(--mf-success); }
 .kpi-card span { color: var(--mf-text-muted); font-size: 12px; }
-.kpi-card b { font-size: clamp(15px, 4.2vw, 18px); white-space: nowrap; font-family: 'JetBrains Mono', monospace; }
+.kpi-card b {
+  font-size: clamp(15px, 4.2vw, 18px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'JetBrains Mono', monospace;
+}
+.kpi-card.hero-kpi b {
+  font-size: clamp(20px, 5.5vw, 24px);
+}
 .mini-row { display: flex; justify-content: space-between; gap: 8px; margin: 12px 0; }
 .mini-row > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .mini-row span { color: var(--mf-text-muted); font-size: 12px; }

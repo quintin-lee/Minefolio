@@ -65,12 +65,11 @@
       </div>
 
       <div class="server-actions">
-        <el-button size="small" :loading="testing" @click="handleTest">
+        <el-button :loading="testing" @click="handleTest">
           测试连接
         </el-button>
         <el-button
           v-if="isCustom || inputUrl !== serverUrl"
-          size="small"
           type="info"
           plain
           :disabled="testing || saving"
@@ -80,7 +79,6 @@
         </el-button>
         <el-button
           type="primary"
-          size="small"
           :loading="saving"
           :disabled="testing"
           @click="handleSave"
@@ -105,7 +103,7 @@
     <div class="sync-status">
       <span>待同步：{{ pending }}<template v-if="syncConflicts.length">（含 {{ syncConflicts.length }} 条冲突）</template></span>
       <span>上次同步：{{ lastSync || '从未' }}</span>
-      <el-button size="small" :loading="syncing" @click="syncNow">立即同步</el-button>
+      <el-button :loading="syncing" @click="syncNow">立即同步</el-button>
     </div>
 
     <div v-if="dbStatus.decryptFailed || dbStatus.quotaExceeded" class="sync-warning-banner">

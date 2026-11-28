@@ -8,8 +8,8 @@
     </div>
     <div v-if="list.length === 0 && !loading" class="empty-state">暂无资产数据</div>
     <div class="fab-row">
-      <el-button size="small" plain @click="openAccount()">新增账户</el-button>
-      <el-button type="primary" size="small" @click="openAsset()">新增资产</el-button>
+      <el-button plain @click="openAccount()">新增账户</el-button>
+      <el-button type="primary" @click="openAsset()">新增资产</el-button>
     </div>
     <div v-for="group in groups" :key="group.key" class="account-group">
       <div class="account-header" @click="toggle(group.key)">
@@ -22,8 +22,8 @@
           <div class="account-header-sub">{{ group.assets.length }} 项资产</div>
         </div>
         <span class="group-actions" @click.stop>
-          <el-button v-if="group.account" size="small" text type="primary" @click="openAccount(group.account)">编辑</el-button>
-          <el-button v-if="group.account" size="small" text type="danger" @click="removeAccount(group.account)">删除</el-button>
+          <el-button v-if="group.account" text type="primary" @click="openAccount(group.account)">编辑</el-button>
+          <el-button v-if="group.account" text type="danger" @click="removeAccount(group.account)">删除</el-button>
         </span>
         <el-icon class="chevron" :class="{ collapsed: isCollapsed(group.key) }">
           <ArrowUp />
@@ -36,8 +36,8 @@
             <span v-if="a.currency && a.currency !== 'CNY'" class="currency-tag">{{ a.currency }}</span>
           </div>
           <div class="asset-actions" @click.stop>
-            <el-button size="small" text type="primary" @click="openAsset(a)">编辑</el-button>
-            <el-button size="small" text type="danger" @click="removeAsset(a)">删除</el-button>
+            <el-button text type="primary" @click="openAsset(a)">编辑</el-button>
+            <el-button text type="danger" @click="removeAsset(a)">删除</el-button>
           </div>
           <div class="value-col">
             <span class="value">{{ formatCurrency(a.current_value, a.currency) }}</span>
@@ -50,9 +50,9 @@
       </div>
     </div>
     <div v-if="accountTotal > accountPageSize" class="mobile-pager">
-      <el-button size="small" :disabled="accountPage <= 1" @click="changeAccountPage(accountPage - 1)">上一页</el-button>
+      <el-button :disabled="accountPage <= 1" @click="changeAccountPage(accountPage - 1)">上一页</el-button>
       <span class="pager-info">{{ accountPage }} / {{ Math.max(1, Math.ceil(accountTotal / accountPageSize)) }}（共 {{ accountTotal }} 户）</span>
-      <el-button size="small" :disabled="accountPage * accountPageSize >= accountTotal" @click="changeAccountPage(accountPage + 1)">下一页</el-button>
+      <el-button :disabled="accountPage * accountPageSize >= accountTotal" @click="changeAccountPage(accountPage + 1)">下一页</el-button>
     </div>
     <AssetSheet
       v-model="assetSheetVisible"

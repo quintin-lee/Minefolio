@@ -8,7 +8,7 @@
             <el-radio-button value="income">收入</el-radio-button>
           </el-radio-group>
         </div>
-        <el-button size="small" type="primary" plain :loading="scanning" class="ocr-btn" @click="triggerFilePick">
+        <el-button type="primary" plain :loading="scanning" class="ocr-btn" @click="triggerFilePick">
           <Icon icon="ph:camera-bold" class="ocr-icon" /> 识单
         </el-button>
         <input ref="fileInputRef" type="file" accept="image/*" capture="environment" style="display: none" @change="onFileSelected" />

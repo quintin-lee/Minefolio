@@ -5,7 +5,7 @@
         <h2>计划与日历</h2>
         <span v-if="cacheAt" class="cache-pill">缓存于 {{ cacheAt }}</span>
       </div>
-      <el-button size="small" type="primary" :disabled="!isOnline" @click="activeTab === 'dca' ? openDcaModal() : openScheduleModal()">
+      <el-button type="primary" :disabled="!isOnline" @click="activeTab === 'dca' ? openDcaModal() : openScheduleModal()">
         + 新增{{ activeTab === 'dca' ? '定投' : '现金流' }}
       </el-button>
     </div>
@@ -31,10 +31,10 @@
           <div class="p-sub">{{ exec.target_asset_name }} · ¥{{ Number(exec.planned_amount).toFixed(2) }}</div>
         </div>
         <div class="p-actions">
-          <el-button size="small" type="success" :disabled="!isOnline" :loading="confirmingId === exec.id" @click="handleConfirmDca(exec)">
+          <el-button type="success" :disabled="!isOnline" :loading="confirmingId === exec.id" @click="handleConfirmDca(exec)">
             执行
           </el-button>
-          <el-button size="small" text :disabled="!isOnline" @click="handleSkipDca(exec)">
+          <el-button text :disabled="!isOnline" @click="handleSkipDca(exec)">
             跳过
           </el-button>
         </div>
@@ -68,10 +68,10 @@
         </div>
 
         <div class="card-actions">
-          <el-button size="small" text type="primary" :disabled="!isOnline" @click="toggleDcaStatus(plan)">
+          <el-button text type="primary" :disabled="!isOnline" @click="toggleDcaStatus(plan)">
             {{ plan.status === 'active' ? '暂停' : '恢复' }}
           </el-button>
-          <el-button size="small" text type="danger" :disabled="!isOnline" @click="handleDeleteDca(plan)">
+          <el-button text type="danger" :disabled="!isOnline" @click="handleDeleteDca(plan)">
             删除
           </el-button>
         </div>
@@ -122,7 +122,7 @@
         </div>
 
         <div v-if="!evt.is_actual" class="card-actions">
-          <el-button size="small" type="primary" text :disabled="!isOnline" :loading="confirmingCashflowKey === `${evt.schedule_id}-${evt.date}`" @click="handleConfirmCashflow(evt)">
+          <el-button type="primary" text :disabled="!isOnline" :loading="confirmingCashflowKey === `${evt.schedule_id}-${evt.date}`" @click="handleConfirmCashflow(evt)">
             一键入账确认
           </el-button>
         </div>

@@ -7,7 +7,7 @@
       </div>
     </div>
     <div class="fab-row">
-      <el-button type="primary" size="small" @click="openTransaction()">新增交易</el-button>
+      <el-button type="primary" @click="openTransaction()">新增交易</el-button>
     </div>
     <div v-if="list.length === 0 && !loading" class="empty-state">暂无交易记录</div>
     <div v-for="t in list" :key="t.id" class="tx-card">
@@ -15,8 +15,8 @@
       <div class="bottom">
         <span>{{ t.transaction_date }}</span><span>{{ t.asset_name }}</span>
         <span class="row-actions">
-          <el-button size="small" text type="primary" @click="openTransaction(t)">编辑</el-button>
-          <el-button size="small" text type="danger" @click="removeTransaction(t)">删除</el-button>
+          <el-button text type="primary" @click="openTransaction(t)">编辑</el-button>
+          <el-button text type="danger" @click="removeTransaction(t)">删除</el-button>
         </span>
       </div>
     </div>
