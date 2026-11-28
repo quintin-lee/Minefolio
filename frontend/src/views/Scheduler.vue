@@ -1,18 +1,12 @@
 <template>
   <div class="scheduler-page">
     <!-- Header Banner -->
-    <div class="page-header">
-      <div class="header-intro">
-        <h1 class="page-title">
-          <Icon icon="ph:clock-countdown-duotone" class="title-icon" />
-          定时任务中心 (Scheduler Center)
-        </h1>
-        <p class="page-subtitle">
-          配置自动化定时或市场事件驱动任务，支持 AI 自然语言研报提炼与格式化报表生成，直连个人微信即时推送。
-        </p>
-      </div>
-
-      <div class="header-actions">
+    <PageHeader
+      :title="t('nav.scheduler')"
+      icon="ph:clock-countdown-duotone"
+      subtitle="配置自动化定时或市场事件驱动任务，支持 AI 自然语言研报提炼与格式化报表生成，直连个人微信即时推送。"
+    >
+      <template #actions>
         <el-button
           plain
           @click="openChannelDialog"
@@ -37,8 +31,8 @@
           <Icon icon="ph:plus-bold" class="btn-icon" />
           新建定时任务
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- Dashboard Metric Cards -->
     <div class="metrics-grid">
@@ -158,12 +152,11 @@
       <el-table
         v-if="filteredJobs.length > 0"
         :data="filteredJobs"
-        height="100%"
         class="premium-table jobs-table"
         row-class-name="premium-row"
         header-cell-class-name="premium-header"
       >
-        <el-table-column label="任务名称" min-width="230">
+        <el-table-column label="任务名称" min-width="180">
           <template #default="{ row }">
             <div class="job-name-cell">
               <div class="job-icon-wrap" :class="row.is_builtin ? 'system_builtin' : row.job_type">
@@ -202,7 +195,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="调度频次 / 触发机制" min-width="170">
+        <el-table-column label="调度频次 / 触发机制" min-width="140">
           <template #default="{ row }">
             <div class="trigger-cell">
               <div class="trigger-main">
@@ -219,7 +212,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="推送渠道" width="130">
+        <el-table-column v-if="!isCompactTable" label="推送渠道" width="110">
           <template #default="{ row }">
             <el-tag
               size="small"
@@ -231,7 +224,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="最近执行" min-width="170">
+        <el-table-column label="最近执行" min-width="145">
           <template #default="{ row }">
             <div v-if="row.last_run_at" class="last-run-cell">
               <div class="last-run-status-row">
@@ -279,7 +272,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="下次触发" min-width="160">
+        <el-table-column v-if="!isCompactTable" label="下次触发" min-width="145">
           <template #default="{ row }">
             <span v-if="row.enabled && row.next_run_at" class="next-run-time tabular-nums">
               {{ row.next_run_at }}
@@ -289,7 +282,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="状态" width="85" align="center">
+        <el-table-column label="状态" width="72" align="center">
           <template #default="{ row }">
             <el-switch
               :model-value="Boolean(row.enabled)"
@@ -299,7 +292,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="168" fixed="right">
+        <el-table-column label="操作" width="152" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
               <el-button
@@ -380,10 +373,23 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { schedulerApi } from '@/api/scheduler'
 import { classifyIlinkChannelStatus, getIlinkStatusLabel } from '@/utils/ilink-channel'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import type { ScheduledJob, SchedulerDashboard, ChannelType, DeliveryChannel } from '@/types'
 import ChannelConfigDialog from '@/components/scheduler/ChannelConfigDialog.vue'
 import JobDialog from '@/components/scheduler/JobDialog.vue'
 import JobLogDrawer from '@/components/scheduler/JobLogDrawer.vue'
+
+const COMPACT_TABLE_QUERY = '(max-width: 1024px)'
+const isCompactTable = ref(
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(COMPACT_TABLE_QUERY).matches
+    : false,
+)
+let compactMediaQuery: MediaQueryList | null = null
+const handleCompactTableChange = (e: MediaQueryListEvent) => {
+  isCompactTable.value = e.matches
+}
 
 const loading = ref(false)
 const refreshing = ref(false)
@@ -669,11 +675,18 @@ const getDeliveryTagType = (ch: DeliveryChannel) => {
 
 onMounted(() => {
   isUnmounted = false
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    compactMediaQuery = window.matchMedia(COMPACT_TABLE_QUERY)
+    isCompactTable.value = compactMediaQuery.matches
+    compactMediaQuery.addEventListener?.('change', handleCompactTableChange)
+  }
   refreshAll()
 })
 
 onBeforeUnmount(() => {
   isUnmounted = true
+  compactMediaQuery?.removeEventListener?.('change', handleCompactTableChange)
+  compactMediaQuery = null
   if (runRefreshTimer) {
     clearTimeout(runRefreshTimer)
     runRefreshTimer = null
@@ -683,47 +696,13 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .scheduler-page {
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
+  min-height: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-
-.page-header {
-  flex-shrink: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.page-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--el-text-color-primary);
-  margin: 0 0 6px;
-}
-
-.title-icon {
-  font-size: 28px;
-  color: var(--el-color-primary);
-}
-
-.page-subtitle {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 10px;
 }
 
 .btn-icon {
@@ -895,20 +874,15 @@ onBeforeUnmount(() => {
 
 /* Table */
 .table-container {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   background: var(--mf-surface-card, var(--el-bg-color));
   border: 1px solid var(--mf-border, var(--el-border-color-lighter));
   border-radius: 8px;
   padding: 14px;
-}
-
-.table-container :deep(.el-table) {
-  flex: 1;
-  min-height: 0;
 }
 
 .table-container .empty-state {
@@ -1148,6 +1122,14 @@ onBeforeUnmount(() => {
   }
 }
 
+@media (max-width: 1024px) {
+  .type-filter {
+    display: flex;
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+}
+
 @media (max-width: 900px) {
   .toolbar-card {
     flex-direction: column;
@@ -1176,20 +1158,6 @@ onBeforeUnmount(() => {
   .table-container {
     flex: none;
     overflow: visible;
-  }
-  .page-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 14px;
-  }
-  .page-title {
-    font-size: 18px;
-  }
-  .page-subtitle {
-    display: none;
-  }
-  .header-actions {
-    flex-wrap: wrap;
   }
 }
 

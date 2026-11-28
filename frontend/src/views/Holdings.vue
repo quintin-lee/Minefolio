@@ -1,21 +1,15 @@
 <template>
   <div class="holdings-page">
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>持仓</h2>
-      </div>
-      <div class="header-actions">
+    <PageHeader :title="t('nav.holdings')">
+      <template #actions>
         <el-button :icon="Refresh" circle @click="load" />
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- 汇总卡片 -->
-    <el-row :gutter="16">
-      <el-col :xs="24" :sm="12" :md="8">
-        <SummaryCard label="总市值" :value="formatCurrency(report?.summary.total_market_value ?? 0)" :type="(report?.summary.total_market_value ?? 0) > 0 ? 'asset' : 'neutral'" />
-      </el-col>
-      <el-col :xs="24" :sm="12" :md="8">
+    <div class="summary-grid-3">
+      <SummaryCard label="总市值" :value="formatCurrency(report?.summary.total_market_value ?? 0)" :type="(report?.summary.total_market_value ?? 0) > 0 ? 'asset' : 'neutral'" />
+      <div>
         <SummaryCard
           label="总浮动盈亏"
           :value="formatSigned(report?.summary.total_floating_pnl ?? 0)"
@@ -31,16 +25,14 @@
           :stroke-width="3"
           class="pnl-progress"
         />
-      </el-col>
-      <el-col :xs="24" :sm="24" :md="8">
-        <SummaryCard
-          label="总已实现盈亏"
-          :value="formatSigned(report?.summary.total_realized_pnl ?? 0)"
-          :type="(report?.summary.total_realized_pnl ?? 0) > 0 ? 'gain' : (report?.summary.total_realized_pnl ?? 0) < 0 ? 'loss' : 'neutral'"
-          :badgeType="(report?.summary.total_realized_pnl ?? 0) > 0 ? 'gain' : (report?.summary.total_realized_pnl ?? 0) < 0 ? 'loss' : 'neutral'"
-        />
-      </el-col>
-    </el-row>
+      </div>
+      <SummaryCard
+        label="总已实现盈亏"
+        :value="formatSigned(report?.summary.total_realized_pnl ?? 0)"
+        :type="(report?.summary.total_realized_pnl ?? 0) > 0 ? 'gain' : (report?.summary.total_realized_pnl ?? 0) < 0 ? 'loss' : 'neutral'"
+        :badgeType="(report?.summary.total_realized_pnl ?? 0) > 0 ? 'gain' : (report?.summary.total_realized_pnl ?? 0) < 0 ? 'loss' : 'neutral'"
+      />
+    </div>
 
     <!-- 图表 -->
     <el-row :gutter="16" class="chart-row">
@@ -60,7 +52,7 @@
 
     <!-- 持仓表格 -->
     <div class="table-card">
-      <el-table :data="pagedHoldings" height="100%" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header" empty-text="">
+      <el-table :data="pagedHoldings" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header" empty-text="">
         <el-table-column label="标的名称" min-width="160">
           <template #default="{ row }">
             <div class="symbol-cell">
@@ -141,7 +133,7 @@
           <el-empty description="暂无持仓数据" :image-size="80" />
         </template>
       </el-table>
-      <div class="pagination-bar">
+      <div v-if="(report?.holdings.length ?? 0) > 0" class="pagination-bar">
         <el-pagination
           v-model:current-page="page"
           v-model:page-size="pageSize"
@@ -165,7 +157,9 @@ import { marketApi } from '@/api/market'
 import HoldingsTypePie from '@/components/HoldingsTypePie.vue'
 import HoldingsCostBar from '@/components/HoldingsCostBar.vue'
 import SummaryCard from '@/components/SummaryCard.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { formatCurrency, formatSigned } from '@/utils/format'
+import { t } from '@/utils/locale'
 
 const report = ref<HoldingsReport | null>(null)
 const exchangeRates = ref<Record<string, number>>({})
@@ -265,11 +259,22 @@ onMounted(() => {
 
 <style scoped>
 .holdings-page {
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+.summary-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  flex-shrink: 0;
+}
+@media (max-width: 640px) {
+  .summary-grid-3 {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
 }
 .cny-converted-hint {
   font-size: 11px;
@@ -309,14 +314,9 @@ onMounted(() => {
   margin-bottom: 8px;
 }
 .table-card {
-  flex: 1;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-.table-card :deep(.el-table) {
-  flex: 1;
-  min-height: 0;
+  overflow-x: auto;
 }
 .premium-table {
   --el-table-border-color: transparent;

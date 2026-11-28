@@ -1,23 +1,19 @@
 <template>
   <div class="plans-page">
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>计划与日历</h2>
-      </div>
-      <div class="header-actions">
+    <PageHeader :title="t('nav.plans')">
+      <template #actions>
         <el-button v-if="activeTab === 'dca'" type="primary" class="action-btn" @click="openDcaDialog()">
           <el-icon><Plus /></el-icon> 新增定投计划
         </el-button>
         <el-button v-else type="primary" class="action-btn" @click="openScheduleDialog()">
           <el-icon><Plus /></el-icon> 新增现金流计划
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- 顶部主标签页切换 -->
     <el-tabs v-model="activeTab" class="custom-tabs">
-      <el-tab-pane label="定投计划 (DCA Plans)" name="dca" class="dca-tab-pane">
+      <el-tab-pane label="定投计划" name="dca" class="dca-tab-pane">
         <!-- 待办待执行提醒横幅 -->
         <div v-if="pendingExecutions.length > 0" class="pending-banner">
           <div class="banner-title">
@@ -46,17 +42,17 @@
         </div>
 
         <!-- 定投计划总览指标 -->
-        <el-row :gutter="20" class="summary-cards">
-          <el-col :xs="12" :sm="6">
+        <el-row :gutter="16" class="summary-cards">
+          <el-col :xs="12" :sm="12" :lg="6">
             <SummaryCard label="活跃定投计划" :value="`${activePlanCount} 个`" :type="activePlanCount > 0 ? 'highlight' : 'neutral'" />
           </el-col>
-          <el-col :xs="12" :sm="6">
+          <el-col :xs="12" :sm="12" :lg="6">
             <SummaryCard label="累计定投总投入" :value="`¥${formatNumber(totalDcaInvested)}`" :type="totalDcaInvested > 0 ? 'asset' : 'neutral'" />
           </el-col>
-          <el-col :xs="12" :sm="6">
+          <el-col :xs="12" :sm="12" :lg="6">
             <SummaryCard label="定投标的当前总市值" :value="`¥${formatNumber(totalDcaCurrentValue)}`" :type="totalDcaCurrentValue > 0 ? 'asset' : 'neutral'" />
           </el-col>
-          <el-col :xs="12" :sm="6">
+          <el-col :xs="12" :sm="12" :lg="6">
             <SummaryCard
               label="定投整体浮动盈亏"
               :value="`${totalDcaPnl > 0 ? '+' : ''}¥${formatNumber(totalDcaPnl)} (${totalDcaPnlPct.toFixed(2)}%)`"
@@ -167,7 +163,7 @@
             </template>
           </el-table>
 
-          <div class="pagination-bar">
+          <div v-if="dcaTotal > 0" class="pagination-bar">
             <el-pagination
               v-model:current-page="dcaPage"
               v-model:page-size="dcaPageSize"
@@ -183,7 +179,7 @@
       </el-tab-pane>
 
       <!-- 现金流日历 Tab -->
-      <el-tab-pane label="现金流日历 (Cashflow Calendar)" name="calendar" class="calendar-tab-pane">
+      <el-tab-pane label="现金流日历" name="calendar" class="calendar-tab-pane">
         <CashflowCalendar
           ref="calendarRef"
           @open-schedule="scheduleDrawerVisible = true"
@@ -284,6 +280,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, VideoPause, VideoPlay, Document, BellFilled } from '@element-plus/icons-vue'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import SummaryCard from '@/components/SummaryCard.vue'
 import DcaPlanDialog from '@/components/DcaPlanDialog.vue'
 import CashflowScheduleDialog from '@/components/CashflowScheduleDialog.vue'
@@ -582,31 +580,10 @@ onMounted(() => {
 <style scoped>
 .plans-page {
   background-color: var(--mf-background);
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.title-accent {
-  width: 4px;
-  height: 18px;
-  background-color: var(--el-color-primary);
-  border-radius: 2px;
 }
 
 .action-btn {
@@ -616,8 +593,6 @@ onMounted(() => {
 }
 
 .custom-tabs {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -633,23 +608,14 @@ onMounted(() => {
 }
 
 .custom-tabs :deep(.el-tabs__content) {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.custom-tabs :deep(.dca-tab-pane) {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
+.custom-tabs :deep(.dca-tab-pane),
 .custom-tabs :deep(.calendar-tab-pane) {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .pending-banner {
@@ -717,30 +683,19 @@ onMounted(() => {
 
 .summary-cards {
   margin-bottom: 16px;
+  row-gap: 12px;
   flex-shrink: 0;
 }
 
 .table-container {
-  overflow: hidden;
+  overflow-x: auto;
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
   background: var(--mf-surface);
   border-radius: var(--mf-radius-lg);
   padding: 16px;
   border: 1px solid var(--mf-border);
   box-shadow: var(--mf-shadow-sm);
-}
-
-.table-container :deep(.el-table) {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-}
-
-.table-container :deep(.el-table__body-wrapper) {
-  overflow-y: auto;
 }
 
 .plan-name-cell {

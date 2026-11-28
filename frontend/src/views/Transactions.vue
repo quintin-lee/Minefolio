@@ -1,11 +1,7 @@
 <template>
   <div class="transactions-page">
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>交易</h2>
-      </div>
-      <div class="header-actions">
+    <PageHeader :title="t('nav.transactions')">
+      <template #actions>
         <el-button type="primary" class="action-btn" @click="openDialog()">
           <el-icon><Plus /></el-icon> 新增交易
         </el-button>
@@ -15,8 +11,8 @@
         <el-tooltip content="导入 CSV" placement="bottom">
           <el-button :icon="Upload" circle class="action-icon-btn" @click="importDialogVisible = true" />
         </el-tooltip>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- 顶部汇总统计卡片 -->
     <el-row :gutter="16" class="summary-cards">
@@ -94,10 +90,19 @@
           header-cell-class-name="premium-header"
           @selection-change="handleSelectionChange"
         >
-          <el-table-column type="selection" width="45" align="center" />
-          <el-table-column prop="transaction_date" label="日期" width="120" />
-          <el-table-column prop="asset_name" label="账户资产" min-width="130" show-overflow-tooltip />
-          <el-table-column prop="linked_asset_name" label="扣款/回流账户" min-width="130" show-overflow-tooltip>
+          <el-table-column type="selection" width="42" align="center" />
+          <el-table-column prop="transaction_date" label="日期" width="104" />
+          <el-table-column prop="asset_name" label="账户资产" min-width="124" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div class="asset-cell-stack">
+                <span class="asset-main-name">{{ row.asset_name }}</span>
+                <span v-if="isCompactTable && row.linked_asset_name" class="linked-sub-hint">
+                  关联: {{ row.linked_asset_name }}
+                </span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="!isCompactTable" prop="linked_asset_name" label="扣款/回流账户" min-width="116" show-overflow-tooltip>
             <template #default="{ row }">
               <el-tag v-if="row.linked_asset_name" size="small" type="warning" effect="light" class="type-badge" round>
                 {{ row.linked_asset_name }}
@@ -105,27 +110,27 @@
               <span v-else class="muted-text">—</span>
             </template>
           </el-table-column>
-          <el-table-column prop="transaction_type" label="交易类型" width="110">
+          <el-table-column prop="transaction_type" label="交易类型" width="88">
             <template #default="{ row }">
               <el-tag :type="typeTag(row.transaction_type)" effect="light" class="type-badge" round>
                 {{ typeLabel(row.transaction_type) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="category_name" label="交易分类" min-width="120" show-overflow-tooltip>
+          <el-table-column prop="category_name" label="交易分类" min-width="96" show-overflow-tooltip>
             <template #default="{ row }">
               <span v-if="row.category_name" class="category-pill">{{ row.category_name }}</span>
               <span v-else class="muted-text">—</span>
             </template>
           </el-table-column>
-          <el-table-column prop="amount" label="交易金额" width="150" align="right">
+          <el-table-column prop="amount" label="交易金额" width="134" align="right">
             <template #default="{ row }">
               <span :class="['mono-amount', isIncomeType(row.transaction_type) ? 'income-text' : 'expense-text']">
                 {{ isIncomeType(row.transaction_type) ? '+' : '-' }}{{ formatCurrency(row.amount, row.currency) }}
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="单价 × 数量" min-width="170" align="center">
+          <el-table-column label="单价 × 数量" min-width="132" align="center">
             <template #default="{ row }">
               <div v-if="row.quantity > 0 || row.price_per_unit > 0" class="trade-detail font-mono">
                 <span class="price-tag">{{ formatCurrency(row.price_per_unit || 0, row.currency) }}</span>
@@ -135,23 +140,23 @@
               <span v-else class="muted-text">—</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="showFeeCol && !isCompactTable" label="手续费" width="100" align="right">
+          <el-table-column v-if="showFeeCol && !isCompactTable" label="手续费" width="88" align="right">
             <template #default="{ row }">
               <span v-if="row.fee && row.fee > 0" class="mono-amount expense-text">{{ formatCurrency(row.fee, row.currency) }}</span>
               <span v-else class="muted-text">—</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="!isCompactTable" prop="currency" label="币种" width="90" align="center">
+          <el-table-column v-if="!isCompactTable" prop="currency" label="币种" width="72" align="center">
             <template #default="{ row }">
               <el-tag size="small" type="info" effect="plain">{{ row.currency || 'CNY' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column v-if="!isCompactTable" prop="note" label="备注" min-width="160" show-overflow-tooltip>
+          <el-table-column v-if="!isCompactTable" prop="note" label="备注" min-width="130" show-overflow-tooltip>
             <template #default="{ row }">
               <span>{{ row.note || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120" align="center" fixed="right">
+          <el-table-column label="操作" width="88" align="center" fixed="right">
             <template #default="{ row }">
               <div class="action-buttons">
                 <el-tooltip content="编辑" placement="top">
@@ -169,7 +174,7 @@
             </el-empty>
           </template>
         </el-table>
-        <div class="pagination-bar">
+        <div v-if="total > 0" class="pagination-bar">
           <el-pagination
             v-model:current-page="page"
             v-model:page-size="pageSize"
@@ -406,6 +411,8 @@ import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import { formatCurrency, localToday, localThisMonth, assetLabel } from '@/utils/format'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import { findCategoryPath, prepareCategoryTree } from '@/utils/category-tree'
 import { useAsyncTaskProgress } from '@/composables/useAsyncTaskProgress'
 import { exportChartCsv } from '@/utils/chart-export'
@@ -560,7 +567,7 @@ const showFeeCol = computed(() => {
   )
 })
 
-const COMPACT_TABLE_QUERY = '(max-width: 1200px)'
+const COMPACT_TABLE_QUERY = '(max-width: 1440px)'
 const isCompactTable = ref(
   typeof window !== 'undefined' && typeof window.matchMedia === 'function'
     ? window.matchMedia(COMPACT_TABLE_QUERY).matches
@@ -1042,10 +1049,8 @@ async function handleImport() {
 
 <style scoped>
 .transactions-page {
-
   background-color: var(--mf-background);
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1057,14 +1062,9 @@ async function handleImport() {
   font-weight: 500;
 }
 
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .summary-cards {
   flex-shrink: 0;
+  row-gap: 12px;
 }
 
 .summary-card-with-bar {
@@ -1114,9 +1114,6 @@ async function handleImport() {
   border: 1px solid var(--mf-border);
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .filter-panel {
@@ -1138,21 +1135,29 @@ async function handleImport() {
 }
 
 .table-container {
-  overflow: hidden;
+  overflow-x: auto;
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
 }
 
-.table-container :deep(.el-table) {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
+.asset-cell-stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
-.table-container :deep(.el-table__body-wrapper) {
-  overflow-y: auto;
+.asset-main-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linked-sub-hint {
+  font-size: 11px;
+  color: var(--mf-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .premium-table {
@@ -1377,25 +1382,6 @@ async function handleImport() {
   .main-panel {
     overflow: visible;
   }
-  .page-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-  .header-title h2 {
-    white-space: nowrap;
-    word-break: keep-all;
-  }
-  .header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    width: 100%;
-  }
-  .header-actions .action-btn {
-    padding: 6px 10px;
-    font-size: 12px;
-  }
   .filter-panel .premium-filters .el-form-item {
     width: 100%;
     margin-right: 0;
@@ -1406,13 +1392,16 @@ async function handleImport() {
     width: 100% !important;
     max-width: 100%;
   }
+  .stream-table :deep(.el-table__body-wrapper) {
+    overflow-x: auto !important;
+  }
+}
+
+@media (max-width: 640px) {
   .stream-table :deep(.el-table__fixed-right),
   .stream-table :deep(.el-table__fixed-right-patch),
   :deep(.el-table-fixed-column--right) {
     position: static !important;
-  }
-  .stream-table :deep(.el-table__body-wrapper) {
-    overflow-x: auto !important;
   }
 }
 </style>

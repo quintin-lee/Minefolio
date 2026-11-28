@@ -1,14 +1,12 @@
 <template>
   <div class="categories-page">
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>分类管理</h2>
-      </div>
-      <el-button type="primary" class="action-btn" @click="openDialog(null)">
-        <el-icon><Plus /></el-icon> 新增分类
-      </el-button>
-    </div>
+    <PageHeader :title="t('nav.categories')">
+      <template #actions>
+        <el-button type="primary" class="action-btn" @click="openDialog(null)">
+          <el-icon><Plus /></el-icon> 新增分类
+        </el-button>
+      </template>
+    </PageHeader>
 
     <!-- Category Type Tabs -->
     <div class="tab-filter-container">
@@ -22,8 +20,8 @@
     </div>
 
     <div class="panels-scroll-wrapper">
-      <el-row :gutter="24">
-        <el-col :xs="24" :md="9" :lg="8">
+      <el-row :gutter="20">
+        <el-col :xs="24" :md="8" :lg="7">
           <div class="panel-container tree-panel-container">
             <div class="panel-header panel-header-with-search">
               <h3>分类结构</h3>
@@ -70,7 +68,7 @@
             </div>
           </div>
         </el-col>
-        <el-col :xs="24" :md="15" :lg="16">
+        <el-col :xs="24" :md="16" :lg="17">
           <div class="panel-container">
             <div class="panel-header">
               <h3>分类列表</h3>
@@ -81,7 +79,7 @@
                 :tree-props="{ children: '__no_tree_children__', hasChildren: '__no_tree_has_children__' }"
                 class="premium-table" header-cell-class-name="premium-header"
                 :row-class-name="rowClassName" @row-click="onRowClick">
-                <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip>
+                <el-table-column prop="name" label="名称" min-width="116" show-overflow-tooltip>
                   <template #default="{ row }">
                     <span class="cat-name-cell">
                       <span class="cat-icon">{{ (row as any).icon || defaultIcon(row as Category) }}</span>
@@ -89,19 +87,19 @@
                     </span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="type" label="分类大类" width="110">
+                <el-table-column prop="type" label="分类大类" width="86">
                   <template #default="{ row }">
                     <span :class="['type-pill', `pill-${row.type || 'asset'}`]">
                       {{ categoryTypeLabel(row.type) }}
                     </span>
                   </template>
                 </el-table-column>
-                <el-table-column label="上级分类" min-width="120">
+                <el-table-column label="上级分类" min-width="92" show-overflow-tooltip>
                   <template #default="{ row }">
                     <span class="text-muted">{{ getParentName(row.parent_id) }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="asset_type" label="资产细分" width="140">
+                <el-table-column prop="asset_type" label="资产细分" width="102" show-overflow-tooltip>
                   <template #default="{ row }">
                     <div class="type-cell" v-if="row.type === 'asset'">
                       <span :class="['status-dot', row.asset_type]"></span>
@@ -110,12 +108,12 @@
                     <span v-else class="text-muted">-</span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="currency" label="币种" width="90">
+                <el-table-column prop="currency" label="币种" width="68" align="center">
                   <template #default="{ row }">
                     <span class="currency-pill">{{ row.currency }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="120" align="center">
+                <el-table-column label="操作" width="106" align="center" fixed="right">
                   <template #default="{ row }">
                     <div class="action-buttons">
                       <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
@@ -123,6 +121,9 @@
                     </div>
                   </template>
                 </el-table-column>
+                <template #empty>
+                  <el-empty description="暂无分类数据" :image-size="72" />
+                </template>
               </el-table>
             </div>
             <div v-if="totalRoots > 0" class="table-pagination">
@@ -199,6 +200,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { categoriesApi } from '@/api/categories'
 import { useCategoryStore } from '@/stores/category'
 import { findCategoryPath } from '@/utils/category-tree'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import type { Category, CategoryType } from '@/types'
 
 defineOptions({ name: 'Categories' })
@@ -612,6 +615,7 @@ onActivated(() => {
 
 .categories-page > .page-header {
   flex-shrink: 0;
+  margin-bottom: 16px;
 }
 
 .categories-page > .tab-filter-container {
@@ -635,7 +639,7 @@ onActivated(() => {
 .panel-container {
   background: var(--mf-surface);
   border-radius: var(--mf-radius-lg);
-  padding: 20px;
+  padding: 16px;
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
   box-sizing: border-box;
@@ -1014,8 +1018,9 @@ onActivated(() => {
 
 .action-buttons {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   justify-content: center;
+  white-space: nowrap;
 }
 
 :deep(.premium-dialog) {

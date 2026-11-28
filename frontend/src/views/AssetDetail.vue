@@ -1,80 +1,60 @@
 <template>
   <div class="asset-detail-page" v-loading="loading">
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>{{ assetDetail?.name || '资产详情' }}</h2>
-      </div>
-      <div class="header-actions">
+    <PageHeader :title="assetDetail?.name || '资产详情'">
+      <template #actions>
         <el-button @click="$router.back()">返回</el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <div v-if="assetDetail" class="detail-content">
       <!-- 核心指标卡片 -->
-      <el-row :gutter="12" class="metric-row">
-        <el-col :xs="12" :sm="6">
-          <div class="metric-card">
-            <div class="metric-label">市值</div>
-            <div class="metric-value">{{ formatCurrency(assetDetail.current_value, assetDetail.currency) }}</div>
+      <div class="metric-grid">
+        <div class="metric-card">
+          <div class="metric-label">市值</div>
+          <div class="metric-value">{{ formatCurrency(assetDetail.current_value, assetDetail.currency) }}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">持有份额</div>
+          <div class="metric-value">{{ assetDetail.quantity?.toFixed(4) }}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">摊薄成本</div>
+          <div class="metric-value">
+            {{ assetDetail.quantity > 0 ? (assetDetail.cost_basis / assetDetail.quantity).toFixed(4) : '—' }}
           </div>
-        </el-col>
-        <el-col :xs="12" :sm="6">
-          <div class="metric-card">
-            <div class="metric-label">持有份额</div>
-            <div class="metric-value">{{ assetDetail.quantity?.toFixed(4) }}</div>
-          </div>
-        </el-col>
-        <el-col :xs="12" :sm="6">
-          <div class="metric-card">
-            <div class="metric-label">摊薄成本</div>
-            <div class="metric-value">
-              {{ assetDetail.quantity > 0 ? (assetDetail.cost_basis / assetDetail.quantity).toFixed(4) : '—' }}
-            </div>
-          </div>
-        </el-col>
-        <el-col :xs="12" :sm="6">
-          <div class="metric-card">
-            <div class="metric-label">最新净值</div>
-            <div class="metric-value">{{ assetDetail.net_value?.toFixed(4) }}</div>
-          </div>
-        </el-col>
-      </el-row>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">最新净值</div>
+          <div class="metric-value">{{ assetDetail.net_value?.toFixed(4) }}</div>
+        </div>
+      </div>
 
       <!-- 盈亏指标行 -->
-      <el-row :gutter="12" class="metric-row">
-        <el-col :xs="12" :sm="6">
-          <div class="metric-card">
-            <div class="metric-label">浮动盈亏</div>
-            <div :class="['metric-value', pnlClass(unrealized)]">{{ formatCurrency(unrealized, assetDetail.currency) }}</div>
+      <div class="metric-grid">
+        <div class="metric-card">
+          <div class="metric-label">浮动盈亏</div>
+          <div :class="['metric-value', pnlClass(unrealized)]">{{ formatCurrency(unrealized, assetDetail.currency) }}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">浮动收益率</div>
+          <div :class="['metric-value', pnlClass(unrealized)]">
+            {{ unrealizedPct }}%
           </div>
-        </el-col>
-        <el-col :xs="12" :sm="6">
-          <div class="metric-card">
-            <div class="metric-label">浮动收益率</div>
-            <div :class="['metric-value', pnlClass(unrealized)]">
-              {{ unrealizedPct }}%
-            </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">组合占比</div>
+          <div class="metric-value">{{ ((assetDetail.portfolio_weight ?? 0) * 100).toFixed(1) }}%</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">当日涨跌</div>
+          <div :class="['metric-value', pnlClass(dailyChange?.pct ?? 0)]">
+            <template v-if="dailyChange">
+              {{ dailyChange.pct >= 0 ? '+' : '' }}{{ dailyChange.pct?.toFixed(2) }}%
+            </template>
+            <template v-else>—</template>
           </div>
-        </el-col>
-        <el-col :xs="12" :sm="6">
-          <div class="metric-card">
-            <div class="metric-label">组合占比</div>
-            <div class="metric-value">{{ ((assetDetail.portfolio_weight ?? 0) * 100).toFixed(1) }}%</div>
-          </div>
-        </el-col>
-        <el-col :xs="12" :sm="6">
-          <div class="metric-card">
-            <div class="metric-label">当日涨跌</div>
-            <div :class="['metric-value', pnlClass(dailyChange?.pct ?? 0)]">
-              <template v-if="dailyChange">
-                {{ dailyChange.pct >= 0 ? '+' : '' }}{{ dailyChange.pct?.toFixed(2) }}%
-              </template>
-              <template v-else>—</template>
-            </div>
-          </div>
-        </el-col>
-      </el-row>
+        </div>
+      </div>
 
       <!-- 区间收益 tab -->
       <div v-if="assetDetail.interval_returns" class="interval-card">
@@ -95,13 +75,16 @@
       <!-- 交易流水 -->
       <div class="txn-card">
         <h3>交易流水</h3>
-        <el-table :data="assetDetail.transactions" size="small" max-height="400">
-          <el-table-column prop="transaction_date" label="日期" width="120" />
-          <el-table-column prop="transaction_type" label="类型" width="100" />
-          <el-table-column prop="quantity" label="数量" width="100" align="right" />
-          <el-table-column prop="price_per_unit" label="单价" width="100" align="right" />
-          <el-table-column prop="amount" label="金额" min-width="120" align="right" />
-          <el-table-column prop="note" label="备注" min-width="150" show-overflow-tooltip />
+        <el-table :data="assetDetail.transactions" size="small" max-height="400" style="width: 100%">
+          <el-table-column prop="transaction_date" label="日期" width="104" />
+          <el-table-column prop="transaction_type" label="类型" width="80" />
+          <el-table-column prop="quantity" label="数量" width="84" align="right" />
+          <el-table-column prop="price_per_unit" label="单价" width="88" align="right" />
+          <el-table-column prop="amount" label="金额" min-width="100" align="right" />
+          <el-table-column prop="note" label="备注" min-width="120" show-overflow-tooltip />
+          <template #empty>
+            <el-empty description="暂无交易流水" :image-size="64" />
+          </template>
         </el-table>
       </div>
     </div>
@@ -118,6 +101,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { assetsApi } from '@/api/assets'
 import { marketApi } from '@/api/market'
+import PageHeader from '@/components/PageHeader.vue'
 import AssetPriceLine from '@/components/AssetPriceLine.vue'
 import IntervalReturnTabs from '@/components/IntervalReturnTabs.vue'
 import { formatCurrency } from '@/utils/format'
@@ -180,26 +164,42 @@ onMounted(async () => {
 
 <style scoped>
 .asset-detail-page {
-  padding: 16px;
-  height: 100%;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .detail-content {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
+  max-width: 100%;
 }
 
-.metric-row {
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
   flex-shrink: 0;
 }
 
+@media (max-width: 900px) {
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .metric-card {
+  min-width: 0;
   background: var(--mf-surface-muted);
   border: 1px solid var(--mf-border);
   border-radius: var(--mf-radius-md);
   padding: 10px 14px;
+  box-sizing: border-box;
 }
 
 .metric-label {
@@ -212,6 +212,9 @@ onMounted(async () => {
   font-size: 18px;
   font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gain-text { color: var(--mf-gain); }
@@ -220,10 +223,14 @@ onMounted(async () => {
 .interval-card,
 .chart-card,
 .txn-card {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   background: var(--mf-surface);
   border: 1px solid var(--mf-border);
   border-radius: var(--mf-radius-lg);
   padding: 16px 20px;
+  box-sizing: border-box;
 }
 
 .interval-card h3,

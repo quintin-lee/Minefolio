@@ -294,4 +294,15 @@ const badgeArrow = computed(() => {
   background: var(--mf-loss-light) !important;
   border-color: var(--mf-loss-border) !important;
 }
+
+@media (max-width: 1024px) {
+  .summary-card {
+    padding: 14px 16px;
+  }
+
+  .summary-value {
+    font-size: clamp(18px, 2.4vw, 22px);
+    overflow-wrap: anywhere;
+  }
+}
 </style>

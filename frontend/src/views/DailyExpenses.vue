@@ -1,11 +1,7 @@
 <template>
   <div class="daily-expenses-page">
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>收支</h2>
-      </div>
-      <div class="header-actions">
+    <PageHeader :title="t('nav.dailyExpenses')">
+      <template #actions>
         <el-button type="primary" class="action-btn" @click="openDialog()">
           <el-icon><Plus /></el-icon> 新增记录
         </el-button>
@@ -18,8 +14,8 @@
         <el-button class="action-btn" @click="importDialogVisible = true">
           <el-icon><Upload /></el-icon> 导入 CSV
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <el-row :gutter="16">
       <!-- 左侧：记账列表 -->
@@ -99,7 +95,7 @@
                 </el-empty>
               </template>
             </el-table>
-            <div class="pagination-bar">
+            <div v-if="total > 0" class="pagination-bar">
               <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper" background @current-change="loadData" @size-change="handleSizeChange" />
             </div>
           </div>
@@ -234,6 +230,8 @@ import { Plus, Download, Upload, UploadFilled, SuccessFilled, Camera, Delete } f
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
+import { t } from '@/utils/locale'
+import PageHeader from '@/components/PageHeader.vue'
 import TagPicker from '@/components/TagPicker.vue'
 import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
@@ -577,8 +575,7 @@ async function handleImport() {
 <style scoped>
 .daily-expenses-page {
   background-color: var(--mf-background);
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -638,6 +635,7 @@ async function handleImport() {
 
 .monthly-summary {
   margin-bottom: 24px;
+  row-gap: 12px;
 }
 
 .summary-value {
@@ -663,22 +661,9 @@ async function handleImport() {
   padding: 12px;
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
-  overflow: auto;
+  overflow-x: auto;
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.table-container :deep(.el-table) {
-  height: 100%;
-
-  flex: 1;
-  min-height: 0;
-}
-
-.table-container :deep(.el-table__body-wrapper) {
-  overflow-y: auto;
 }
 
 .premium-table {
@@ -849,42 +834,7 @@ async function handleImport() {
   padding: 8px 24px;
 }
 
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.import-dialog-content { padding: 8px 0; }
-.import-hint { margin: 0 0 16px; font-size: 13px; color: var(--mf-text-muted); line-height: 1.6; }
-.import-upload { width: 100%; }
-.import-upload :deep(.el-upload-dragger) { padding: 28px 0; border-radius: var(--mf-radius-md); border: 1px dashed var(--mf-border); background: var(--mf-background); }
-.import-upload :deep(.el-upload-dragger:hover) { border-color: var(--mf-primary); }
-.import-upload :deep(.el-icon--upload) { font-size: 40px; color: var(--mf-primary); margin-bottom: 12px; }
-.import-result { margin-top: 16px; padding: 12px 16px; border-radius: var(--mf-radius-md); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
-.import-result.success { background: var(--mf-success-light); border: 1px solid var(--mf-success-border); color: var(--mf-success); }
-.import-result.error { background: var(--mf-danger-light); border: 1px solid var(--mf-danger-border); color: var(--mf-danger); }
-.import-result .el-icon { font-size: 16px; }
-.import-errors { font-size: 12px; color: var(--mf-danger); white-space: pre-wrap; word-break: break-all; }
-
-/* Constrain layout to viewport */
-.daily-expenses-page > .el-row {
-  flex: 1;
-  min-height: 0;
-}
-.daily-expenses-page > .el-row > .el-col {
-  display: flex !important;
-  flex-direction: column !important;
-  flex: 1 !important;
-  min-height: 0 !important;
-  overflow: hidden !important;
-  height: 100% !important;
-}
-.main-panel {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
+/* Natural vertical page flow inside Layout .main */
 
 .floating-batch-bar {
   position: fixed;
@@ -948,24 +898,8 @@ async function handleImport() {
 }
 
 @media (max-width: 1200px) {
-  .daily-expenses-page {
-    overflow-y: auto;
-    height: auto;
-    min-height: 100%;
-  }
-  .daily-expenses-page > .el-row {
-    flex: none;
-    height: auto;
-  }
   .daily-expenses-page > .el-row > .el-col {
-    height: auto !important;
-    overflow: visible !important;
-    flex: none !important;
     margin-bottom: 16px;
-  }
-  .main-panel {
-    height: auto;
-    overflow: visible;
   }
 }
 
@@ -977,30 +911,6 @@ async function handleImport() {
     background: var(--mf-surface);
     backdrop-filter: blur(12px);
   }
-  .page-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-  .header-title h2 {
-    white-space: nowrap;
-    word-break: keep-all;
-  }
-  .header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    width: 100%;
-  }
-  .header-actions .action-btn {
-    padding: 6px 10px;
-    font-size: 12px;
-  }
-  .table-container :deep(.el-table__fixed-right),
-  .table-container :deep(.el-table__fixed-right-patch),
-  :deep(.el-table-fixed-column--right) {
-    position: static !important;
-  }
   .table-container :deep(.el-table__body-wrapper) {
     overflow-x: auto !important;
   }
@@ -1009,6 +919,14 @@ async function handleImport() {
     padding: 10px 14px;
     border-radius: var(--mf-radius-lg);
     gap: 8px 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .table-container :deep(.el-table__fixed-right),
+  .table-container :deep(.el-table__fixed-right-patch),
+  :deep(.el-table-fixed-column--right) {
+    position: static !important;
   }
 }
 </style>
