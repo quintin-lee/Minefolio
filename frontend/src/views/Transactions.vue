@@ -33,7 +33,7 @@
       </el-col>
       <el-col :xs="24" :sm="12" :lg="6">
         <div class="summary-card-with-bar" :class="monthlyCount > 0 ? 'bar-amber' : 'bar-neutral'">
-          <SummaryCard label="本月交易笔数" :value="monthlyCount + ' 笔'" :type="monthlyCount > 0 ? 'highlight' : 'neutral'" extraClass="font-mono" />
+          <SummaryCard label="本月交易笔数" :value="monthlyCount + ' 笔'" :type="monthlyCount > 0 ? 'highlight' : 'neutral'" extraClass="font-mono" :maskable="false" />
         </div>
       </el-col>
     </el-row>
@@ -129,7 +129,7 @@
                 <span :class="['mono-amount', isIncomeType(row.transaction_type) ? 'income-text' : 'expense-text']">
                   {{ isIncomeType(row.transaction_type) ? '+' : '-' }}{{ formatCurrency(row.amount, row.currency) }}
                 </span>
-                <span v-if="isNarrowTable && (row.quantity > 0 || row.price_per_unit > 0)" class="trade-sub-hint font-mono">
+                <span v-if="isNarrowTable && (row.quantity > 0 || row.price_per_unit > 0)" class="trade-sub-hint mf-amount-mask font-mono">
                   {{ formatCurrency(row.price_per_unit || 0, row.currency) }} × {{ row.quantity || 0 }}
                 </span>
               </div>
@@ -137,7 +137,7 @@
           </el-table-column>
           <el-table-column v-if="!isNarrowTable" label="单价 × 数量" min-width="132" align="center">
             <template #default="{ row }">
-              <div v-if="row.quantity > 0 || row.price_per_unit > 0" class="trade-detail font-mono">
+              <div v-if="row.quantity > 0 || row.price_per_unit > 0" class="trade-detail mf-amount-mask font-mono">
                 <span class="price-tag">{{ formatCurrency(row.price_per_unit || 0, row.currency) }}</span>
                 <span class="times">×</span>
                 <span class="qty-tag">{{ row.quantity || 0 }}</span>
@@ -318,7 +318,7 @@
                     v-for="a in selectableLinkedAssets"
                     :key="a.id"
                     :disabled="a.id === form.asset_id"
-                    :label="`${assetLabel(a)} (${formatCurrency(a.current_value, a.currency)})`"
+                    :label="`${assetLabel(a)} (${maskAmountText(formatCurrency(a.current_value, a.currency))})`"
                     :value="a.id"
                   />
                 </el-select>
@@ -416,6 +416,7 @@ import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import { formatCurrency, localToday, localThisMonth, assetLabel } from '@/utils/format'
+import { maskAmountText } from '@/stores/display-settings'
 import { t } from '@/utils/locale'
 import PageHeader from '@/components/PageHeader.vue'
 import { findCategoryPath, prepareCategoryTree } from '@/utils/category-tree'
@@ -619,14 +620,15 @@ const linkedAccountLabel = computed(() => {
 })
 
 function targetAssetOptionLabel(a: Asset): string {
+  const valText = maskAmountText(formatCurrency(a.current_value, a.currency))
   if (isTradingType(form.transaction_type)) {
     const qty = Number(a.quantity || 0)
     const suffix = form.transaction_type === 'sell' && !editingId.value && qty <= 0
       ? '无持仓'
-      : `持仓 ${qty}`
-    return `${assetLabel(a)} (${suffix}, ${formatCurrency(a.current_value, a.currency)})`
+      : `持仓 ${maskAmountText(String(qty))}`
+    return `${assetLabel(a)} (${suffix}, ${valText})`
   }
-  return `${assetLabel(a)} (${formatCurrency(a.current_value, a.currency)})`
+  return `${assetLabel(a)} (${valText})`
 }
 
 function onAssetChange(assetId: number | null) {

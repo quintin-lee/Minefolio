@@ -35,7 +35,7 @@
       <div v-for="exec in pendingExecutions" :key="exec.id" class="pending-card">
         <div class="p-info">
           <div class="p-title">{{ exec.plan_name }}</div>
-          <div class="p-sub">{{ exec.target_asset_name }} · ¥{{ Number(exec.planned_amount).toFixed(2) }}</div>
+          <div class="p-sub">{{ exec.target_asset_name }} · <span class="mf-amount-mask">¥{{ Number(exec.planned_amount).toFixed(2) }}</span></div>
         </div>
         <div class="p-actions">
           <el-button type="success" :disabled="!isOnline" :loading="confirmingId === exec.id" @click="handleConfirmDca(exec)">
@@ -70,7 +70,7 @@
           </div>
           <div class="meta-row">
             <span class="lbl">已投期数:</span> <span class="val">{{ plan.executed_periods || 0 }} 期</span>
-            <span class="lbl ml">累计投入:</span> <span class="val highlight">¥{{ Number(plan.total_invested_amount || 0).toFixed(2) }}</span>
+            <span class="lbl ml">累计投入:</span> <span class="val highlight mf-amount-mask">¥{{ Number(plan.total_invested_amount || 0).toFixed(2) }}</span>
           </div>
         </div>
 
@@ -97,7 +97,7 @@
           </div>
           <div class="s-item">
             <span class="s-lbl">预计待入账</span>
-            <span class="s-val highlight">¥{{ Number(cashflowSummary.projected_total || 0).toFixed(2) }}</span>
+            <span class="s-val highlight mf-amount-mask">¥{{ Number(cashflowSummary.projected_total || 0).toFixed(2) }}</span>
           </div>
         </div>
       </div>

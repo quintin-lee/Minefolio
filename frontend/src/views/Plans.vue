@@ -44,7 +44,7 @@
         <!-- 定投计划总览指标 -->
         <el-row :gutter="16" class="summary-cards">
           <el-col :xs="12" :sm="12" :lg="6">
-            <SummaryCard label="活跃定投计划" :value="`${activePlanCount} 个`" :type="activePlanCount > 0 ? 'highlight' : 'neutral'" />
+            <SummaryCard label="活跃定投计划" :value="`${activePlanCount} 个`" :type="activePlanCount > 0 ? 'highlight' : 'neutral'" :maskable="false" />
           </el-col>
           <el-col :xs="12" :sm="12" :lg="6">
             <SummaryCard label="累计定投总投入" :value="`¥${formatNumber(totalDcaInvested)}`" :type="totalDcaInvested > 0 ? 'asset' : 'neutral'" />
@@ -217,7 +217,7 @@
         </el-table-column>
         <el-table-column label="预计金额" width="110" align="right">
           <template #default="{ row }">
-            <strong style="color: var(--mf-gain);">¥{{ formatNumber(row.expected_amount) }}</strong>
+            <strong class="mf-amount-mask" style="color: var(--mf-gain);">¥{{ formatNumber(row.expected_amount) }}</strong>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="110" align="center">
@@ -260,17 +260,17 @@
         </el-table-column>
         <el-table-column label="买入金额" min-width="110" align="right">
           <template #default="{ row }">
-            <span>¥{{ formatNumber(row.actual_amount || row.planned_amount) }}</span>
+            <span class="mf-amount-mask">¥{{ formatNumber(row.actual_amount || row.planned_amount) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="成交净值" min-width="100" align="right">
           <template #default="{ row }">
-            <span>{{ row.executed_price ? Number(row.executed_price).toFixed(4) : '-' }}</span>
+            <span class="mf-amount-mask">{{ row.executed_price ? Number(row.executed_price).toFixed(4) : '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="买入份额" min-width="100" align="right">
           <template #default="{ row }">
-            <span>{{ row.executed_quantity ? Number(row.executed_quantity).toFixed(2) : '-' }}</span>
+            <span class="mf-amount-mask">{{ row.executed_quantity ? Number(row.executed_quantity).toFixed(2) : '-' }}</span>
           </template>
         </el-table-column>
       </el-table>

@@ -39,7 +39,7 @@
         </el-table-column>
         <el-table-column prop="balance_after" label="变动后余额" width="140" align="right">
           <template #default="{ row }">
-            <span class="mono-text">{{ formatCurrency(row.balance_after) }}</span>
+            <span class="mono-text mf-amount-mask">{{ formatCurrency(row.balance_after) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="source_type" label="来源" width="120">

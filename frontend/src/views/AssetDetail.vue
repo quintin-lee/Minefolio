@@ -78,9 +78,21 @@
         <el-table :data="assetDetail.transactions" size="small" max-height="400" style="width: 100%">
           <el-table-column prop="transaction_date" label="日期" width="104" />
           <el-table-column prop="transaction_type" label="类型" width="80" />
-          <el-table-column prop="quantity" label="数量" width="84" align="right" />
-          <el-table-column prop="price_per_unit" label="单价" width="88" align="right" />
-          <el-table-column prop="amount" label="金额" min-width="100" align="right" />
+          <el-table-column prop="quantity" label="数量" width="84" align="right">
+            <template #default="{ row }">
+              <span class="mf-amount-mask">{{ row.quantity ?? '—' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="price_per_unit" label="单价" width="88" align="right">
+            <template #default="{ row }">
+              <span class="mf-amount-mask">{{ row.price_per_unit ?? '—' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="amount" label="金额" min-width="100" align="right">
+            <template #default="{ row }">
+              <span class="mf-amount-mask">{{ formatCurrency(row.amount, row.currency || assetDetail?.currency) }}</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="note" label="备注" min-width="120" show-overflow-tooltip />
           <template #empty>
             <el-empty description="暂无交易流水" :image-size="64" />

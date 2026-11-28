@@ -176,7 +176,7 @@
             />
             <span v-if="positionOverview.total_pnl !== 0" class="total-pnl-inline">
               累计收益
-              <span :class="amountClass(positionOverview.total_pnl, 'gain-text', 'loss-text')">
+              <span :class="['mf-amount-mask', amountClass(positionOverview.total_pnl, 'gain-text', 'loss-text')]">
                 {{ positionOverview.total_pnl > 0 ? '+' : '' }}{{ formatCurrencyValue(positionOverview.total_pnl, 'CNY') }}
               </span>
             </span>

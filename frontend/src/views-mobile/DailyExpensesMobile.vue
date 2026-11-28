@@ -17,7 +17,7 @@
       </div>
       <div class="strip-col">
         <span class="strip-lbl">结余</span>
-        <span class="strip-val">{{ formatCurrency(month?.balance ?? ((month?.total_income ?? 0) - (month?.total_expense ?? 0))) }}</span>
+        <span class="strip-val mf-amount-mask">{{ formatCurrency(month?.balance ?? ((month?.total_income ?? 0) - (month?.total_expense ?? 0))) }}</span>
       </div>
     </div>
     <el-empty v-if="!loading && list.length === 0" description="暂无收支记录" :image-size="72">

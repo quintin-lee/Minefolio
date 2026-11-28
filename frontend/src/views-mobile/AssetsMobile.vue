@@ -39,8 +39,8 @@
             <el-button text type="danger" @click="removeAsset(a)">删除</el-button>
           </div>
           <div class="value-col">
-            <span class="value">{{ formatCurrency(a.current_value, a.currency) }}</span>
-            <span v-if="a.currency && a.currency !== 'CNY' && exchangeRates[a.currency]" class="cny-hint">
+            <span class="value mf-amount-mask">{{ formatCurrency(a.current_value, a.currency) }}</span>
+            <span v-if="a.currency && a.currency !== 'CNY' && exchangeRates[a.currency]" class="cny-hint mf-amount-mask">
               ≈ ¥{{ (Number(a.current_value) * (exchangeRates[a.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
             </span>
           </div>

@@ -96,7 +96,7 @@
           <template #default="{ row }">
             <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
               <span class="mf-mono">{{ formatCurrency(row.cost_basis, row.currency) }}</span>
-              <span v-if="row.quantity > 0" class="cny-converted-hint">
+              <span v-if="row.quantity > 0" class="cny-converted-hint mf-amount-mask">
                 单价 {{ (row.cost_basis / row.quantity).toFixed(4) }}
               </span>
             </div>
@@ -106,7 +106,7 @@
           <template #default="{ row }">
             <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
               <span class="mf-mono">{{ formatCurrency(row.current_value, row.currency) }}</span>
-              <span v-if="row.currency && row.currency !== 'CNY' && exchangeRates[row.currency]" class="cny-converted-hint">
+              <span v-if="row.currency && row.currency !== 'CNY' && exchangeRates[row.currency]" class="cny-converted-hint mf-amount-mask">
                 ≈ ¥{{ (Number(row.current_value) * (exchangeRates[row.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
               </span>
             </div>
@@ -114,7 +114,7 @@
         </el-table-column>
         <el-table-column label="浮动盈亏" width="120" align="right">
           <template #default="{ row }">
-            <span :class="pnlClass(row.floating_pnl)">{{ formatSigned(row.floating_pnl, row.currency) }}</span>
+            <span :class="['mf-amount-mask', pnlClass(row.floating_pnl)]">{{ formatSigned(row.floating_pnl, row.currency) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="盈亏率" width="100" align="right">
@@ -127,7 +127,7 @@
         </el-table-column>
         <el-table-column v-if="!isCompactTable" label="已实现盈亏" width="120" align="right">
           <template #default="{ row }">
-            <span :class="pnlClass(row.realized_pnl)">{{ formatSigned(row.realized_pnl, row.currency) }}</span>
+            <span :class="['mf-amount-mask', pnlClass(row.realized_pnl)]">{{ formatSigned(row.realized_pnl, row.currency) }}</span>
           </template>
         </el-table-column>
         <template #empty>

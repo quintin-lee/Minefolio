@@ -48,18 +48,18 @@
         </span>
       </div>
       <div class="card-row">
-        <span class="meta">份额 {{ h.quantity.toFixed(2) }}</span>
-        <span class="meta">成本 {{ formatCurrency(h.cost_basis, h.currency) }}</span>
+        <span class="meta">份额 <span class="mf-amount-mask">{{ h.quantity.toFixed(2) }}</span></span>
+        <span class="meta">成本 <span class="mf-amount-mask">{{ formatCurrency(h.cost_basis, h.currency) }}</span></span>
       </div>
 
       <div class="card-row">
         <div class="value-group">
-          <span class="value">{{ formatCurrency(h.current_value, h.currency) }}</span>
-          <span v-if="h.currency && h.currency !== 'CNY' && exchangeRates[h.currency]" class="cny-hint">
+          <span class="value mf-amount-mask">{{ formatCurrency(h.current_value, h.currency) }}</span>
+          <span v-if="h.currency && h.currency !== 'CNY' && exchangeRates[h.currency]" class="cny-hint mf-amount-mask">
             ≈ ¥{{ (Number(h.current_value) * (exchangeRates[h.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
           </span>
         </div>
-        <span :class="['pnl', pnlClass(h.floating_pnl)]">{{ formatSigned(h.floating_pnl, h.currency) }}  {{ (h.floating_pct >= 0 ? '↑' : '↓') }}{{ Math.abs(h.floating_pct).toFixed(2) }}%</span>
+        <span :class="['pnl', pnlClass(h.floating_pnl)]"><span class="mf-amount-mask">{{ formatSigned(h.floating_pnl, h.currency) }}</span>  {{ (h.floating_pct >= 0 ? '↑' : '↓') }}{{ Math.abs(h.floating_pct).toFixed(2) }}%</span>
       </div>
     </div>
   </div>

@@ -23,7 +23,7 @@
     <div class="mini-row">
       <div><span>收入</span><b class="income">{{ formatCurrency(month?.total_income ?? 0) }}</b></div>
       <div><span>支出</span><b class="expense">{{ formatCurrency(month?.total_expense ?? 0) }}</b></div>
-      <div><span>结余</span><b>{{ formatCurrency(month?.balance ?? 0) }}</b></div>
+      <div><span>结余</span><b class="mf-amount-mask">{{ formatCurrency(month?.balance ?? 0) }}</b></div>
     </div>
     <h3 class="section-title">最近记录</h3>
     <div v-if="recent.length === 0 && !loading" class="empty-state">暂无交易记录</div>

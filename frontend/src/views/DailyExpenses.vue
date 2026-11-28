@@ -166,10 +166,10 @@
         </el-form-item>
         <el-form-item label="关联资产" prop="asset_id">
           <el-select v-model="form.asset_id" placeholder="选择资产" style="width: 100%" filterable>
-            <el-option v-for="a in allAssets" :key="a.id" :label="`${assetLabel(a)}（${a.currency} ${Number(a.current_value).toFixed(2)}）`" :value="Number(a.id)">
+            <el-option v-for="a in allAssets" :key="a.id" :label="`${assetLabel(a)}（${maskAmountText(`${a.currency} ${Number(a.current_value).toFixed(2)}`)}）`" :value="Number(a.id)">
               <span>{{ assetLabel(a) }}</span>
               <el-tag v-if="a.asset_type === 'loan' || a.asset_type === 'credit_card' || a.asset_type === 'other_liability'" size="small" type="warning" effect="light" style="margin-left: 8px">负债</el-tag>
-              <span style="float: right; color: var(--mf-text-muted); font-size: 13px">{{ a.currency }} {{ Number(a.current_value).toFixed(2) }}</span>
+              <span class="mf-amount-mask" style="float: right; color: var(--mf-text-muted); font-size: 13px">{{ a.currency }} {{ Number(a.current_value).toFixed(2) }}</span>
             </el-option>
           </el-select>
         </el-form-item>
@@ -246,6 +246,7 @@ import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ReceiptScannerModal from '@/components/ReceiptScannerModal.vue'
 import { formatCurrency, localToday, localThisMonth, assetLabel } from '@/utils/format'
+import { maskAmountText } from '@/stores/display-settings'
 import { findCategoryPath, prepareCategoryTree, isIdInTree } from '@/utils/category-tree'
 import { useAsyncTaskProgress } from '@/composables/useAsyncTaskProgress'
 import { exportChartCsv } from '@/utils/chart-export'

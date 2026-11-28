@@ -101,7 +101,7 @@
                       </el-table-column>
                       <el-table-column prop="amount" label="金额" width="120" align="right">
                         <template #default="{ row }">
-                          <span class="mono-text">{{ formatCurrency(row.amount) }}</span>
+                          <span class="mono-text mf-amount-mask">{{ formatCurrency(row.amount) }}</span>
                         </template>
                       </el-table-column>
                       <el-table-column prop="pct" label="占比" width="100" align="right">
@@ -135,37 +135,37 @@
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">总收益</div>
-                      <div class="perf-value" :class="positiveAmountClass(perf?.total_gain, 'gain-text')">{{ formatCurrency(perf?.total_gain ?? 0) }}</div>
+                      <div class="perf-value mf-amount-mask" :class="positiveAmountClass(perf?.total_gain, 'gain-text')">{{ formatCurrency(perf?.total_gain ?? 0) }}</div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">总亏损</div>
-                      <div class="perf-value" :class="positiveAmountClass(perf?.total_loss, 'loss-text')">{{ formatCurrency(perf?.total_loss ?? 0) }}</div>
+                      <div class="perf-value mf-amount-mask" :class="positiveAmountClass(perf?.total_loss, 'loss-text')">{{ formatCurrency(perf?.total_loss ?? 0) }}</div>
                     </div>
                     <div class="perf-item highlight">
                       <div class="perf-label">净收益</div>
-                      <div class="perf-value" :class="amountClass(perf?.net_gain, 'gain-text', 'loss-text')">
+                      <div class="perf-value mf-amount-mask" :class="amountClass(perf?.net_gain, 'gain-text', 'loss-text')">
                         {{ formatCurrency(perf?.net_gain ?? 0) }}
                       </div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">已实现盈亏</div>
-                      <div class="perf-value" :class="amountClass(perf?.realized_pnl, 'gain-text', 'loss-text')">
+                      <div class="perf-value mf-amount-mask" :class="amountClass(perf?.realized_pnl, 'gain-text', 'loss-text')">
                         {{ formatCurrency(perf?.realized_pnl ?? 0) }}
                       </div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">浮动盈亏</div>
-                      <div class="perf-value" :class="amountClass(perf?.floating_pnl, 'gain-text', 'loss-text')">
+                      <div class="perf-value mf-amount-mask" :class="amountClass(perf?.floating_pnl, 'gain-text', 'loss-text')">
                         {{ formatCurrency(perf?.floating_pnl ?? 0) }}
                       </div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">持仓市值</div>
-                      <div class="perf-value" :class="positiveAmountClass(perf?.total_market_value, 'asset-text')">{{ formatCurrency(perf?.total_market_value ?? 0) }}</div>
+                      <div class="perf-value mf-amount-mask" :class="positiveAmountClass(perf?.total_market_value, 'asset-text')">{{ formatCurrency(perf?.total_market_value ?? 0) }}</div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">持仓成本</div>
-                      <div class="perf-value" :class="(perf?.total_cost_basis_remaining ?? 0) > 0 ? '' : 'zero-text'">{{ formatCurrency(perf?.total_cost_basis_remaining ?? 0) }}</div>
+                      <div class="perf-value mf-amount-mask" :class="(perf?.total_cost_basis_remaining ?? 0) > 0 ? '' : 'zero-text'">{{ formatCurrency(perf?.total_cost_basis_remaining ?? 0) }}</div>
                     </div>
                   </div>
                 </div>
@@ -216,15 +216,15 @@
                   <div class="asset-summary-list">
                     <div class="summary-item">
                       <span class="label">总资产</span>
-                      <span class="value" :class="positiveAmountClass(assetBreakdown?.total_assets, 'asset-text')">{{ formatCurrency(assetBreakdown?.total_assets ?? 0) }}</span>
+                      <span class="value mf-amount-mask" :class="positiveAmountClass(assetBreakdown?.total_assets, 'asset-text')">{{ formatCurrency(assetBreakdown?.total_assets ?? 0) }}</span>
                     </div>
                     <div class="summary-item">
                       <span class="label">总负债</span>
-                      <span class="value" :class="positiveAmountClass(Math.abs(assetBreakdown?.total_liabilities ?? 0), 'liability-text')">{{ formatCurrency(assetBreakdown?.total_liabilities ?? 0) }}</span>
+                      <span class="value mf-amount-mask" :class="positiveAmountClass(Math.abs(assetBreakdown?.total_liabilities ?? 0), 'liability-text')">{{ formatCurrency(assetBreakdown?.total_liabilities ?? 0) }}</span>
                     </div>
                     <div class="summary-item total">
                       <span class="label">净资产</span>
-                      <span class="value" :class="amountClass(assetBreakdown?.net_worth, 'asset-text', 'expense-text')">{{ formatCurrency(assetBreakdown?.net_worth ?? 0) }}</span>
+                      <span class="value mf-amount-mask" :class="amountClass(assetBreakdown?.net_worth, 'asset-text', 'expense-text')">{{ formatCurrency(assetBreakdown?.net_worth ?? 0) }}</span>
                     </div>
                   </div>
                 
@@ -291,10 +291,10 @@
                 <el-table-column prop="asset_name" label="资产名称" min-width="140" show-overflow-tooltip />
                 <el-table-column prop="currency" label="币种" width="80" align="center" />
                 <el-table-column prop="cost_basis_orig" label="原币成本" width="110" align="right">
-                  <template #default="{ row }">{{ Number(row.cost_basis_orig).toLocaleString() }}</template>
+                  <template #default="{ row }"><span class="mf-amount-mask">{{ Number(row.cost_basis_orig).toLocaleString() }}</span></template>
                 </el-table-column>
                 <el-table-column prop="current_value_orig" label="原币现值" width="110" align="right">
-                  <template #default="{ row }">{{ Number(row.current_value_orig).toLocaleString() }}</template>
+                  <template #default="{ row }"><span class="mf-amount-mask">{{ Number(row.current_value_orig).toLocaleString() }}</span></template>
                 </el-table-column>
                 <el-table-column prop="cost_fx_rate" label="买入汇率" width="100" align="right">
                   <template #default="{ row }">{{ Number(row.cost_fx_rate).toFixed(4) }}</template>
@@ -304,21 +304,21 @@
                 </el-table-column>
                 <el-table-column prop="asset_pnl_base" label="资产标的盈亏 (¥)" width="130" align="right">
                   <template #default="{ row }">
-                    <span :class="amountClass(row.asset_pnl_base, 'gain-text', 'loss-text')">
+                    <span :class="['mf-amount-mask', amountClass(row.asset_pnl_base, 'gain-text', 'loss-text')]">
                       {{ row.asset_pnl_base > 0 ? '+' : '' }}{{ Number(row.asset_pnl_base).toFixed(2) }}
                     </span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="fx_pnl_base" label="汇率波动损益 (¥)" width="130" align="right">
                   <template #default="{ row }">
-                    <span :class="amountClass(row.fx_pnl_base, 'gain-text', 'loss-text')">
+                    <span :class="['mf-amount-mask', amountClass(row.fx_pnl_base, 'gain-text', 'loss-text')]">
                       {{ row.fx_pnl_base > 0 ? '+' : '' }}{{ Number(row.fx_pnl_base).toFixed(2) }}
                     </span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="combined_pnl_base" label="综合总回报 (¥)" width="130" align="right">
                   <template #default="{ row }">
-                    <span :class="amountClass(row.combined_pnl_base, 'gain-text', 'loss-text')">
+                    <span :class="['mf-amount-mask', amountClass(row.combined_pnl_base, 'gain-text', 'loss-text')]">
                       {{ row.combined_pnl_base > 0 ? '+' : '' }}{{ Number(row.combined_pnl_base).toFixed(2) }}
                     </span>
                   </template>

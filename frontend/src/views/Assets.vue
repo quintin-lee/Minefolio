@@ -73,7 +73,7 @@
                   <el-tag size="small" effect="plain" class="symbol-tag">{{ a.symbol }}</el-tag>
                   <span v-if="a.last_sync_at" class="last-sync-time">同步于 {{ a.last_sync_at.slice(5, 16) }}</span>
                 </span>
-                <span v-if="hasInvestmentAssets && isInvestmentType(a.asset_type)" class="asset-sub-meta">
+                <span v-if="hasInvestmentAssets && isInvestmentType(a.asset_type)" class="asset-sub-meta mf-amount-mask">
                   {{ Number(a.quantity ?? 0).toFixed(2) }} 份 · 总成本 {{ formatCurrency(Number(a.cost_basis ?? 0), a.currency) }}<template v-if="Number(a.quantity ?? 0) > 0">（单价 {{ (Number(a.cost_basis ?? 0) / Number(a.quantity)).toFixed(4) }}）</template> · 净值 {{ Number(a.net_value ?? 0).toFixed(4) }}
                 </span>
               </div>
@@ -81,7 +81,7 @@
             <span class="asset-cat">{{ a.category_name }}</span>
             <div class="value-col">
               <span class="mono-amount">{{ formatCurrency(a.current_value, a.currency) }}</span>
-              <span v-if="a.currency && a.currency !== 'CNY' && exchangeRates[a.currency]" class="cny-converted-hint">
+              <span v-if="a.currency && a.currency !== 'CNY' && exchangeRates[a.currency]" class="cny-converted-hint mf-amount-mask">
                 ≈ ¥{{ (Number(a.current_value) * (exchangeRates[a.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
               </span>
             </div>
