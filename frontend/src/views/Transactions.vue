@@ -125,12 +125,17 @@
           </el-table-column>
           <el-table-column prop="amount" label="交易金额" width="134" align="right">
             <template #default="{ row }">
-              <span :class="['mono-amount', isIncomeType(row.transaction_type) ? 'income-text' : 'expense-text']">
-                {{ isIncomeType(row.transaction_type) ? '+' : '-' }}{{ formatCurrency(row.amount, row.currency) }}
-              </span>
+              <div class="amount-cell-stack">
+                <span :class="['mono-amount', isIncomeType(row.transaction_type) ? 'income-text' : 'expense-text']">
+                  {{ isIncomeType(row.transaction_type) ? '+' : '-' }}{{ formatCurrency(row.amount, row.currency) }}
+                </span>
+                <span v-if="isNarrowTable && (row.quantity > 0 || row.price_per_unit > 0)" class="trade-sub-hint font-mono">
+                  {{ formatCurrency(row.price_per_unit || 0, row.currency) }} × {{ row.quantity || 0 }}
+                </span>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="单价 × 数量" min-width="132" align="center">
+          <el-table-column v-if="!isNarrowTable" label="单价 × 数量" min-width="132" align="center">
             <template #default="{ row }">
               <div v-if="row.quantity > 0 || row.price_per_unit > 0" class="trade-detail font-mono">
                 <span class="price-tag">{{ formatCurrency(row.price_per_unit || 0, row.currency) }}</span>
@@ -568,14 +573,23 @@ const showFeeCol = computed(() => {
 })
 
 const COMPACT_TABLE_QUERY = '(max-width: 1440px)'
+const NARROW_TABLE_BREAKPOINT = 900
 const isCompactTable = ref(
   typeof window !== 'undefined' && typeof window.matchMedia === 'function'
     ? window.matchMedia(COMPACT_TABLE_QUERY).matches
     : false,
 )
+const isNarrowTable = ref(
+  typeof window !== 'undefined' ? window.innerWidth <= NARROW_TABLE_BREAKPOINT : false,
+)
 let compactMediaQuery: MediaQueryList | null = null
 const handleCompactTableChange = (e: MediaQueryListEvent) => {
   isCompactTable.value = e.matches
+}
+const handleNarrowViewportResize = () => {
+  if (typeof window !== 'undefined') {
+    isNarrowTable.value = window.innerWidth <= NARROW_TABLE_BREAKPOINT
+  }
 }
 
 const INVESTMENT_ASSET_TYPES = new Set(['stock', 'fund', 'bond', 'crypto'])
@@ -944,10 +958,14 @@ function handleBatchExport() {
 }
 
 onMounted(async () => {
-  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
-    compactMediaQuery = window.matchMedia(COMPACT_TABLE_QUERY)
-    isCompactTable.value = compactMediaQuery.matches
-    compactMediaQuery.addEventListener?.('change', handleCompactTableChange)
+  if (typeof window !== 'undefined') {
+    if (typeof window.matchMedia === 'function') {
+      compactMediaQuery = window.matchMedia(COMPACT_TABLE_QUERY)
+      isCompactTable.value = compactMediaQuery.matches
+      compactMediaQuery.addEventListener?.('change', handleCompactTableChange)
+    }
+    handleNarrowViewportResize()
+    window.addEventListener('resize', handleNarrowViewportResize)
   }
   try {
     await Promise.all([loadAssets(), loadCategories()])
@@ -962,6 +980,9 @@ onUnmounted(() => {
   activeImportReader = null
   compactMediaQuery?.removeEventListener?.('change', handleCompactTableChange)
   compactMediaQuery = null
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleNarrowViewportResize)
+  }
 })
 
 // ── Import / Export ──────────────────────────────────────────────────────────
@@ -1157,6 +1178,19 @@ async function handleImport() {
   color: var(--mf-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amount-cell-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+}
+
+.trade-sub-hint {
+  font-size: 11px;
+  color: var(--mf-text-muted);
   white-space: nowrap;
 }
 
@@ -1382,12 +1416,15 @@ async function handleImport() {
   .main-panel {
     overflow: visible;
   }
-  .filter-panel .premium-filters .el-form-item {
+  .filter-panel .premium-filters :deep(.el-form-item) {
     width: 100%;
     margin-right: 0;
     margin-bottom: 12px;
   }
-  .filter-select,
+  .filter-panel :deep(.filter-select),
+  .filter-panel :deep(.el-cascader),
+  .filter-panel :deep(.el-select),
+  .filter-panel :deep(.el-date-editor),
   .filter-date.el-date-editor--daterange {
     width: 100% !important;
     max-width: 100%;

@@ -17,9 +17,9 @@
       </template>
     </PageHeader>
 
-    <el-row :gutter="16">
+    <el-row :gutter="16" class="daily-content-row">
       <!-- 左侧：记账列表 -->
-      <el-col :xs="24" :lg="16">
+      <el-col :xs="24" :lg="16" class="daily-main-col">
         <div class="main-panel">
           <div class="filter-panel">
             <el-form :inline="true" class="premium-filters">
@@ -53,26 +53,35 @@
 
           <div class="table-container">
             <el-table ref="tableRef" v-loading="loading" :data="expenses" class="premium-table stream-table" row-class-name="premium-row" header-cell-class-name="premium-header" @selection-change="handleSelectionChange">
-              <el-table-column type="selection" width="45" align="center" />
+              <el-table-column type="selection" width="42" align="center" />
               <el-table-column prop="expense_date" label="日期" width="98" />
-              <el-table-column prop="asset_name" label="关联资产" min-width="110" show-overflow-tooltip />
-              <el-table-column prop="category_name" label="分类" min-width="96" show-overflow-tooltip />
-              <el-table-column prop="expense_type" label="类型" width="70">
+              <el-table-column v-if="!isNarrowTable" prop="asset_name" label="关联资产" min-width="104" show-overflow-tooltip />
+              <el-table-column prop="category_name" label="分类" min-width="112" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <div class="category-cell-stack">
+                    <span class="category-main-name">{{ row.category_name }}</span>
+                    <span v-if="isCompactTable && (row.note || (isNarrowTable && row.asset_name))" class="category-sub-hint">
+                      {{ [isNarrowTable ? row.asset_name : '', row.note].filter(Boolean).join(' · ') }}
+                    </span>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="expense_type" label="类型" width="84">
                 <template #default="{ row }">
                   <el-tag :type="row.expense_type === 'income' ? 'success' : 'danger'" effect="light" class="type-badge" round>
                     {{ row.expense_type === 'income' ? '收入' : '支出' }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="amount" label="金额" min-width="120" align="right">
+              <el-table-column prop="amount" label="金额" min-width="112" align="right">
                 <template #default="{ row }">
                   <span :class="['mono-amount', row.expense_type === 'income' ? 'income-text' : 'expense-text']">
                     {{ row.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(row.amount) }}
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column prop="note" label="备注" min-width="110" show-overflow-tooltip />
-              <el-table-column label="标签" min-width="96">
+              <el-table-column v-if="!isCompactTable" prop="note" label="备注" min-width="110" show-overflow-tooltip />
+              <el-table-column v-if="!isCompactTable" label="标签" min-width="96">
                 <template #default="{ row }">
                   <div class="tag-list">
                     <el-tag v-for="tag in normalizeTags((row as any).tags)" :key="tag.id || tag.name" :color="tag.color" size="small" effect="dark" class="custom-tag">
@@ -81,7 +90,7 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="108" align="center" fixed="right">
+              <el-table-column label="操作" width="104" align="center" fixed="right">
                 <template #default="{ row }">
                   <div class="action-buttons">
                     <el-button link type="primary" @click="openDialog(row as any)">编辑</el-button>
@@ -103,12 +112,12 @@
       </el-col>
 
       <!-- 右侧：月度图表 -->
-      <el-col :xs="24" :lg="8">
+      <el-col :xs="24" :lg="8" class="daily-charts-col">
         <div class="chart-panel">
           <h3 class="panel-title">月度收支趋势</h3>
           <MonthlyChart :data="monthSummary" />
         </div>
-        <div class="chart-panel" style="margin-top: 24px">
+        <div class="chart-panel">
           <h3 class="panel-title">分类占比</h3>
           <ExpenseCategoryPie :data="monthSummary?.by_category ?? []" />
         </div>
@@ -255,6 +264,27 @@ const receiptScanVisible = ref(false)
 const tableRef = ref()
 const selectedExpenses = ref<DailyExpense[]>([])
 const isBatchDeleting = ref(false)
+
+const COMPACT_TABLE_QUERY = '(max-width: 1500px)'
+const NARROW_TABLE_QUERY = '(max-width: 900px)'
+const isCompactTable = ref(
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(COMPACT_TABLE_QUERY).matches
+    : false,
+)
+const isNarrowTable = ref(
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(NARROW_TABLE_QUERY).matches
+    : false,
+)
+let compactMediaQuery: MediaQueryList | null = null
+let narrowMediaQuery: MediaQueryList | null = null
+const handleCompactTableChange = (e: MediaQueryListEvent) => {
+  isCompactTable.value = e.matches
+}
+const handleNarrowTableChange = (e: MediaQueryListEvent) => {
+  isNarrowTable.value = e.matches
+}
 
 const form = reactive({ expense_type: 'expense' as 'income' | 'expense', category_id: null as number | null, asset_id: null as number | null, amount: 0, expense_date: '', note: '', tags: [] as Tag[], _catPath: [] as number[] })
 const rules = {
@@ -474,6 +504,15 @@ function handleBatchExport() {
 }
 
 onMounted(async () => {
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    compactMediaQuery = window.matchMedia(COMPACT_TABLE_QUERY)
+    isCompactTable.value = compactMediaQuery.matches
+    compactMediaQuery.addEventListener?.('change', handleCompactTableChange)
+
+    narrowMediaQuery = window.matchMedia(NARROW_TABLE_QUERY)
+    isNarrowTable.value = narrowMediaQuery.matches
+    narrowMediaQuery.addEventListener?.('change', handleNarrowTableChange)
+  }
   try {
     const [, assetRes] = await Promise.allSettled([
       categoryStore.loadCategories(),
@@ -515,6 +554,10 @@ let activeImportReader: FileReader | null = null
 onBeforeUnmount(() => {
   activeImportReader?.abort()
   activeImportReader = null
+  compactMediaQuery?.removeEventListener?.('change', handleCompactTableChange)
+  compactMediaQuery = null
+  narrowMediaQuery?.removeEventListener?.('change', handleNarrowTableChange)
+  narrowMediaQuery = null
 })
 
 function handleFileChange(raw: any) {
@@ -743,8 +786,35 @@ async function handleImport() {
 
 .action-buttons {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   justify-content: center;
+  white-space: nowrap;
+}
+
+.category-cell-stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.category-main-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.category-sub-hint {
+  font-size: 11px;
+  color: var(--mf-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daily-charts-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .chart-panel {
@@ -897,13 +967,26 @@ async function handleImport() {
   transform: translate(-50%, 20px);
 }
 
-@media (max-width: 1200px) {
-  .daily-expenses-page > .el-row > .el-col {
+@media (max-width: 1320px) {
+  .daily-content-row > .daily-main-col,
+  .daily-content-row > .daily-charts-col {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+  .daily-content-row > .daily-main-col {
     margin-bottom: 16px;
+  }
+  .daily-charts-col {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
   }
 }
 
 @media (max-width: 768px) {
+  .daily-charts-col {
+    grid-template-columns: 1fr;
+  }
   .filter-panel {
     position: sticky;
     top: 0;

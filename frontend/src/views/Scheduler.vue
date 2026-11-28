@@ -156,7 +156,7 @@
         row-class-name="premium-row"
         header-cell-class-name="premium-header"
       >
-        <el-table-column label="任务名称" min-width="180">
+        <el-table-column label="任务名称" :min-width="isNarrowTable ? 200 : 230">
           <template #default="{ row }">
             <div class="job-name-cell">
               <div class="job-icon-wrap" :class="row.is_builtin ? 'system_builtin' : row.job_type">
@@ -195,7 +195,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="调度频次 / 触发机制" min-width="140">
+        <el-table-column label="调度频次 / 触发机制" min-width="135">
           <template #default="{ row }">
             <div class="trigger-cell">
               <div class="trigger-main">
@@ -224,7 +224,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="最近执行" min-width="145">
+        <el-table-column v-if="!isNarrowTable" label="最近执行" width="136">
           <template #default="{ row }">
             <div v-if="row.last_run_at" class="last-run-cell">
               <div class="last-run-status-row">
@@ -282,7 +282,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="状态" width="72" align="center">
+        <el-table-column label="状态" width="68" align="center">
           <template #default="{ row }">
             <el-switch
               :model-value="Boolean(row.enabled)"
@@ -292,7 +292,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="152" fixed="right">
+        <el-table-column label="操作" width="144" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
               <el-button
@@ -380,15 +380,25 @@ import ChannelConfigDialog from '@/components/scheduler/ChannelConfigDialog.vue'
 import JobDialog from '@/components/scheduler/JobDialog.vue'
 import JobLogDrawer from '@/components/scheduler/JobLogDrawer.vue'
 
-const COMPACT_TABLE_QUERY = '(max-width: 1024px)'
+const COMPACT_TABLE_QUERY = '(max-width: 1360px)'
+const NARROW_TABLE_QUERY = '(max-width: 900px)'
 const isCompactTable = ref(
   typeof window !== 'undefined' && typeof window.matchMedia === 'function'
     ? window.matchMedia(COMPACT_TABLE_QUERY).matches
     : false,
 )
+const isNarrowTable = ref(
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(NARROW_TABLE_QUERY).matches
+    : false,
+)
 let compactMediaQuery: MediaQueryList | null = null
+let narrowMediaQuery: MediaQueryList | null = null
 const handleCompactTableChange = (e: MediaQueryListEvent) => {
   isCompactTable.value = e.matches
+}
+const handleNarrowTableChange = (e: MediaQueryListEvent) => {
+  isNarrowTable.value = e.matches
 }
 
 const loading = ref(false)
@@ -679,6 +689,10 @@ onMounted(() => {
     compactMediaQuery = window.matchMedia(COMPACT_TABLE_QUERY)
     isCompactTable.value = compactMediaQuery.matches
     compactMediaQuery.addEventListener?.('change', handleCompactTableChange)
+
+    narrowMediaQuery = window.matchMedia(NARROW_TABLE_QUERY)
+    isNarrowTable.value = narrowMediaQuery.matches
+    narrowMediaQuery.addEventListener?.('change', handleNarrowTableChange)
   }
   refreshAll()
 })
@@ -687,6 +701,8 @@ onBeforeUnmount(() => {
   isUnmounted = true
   compactMediaQuery?.removeEventListener?.('change', handleCompactTableChange)
   compactMediaQuery = null
+  narrowMediaQuery?.removeEventListener?.('change', handleNarrowTableChange)
+  narrowMediaQuery = null
   if (runRefreshTimer) {
     clearTimeout(runRefreshTimer)
     runRefreshTimer = null
@@ -984,6 +1000,7 @@ onBeforeUnmount(() => {
 
 .job-name-info {
   display: flex;
+  flex: 1;
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
@@ -992,7 +1009,8 @@ onBeforeUnmount(() => {
 .job-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -1096,7 +1114,7 @@ onBeforeUnmount(() => {
 .row-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: nowrap;
 }
 
@@ -1116,17 +1134,20 @@ onBeforeUnmount(() => {
 }
 
 /* Responsive Media Queries */
-@media (max-width: 1200px) {
-  .metrics-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 1024px) {
+@media (max-width: 1360px) {
   .type-filter {
     display: flex;
     flex-wrap: wrap;
     row-gap: 6px;
+  }
+  .type-filter :deep(.el-radio-button__inner) {
+    padding: 7px 11px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 

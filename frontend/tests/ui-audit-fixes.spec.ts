@@ -85,7 +85,7 @@ describe('UI audit & responsive layout fixes', () => {
     expect(indexCss).toMatch(/@media\s*\(max-width:\s*640px\)\s*\{[\s\S]*?el-table-fixed-column--right/s)
 
     const scheduler = read('src/views/Scheduler.vue')
-    expect(scheduler).toContain("const COMPACT_TABLE_QUERY = '(max-width: 1024px)'")
+    expect(scheduler).toContain("const COMPACT_TABLE_QUERY = '(max-width: 1360px)'")
   })
 
   it('fixes mobile KPI hero grid, removes size="small" buttons on mobile, and compacts PromptStarters', () => {
