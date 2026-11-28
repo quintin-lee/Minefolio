@@ -1,5 +1,6 @@
 #pragma once
 #include "common/market_types.h"
+#include <stddef.h>
 
 typedef struct quote_driver_s quote_driver_t;
 
@@ -15,3 +16,10 @@ quote_driver_t* get_eastmoney_driver(void);
 quote_driver_t* get_tencent_driver(void);
 quote_driver_t* get_crypto_driver(void);
 quote_driver_t* get_yahoo_driver(void);
+
+int  driver_tencent_parse_line(const char* line, market_quote_t* out_quote);
+void driver_crypto_normalize_pair(const char* symbol, char* out_pair, size_t out_cap);
+void driver_yahoo_encode_symbol(const char* symbol, char* out_buf, size_t out_cap);
+int  driver_yahoo_parse_chart_json(const char*     body,
+                                   const char*     fallback_symbol,
+                                   market_quote_t* out_quote);

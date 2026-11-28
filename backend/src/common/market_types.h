@@ -20,9 +20,16 @@ typedef struct {
     char   name[128];      /**< 标的名称/公司简称 */
     char   source[32];     /**< 行情数据来源通道（如 "sina", "tencent", "alphavantage" 等） */
     double current_price;  /**< 最新成交价 */
+    double change_amount;  /**< 当日涨跌额 */
     double change_percent; /**< 当日涨跌幅百分比（如 2.35 表示 +2.35%） */
+    double open_price;     /**< 当日开盘价 */
+    double high_price;     /**< 当日最高价 */
+    double low_price;      /**< 当日最低价 */
+    double prev_close;     /**< 昨收价 */
     char   currency[16];   /**< 标的计价货币代码（如 "CNY", "USD", "HKD"） */
     char   quote_time[32]; /**< 行情报价产生或更新时间戳 */
+    double sparkline[12];  /**< 真实分时/近期点位序列 */
+    int    sparkline_count;/**< sparkline 有效点数 */
 } market_quote_t;
 
 /**

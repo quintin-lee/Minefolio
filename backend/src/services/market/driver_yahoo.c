@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 #include <time.h>
 
 static struct {
@@ -128,27 +129,44 @@ yahoo_search(const char* keyword, market_search_item_t* out_items, int max_items
     return found;
 }
 
-static int
-yahoo_fetch_single(const char* symbol, market_quote_t* out_quote)
+void
+driver_yahoo_encode_symbol(const char* symbol, char* out_buf, size_t out_cap)
 {
-    if (!symbol || !symbol[0] || !out_quote) {
-        return -1;
+    if (!out_buf || out_cap == 0) {
+        return;
     }
+    out_buf[0] = '\0';
+    if (!symbol) {
+        return;
+    }
+    static const char hex[] = "0123456789ABCDEF";
+    size_t            j = 0;
+    for (size_t i = 0; symbol[i] && j + 1 < out_cap; i++) {
+        unsigned char c = (unsigned char)symbol[i];
+        if (isalnum(c) || c == '.' || c == '_' || c == '-') {
+            out_buf[j++] = (char)c;
+        } else {
+            if (j + 3 >= out_cap) {
+                break;
+            }
+            out_buf[j++] = '%';
+            out_buf[j++] = hex[(c >> 4) & 0xF];
+            out_buf[j++] = hex[c & 0xF];
+        }
+    }
+    out_buf[j] = '\0';
+}
 
-    char url[512];
-    snprintf(url,
-             sizeof(url),
-             "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=1d",
-             symbol);
-
-    size_t len = 0;
-    char*  body = quote_engine_http_get(url, NULL, 3, &len);
-    if (!body || len == 0) {
+int
+driver_yahoo_parse_chart_json(const char*     body,
+                              const char*     fallback_symbol,
+                              market_quote_t* out_quote)
+{
+    if (!body || !out_quote) {
         return -1;
     }
 
     csilk_json_t* root = csilk_json_parse(body);
-    free(body);
     if (!root) {
         return -1;
     }
@@ -184,30 +202,144 @@ yahoo_fetch_single(const char* symbol, market_quote_t* out_quote)
     if (prev_close <= 0) {
         prev_close = db_get_num(meta, "previousClose");
     }
-    double change_pct = 0.0;
-    if (prev_close > 0) {
-        change_pct = ((price - prev_close) / prev_close) * 100.0;
+
+    double        change_pct = 0.0;
+    double        change_amt = 0.0;
+    csilk_json_t* pct_node = csilk_json_get(meta, "regularMarketChangePercent");
+    if (pct_node && !csilk_json_is_null(pct_node)) {
+        change_pct = db_get_num(meta, "regularMarketChangePercent");
+        double denom = 1.0 + change_pct / 100.0;
+        if (fabs(denom) > 1e-9) {
+            change_amt = price * (change_pct / 100.0) / denom;
+        }
+        if (prev_close <= 0 || fabs((price - prev_close) - change_amt) > fabs(price) * 0.005) {
+            prev_close = price - change_amt;
+        } else {
+            change_amt = price - prev_close;
+        }
+    } else if (prev_close > 0) {
+        change_amt = price - prev_close;
+        change_pct = (change_amt / prev_close) * 100.0;
+    }
+
+    double high_price = db_get_num(meta, "regularMarketDayHigh");
+    double low_price = db_get_num(meta, "regularMarketDayLow");
+    double open_price = 0.0;
+
+    double spark_raw[256];
+    int    spark_raw_cnt = 0;
+
+    csilk_json_t* indicators = csilk_json_get(item0, "indicators");
+    csilk_json_t* quotes = indicators ? csilk_json_get_array(indicators, "quote") : NULL;
+    csilk_json_t* q0 =
+        (quotes && csilk_json_is_array(quotes) && csilk_json_array_size(quotes) > 0)
+            ? csilk_json_array_get(quotes, 0)
+            : NULL;
+    if (q0) {
+        csilk_json_t* opens = csilk_json_get_array(q0, "open");
+        if (opens && csilk_json_is_array(opens)) {
+            size_t on = csilk_json_array_size(opens);
+            for (size_t i = 0; i < on; i++) {
+                csilk_json_t* vnode = csilk_json_array_get(opens, i);
+                if (vnode && !csilk_json_is_null(vnode)) {
+                    double v = csilk_json_as_double(vnode, 0.0);
+                    if (v > 0.0) {
+                        open_price = v;
+                        break;
+                    }
+                }
+            }
+        }
+
+        csilk_json_t* closes = csilk_json_get_array(q0, "close");
+        if (closes && csilk_json_is_array(closes)) {
+            size_t cn = csilk_json_array_size(closes);
+            for (size_t i = 0; i < cn && spark_raw_cnt < 256; i++) {
+                csilk_json_t* vnode = csilk_json_array_get(closes, i);
+                if (vnode && !csilk_json_is_null(vnode)) {
+                    double v = csilk_json_as_double(vnode, 0.0);
+                    if (v > 0.0) {
+                        spark_raw[spark_raw_cnt++] = v;
+                    }
+                }
+            }
+        }
     }
 
     const char* cur = csilk_json_get_string(meta, "currency");
     const char* sname = csilk_json_get_string(meta, "shortName");
     const char* sym = csilk_json_get_string(meta, "symbol");
+    double      reg_time = db_get_num(meta, "regularMarketTime");
 
     memset(out_quote, 0, sizeof(*out_quote));
-    strncpy(out_quote->symbol, sym ? sym : symbol, sizeof(out_quote->symbol) - 1);
-    strncpy(out_quote->name, sname ? sname : (sym ? sym : symbol), sizeof(out_quote->name) - 1);
+    strncpy(out_quote->symbol,
+            sym ? sym : (fallback_symbol ? fallback_symbol : ""),
+            sizeof(out_quote->symbol) - 1);
+    strncpy(out_quote->name,
+            sname ? sname : (sym ? sym : (fallback_symbol ? fallback_symbol : "")),
+            sizeof(out_quote->name) - 1);
     strncpy(out_quote->source, "yahoo", sizeof(out_quote->source) - 1);
     out_quote->current_price = price;
+    out_quote->change_amount = change_amt;
     out_quote->change_percent = change_pct;
+    out_quote->prev_close = prev_close;
+    out_quote->open_price = open_price > 0.0 ? open_price : prev_close;
+    out_quote->high_price = high_price;
+    out_quote->low_price = low_price;
     strncpy(out_quote->currency, cur ? cur : "USD", sizeof(out_quote->currency) - 1);
 
-    time_t    now = time(NULL);
+    if (spark_raw_cnt > 0) {
+        if (spark_raw_cnt <= 12) {
+            for (int i = 0; i < spark_raw_cnt; i++) {
+                out_quote->sparkline[i] = spark_raw[i];
+            }
+            out_quote->sparkline_count = spark_raw_cnt;
+        } else {
+            for (int i = 0; i < 12; i++) {
+                int idx = (i * (spark_raw_cnt - 1)) / 11;
+                out_quote->sparkline[i] = spark_raw[idx];
+            }
+            out_quote->sparkline_count = 12;
+        }
+    }
+
+    time_t    qt_ts = reg_time > 0.0 ? (time_t)reg_time : time(NULL);
     struct tm tm_now;
-    localtime_r(&now, &tm_now);
+    localtime_r(&qt_ts, &tm_now);
     strftime(out_quote->quote_time, sizeof(out_quote->quote_time), "%Y-%m-%d %H:%M:%S", &tm_now);
 
     csilk_json_free(root);
     return 0;
+}
+
+static int
+yahoo_fetch_single(const char* symbol, market_quote_t* out_quote)
+{
+    if (!symbol || !symbol[0] || !out_quote) {
+        return -1;
+    }
+
+    char encoded[192];
+    driver_yahoo_encode_symbol(symbol, encoded, sizeof(encoded));
+    if (!encoded[0]) {
+        return -1;
+    }
+
+    char url[512];
+    snprintf(url,
+             sizeof(url),
+             "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=30m&range=1d",
+             encoded);
+
+    size_t len = 0;
+    char*  body = quote_engine_http_get(url, NULL, 5, &len);
+    if (!body || len == 0) {
+        return -1;
+    }
+
+    int rc = driver_yahoo_parse_chart_json(body, symbol, out_quote);
+    free(body);
+    return rc;
 }
 
 static quote_driver_t g_yahoo_driver = {.name = "Yahoo Finance",

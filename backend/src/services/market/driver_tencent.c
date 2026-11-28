@@ -184,9 +184,32 @@ tencent_search(const char* keyword, market_search_item_t* out_items, int max_ite
 }
 
 static int
-parse_tencent_line(const char* line, market_quote_t* out_quote)
+split_by_tilde(char* buf, char** parts, int max_parts)
 {
-    /* Format stock: v_sh600519="1~贵州茅台~600519~1420.50~1415.00~1418.00~...~+1.52~..."; */
+    if (!buf || !parts || max_parts <= 0) {
+        return 0;
+    }
+    int   count = 0;
+    char* cur = buf;
+    while (count < max_parts) {
+        parts[count++] = cur;
+        char* sep = strchr(cur, '~');
+        if (!sep) {
+            break;
+        }
+        *sep = '\0';
+        cur = sep + 1;
+    }
+    return count;
+}
+
+int
+driver_tencent_parse_line(const char* line, market_quote_t* out_quote)
+{
+    if (!line || !out_quote) {
+        return -1;
+    }
+    /* Format stock: v_sh600519="1~贵州茅台~600519~1420.50~1415.00~1418.00~...~[empty at 29]~20261127161427~129.61~3.73~3610.72~3467.41~..."; */
     /* Format fund:  v_jj110011="110011~易方达精选~0.0000~0.0000~~4.2064~5.9964~-0.1638~2026-08-27~"; */
     const char* p1 = strchr(line, '"');
     const char* p2 = strrchr(line, '"');
@@ -196,8 +219,8 @@ parse_tencent_line(const char* line, market_quote_t* out_quote)
 
     bool is_fund_line = (strstr(line, "v_jj") != NULL);
 
-    char   buf[1024];
-    size_t content_len = p2 - (p1 + 1);
+    char   buf[2048];
+    size_t content_len = (size_t)(p2 - (p1 + 1));
     if (content_len >= sizeof(buf)) {
         content_len = sizeof(buf) - 1;
     }
@@ -205,13 +228,7 @@ parse_tencent_line(const char* line, market_quote_t* out_quote)
     buf[content_len] = '\0';
 
     char* parts[64] = {0};
-    int   count = 0;
-    char* saveptr = NULL;
-    char* token = strtok_r(buf, "~", &saveptr);
-    while (token && count < 64) {
-        parts[count++] = token;
-        token = strtok_r(NULL, "~", &saveptr);
-    }
+    int   count = split_by_tilde(buf, parts, 64);
 
     if (is_fund_line) {
         if (count < 6) {
@@ -219,12 +236,15 @@ parse_tencent_line(const char* line, market_quote_t* out_quote)
         }
         const char* code = parts[0];
         const char* raw_name = parts[1];
-        double      price = count > 5 ? atof(parts[4]) : 0.0; /* net value */
+        double      price = count > 5 ? atof(parts[5]) : 0.0; /* net value after empty field */
         if (price <= 0.0 && count > 6) {
-            price = atof(parts[5]);
+            price = atof(parts[6]);
         }
-        double      change_pct = count > 7 ? atof(parts[6]) : 0.0;
-        const char* date_time = count > 8 ? parts[7] : "";
+        if (price <= 0.0 && count > 4) {
+            price = atof(parts[4]);
+        }
+        double      change_pct = count > 7 ? atof(parts[7]) : 0.0;
+        const char* date_time = count > 8 ? parts[8] : "";
 
         memset(out_quote, 0, sizeof(*out_quote));
         strncpy(out_quote->symbol, code, sizeof(out_quote->symbol) - 1);
@@ -244,19 +264,53 @@ parse_tencent_line(const char* line, market_quote_t* out_quote)
     const char* raw_name = parts[1];
     const char* code = parts[2];
     double      price = atof(parts[3]);
-    double      change_pct = count > 32 ? atof(parts[32]) : 0.0;
+    double      prev_close = count > 4 ? atof(parts[4]) : 0.0;
+    double      open_price = count > 5 ? atof(parts[5]) : 0.0;
     const char* date_time = count > 30 ? parts[30] : "";
+    double      change_amt = count > 31 ? atof(parts[31]) : 0.0;
+    double      change_pct = count > 32 ? atof(parts[32]) : 0.0;
+    double      high_price = count > 33 ? atof(parts[33]) : 0.0;
+    double      low_price = count > 34 ? atof(parts[34]) : 0.0;
+
+    if (change_amt == 0.0 && prev_close > 0.0 && price > 0.0) {
+        change_amt = price - prev_close;
+    }
+    if (change_pct == 0.0 && prev_close > 0.0 && price > 0.0) {
+        change_pct = ((price - prev_close) / prev_close) * 100.0;
+    }
+
+    const char* source = "stock_cn";
+    const char* currency = "CNY";
+    if (strstr(line, "v_hk") != NULL) {
+        source = "stock_hk";
+        currency = "HKD";
+    } else if (strstr(line, "v_us") != NULL) {
+        source = "stock_us";
+        currency = "USD";
+    }
 
     memset(out_quote, 0, sizeof(*out_quote));
     strncpy(out_quote->symbol, code, sizeof(out_quote->symbol) - 1);
     gbk_to_utf8(raw_name, out_quote->name, sizeof(out_quote->name));
     out_quote->current_price = price;
+    out_quote->change_amount = change_amt;
     out_quote->change_percent = change_pct;
-    strncpy(out_quote->source, "stock_cn", sizeof(out_quote->source) - 1);
-    strncpy(out_quote->currency, "CNY", sizeof(out_quote->currency) - 1);
+    out_quote->prev_close = prev_close;
+    out_quote->open_price = open_price;
+    out_quote->high_price = high_price;
+    out_quote->low_price = low_price;
+    strncpy(out_quote->source, source, sizeof(out_quote->source) - 1);
+    strncpy(out_quote->currency, currency, sizeof(out_quote->currency) - 1);
 
-    if (date_time && strlen(date_time) >= 8) {
-        if (strlen(date_time) >= 14) {
+    if (date_time && date_time[0]) {
+        if (strchr(date_time, '/') != NULL) {
+            snprintf(out_quote->quote_time, sizeof(out_quote->quote_time), "%s", date_time);
+            for (char* q = out_quote->quote_time; *q; q++) {
+                if (*q == '/') {
+                    *q = '-';
+                }
+            }
+        } else if (strlen(date_time) >= 14 && isdigit((unsigned char)date_time[0])) {
             snprintf(out_quote->quote_time,
                      sizeof(out_quote->quote_time),
                      "%.4s-%.2s-%.2s %.2s:%.2s:%.2s",
@@ -293,7 +347,7 @@ tencent_fetch_single(const char* symbol, market_quote_t* out_quote)
         return -1;
     }
 
-    int res = parse_tencent_line(body, out_quote);
+    int res = driver_tencent_parse_line(body, out_quote);
     if (res == 0) {
         strncpy(out_quote->symbol, symbol, sizeof(out_quote->symbol) - 1);
     }
@@ -339,7 +393,7 @@ tencent_fetch_batch(const char** symbols, int count, market_quote_t* out_quotes,
         }
         if (*line) {
             market_quote_t q;
-            if (parse_tencent_line(line, &q) == 0) {
+            if (driver_tencent_parse_line(line, &q) == 0) {
                 out_quotes[parsed_count++] = q;
             }
         }
