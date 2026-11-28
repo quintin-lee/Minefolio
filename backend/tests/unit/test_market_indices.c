@@ -184,6 +184,8 @@ test_quote_engine_swr_concurrent_and_failed_refresh(void)
     }
     assert(fabs(btc_after - 100.0) < 1e-4);
 
+    csilk_db_pool_free(pool);
+    config_secret_clear_test_overrides();
     unlink(test_db);
     unlink(shm);
     unlink(wal);
@@ -352,6 +354,8 @@ test_failed_sync_never_overwrites_db_with_def_price(void)
     csilk_json_free(rows);
     assert(fabs(sh_price - 3606.49) < 1e-4);
 
+    csilk_db_pool_free(pool);
+    config_secret_clear_test_overrides();
     unlink(test_db);
     unlink(shm);
     unlink(wal);
