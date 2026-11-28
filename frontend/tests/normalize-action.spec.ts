@@ -61,4 +61,45 @@ describe('normalizeActionCard', () => {
     expect(normalized.data.type).toBe('income')
     expect(normalized.data.draft_token).toBe('token_nested_789')
   })
+
+  it('normalizes new proposal action types (create_category, create_tag, savings_goal, transaction)', () => {
+    const cat = normalizeActionCard({
+      action_type: 'create_category',
+      name: '宠物消费',
+      type: 'expense',
+      draft_token: 'tok_cat',
+    })
+    expect(cat.action_type).toBe('create_category')
+    expect(cat.data.name).toBe('宠物消费')
+    expect(cat.data.draft_token).toBe('tok_cat')
+
+    const tag = normalizeActionCard({
+      action_type: 'create_tag',
+      name: '出差报销',
+      color: '#10b981',
+      draft_token: 'tok_tag',
+    })
+    expect(tag.action_type).toBe('create_tag')
+    expect(tag.data.name).toBe('出差报销')
+
+    const goal = normalizeActionCard({
+      action_type: 'savings_goal',
+      name: '备用金',
+      target_amount: 50000,
+      draft_token: 'tok_goal',
+    })
+    expect(goal.action_type).toBe('savings_goal')
+    expect(goal.data.target_amount).toBe(50000)
+
+    const tx = normalizeActionCard({
+      action_type: 'transaction',
+      transaction_type: 'buy',
+      amount: 1000,
+      asset_id: 103,
+      draft_token: 'tok_tx',
+    })
+    expect(tx.action_type).toBe('transaction')
+    expect(tx.data.transaction_type).toBe('buy')
+    expect(tx.data.amount).toBe(1000)
+  })
 })
