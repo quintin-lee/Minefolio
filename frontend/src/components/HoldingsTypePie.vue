@@ -83,7 +83,7 @@ function ensureChart() {
 function attachResizeObserver() {
   resizeObserver?.disconnect()
   resizeObserver = null
-  if (!chartRef.value) return
+  if (!chartRef.value || typeof ResizeObserver === 'undefined') return
   resizeObserver = new ResizeObserver(() => {
     ensureChart()
     handleResize()

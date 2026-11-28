@@ -1,5 +1,20 @@
 <template>
   <div class="market-view-container">
+    <div v-if="mobileMode" class="mobile-market-nav">
+      <div class="mobile-segmented">
+        <button class="segmented-item" @click="$router.push('/m/assets')">{{ t('nav.assets') }}</button>
+        <button class="segmented-item" @click="$router.push('/m/holdings')">{{ t('nav.holdings') }}</button>
+        <button class="segmented-item active">{{ t('nav.market') }}</button>
+      </div>
+    </div>
+    <el-alert
+      v-if="mobileMode && !isOnline"
+      title="当前处于离线状态，市场行情与汇率需要网络连接"
+      type="warning"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 12px"
+    />
     <!-- Top Hub Header -->
     <PageHeader :title="t('nav.market')" class="market-header">
       <template #extra>
@@ -78,11 +93,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { useMarketStore } from '@/stores/market'
+import { isMobileMode } from '@/utils/http'
 import PageHeader from '@/components/PageHeader.vue'
 import FxSkeleton from '@/components/market/FxSkeleton.vue'
 import FxRateCards from '@/components/market/FxRateCards.vue'
@@ -97,8 +113,13 @@ const route = useRoute()
 const router = useRouter()
 const marketStore = useMarketStore()
 
+const mobileMode = isMobileMode()
+const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 const activeTab = ref<string>((route.query.tab as string) || 'rates')
 const editDialogRef = ref<InstanceType<typeof FxRateEditDialog> | null>(null)
+
+function handleOnline() { isOnline.value = true }
+function handleOffline() { isOnline.value = false }
 
 function handleTabChange(tabName: any) {
   router.replace({ query: { ...route.query, tab: tabName } })
@@ -114,7 +135,14 @@ async function handleSyncAll() {
 }
 
 onMounted(() => {
+  window.addEventListener('online', handleOnline)
+  window.addEventListener('offline', handleOffline)
   marketStore.init()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('online', handleOnline)
+  window.removeEventListener('offline', handleOffline)
 })
 </script>
 
@@ -174,9 +202,26 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
+.mobile-market-nav {
+  margin-bottom: 12px;
+}
+
 @media (max-width: 1024px) {
   .middle-split-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .market-header :deep(.header-actions) {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .base-currency-select {
+    width: 132px;
+  }
+  .sync-time {
+    width: 100%;
   }
 }
 </style>

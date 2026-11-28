@@ -25,6 +25,14 @@
       </template>
     </PageHeader>
 
+    <el-alert
+      v-if="!isOnline"
+      title="当前离线，财经早报需要网络连接"
+      type="warning"
+      :closable="false"
+      show-icon
+    />
+
     <!-- Reports Timeline -->
     <div v-loading="loading" class="reports-timeline">
       <div v-if="reports.length > 0">
@@ -119,6 +127,7 @@ import { listNewsReports, triggerNewsAnalysis, getNewsReportByDate } from '@/api
 import { t } from '@/utils/locale'
 import PageHeader from '@/components/PageHeader.vue'
 
+const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 const loading = ref(false)
 const triggering = ref(false)
 const currentPage = ref(1)
@@ -306,13 +315,20 @@ function stopPolling() {
   }
 }
 
+function handleOnline() { isOnline.value = true }
+function handleOffline() { isOnline.value = false }
+
 onMounted(() => {
   isUnmounted = false
+  window.addEventListener('online', handleOnline)
+  window.addEventListener('offline', handleOffline)
   loadReports()
 })
 
 onUnmounted(() => {
   isUnmounted = true
+  window.removeEventListener('online', handleOnline)
+  window.removeEventListener('offline', handleOffline)
   stopPolling()
 })
 </script>
@@ -466,6 +482,25 @@ onUnmounted(() => {
 .report-expand-hint {
   font-size: 12px;
   color: var(--el-text-color-placeholder);
+}
+
+@media (max-width: 768px) {
+  .report-card {
+    padding: 14px;
+  }
+  .report-date-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .model-hint {
+    margin-left: 0;
+    width: 100%;
+  }
+  .report-body {
+    padding: 12px;
+    overflow-x: auto;
+    max-height: none;
+  }
 }
 
 </style>
