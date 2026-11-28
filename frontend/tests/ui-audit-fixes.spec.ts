@@ -142,4 +142,54 @@ describe('UI audit & responsive layout fixes', () => {
     expect(read('src/views/AiTraces.vue')).toContain('v-if="total > 0"')
     expect(read('src/views/AuditLogs.vue')).toContain('v-if="total > 0"')
   })
+
+  it('enforces round-2 browser layout audit fixes across nginx, charts, views, and mobile', () => {
+    const dockerNginx = read('../nginx/minefolio.docker.conf')
+    const stdNginx = read('../nginx/minefolio.conf')
+    for (const conf of [dockerNginx, stdNginx]) {
+      expect(conf).toContain('if ($http_accept ~* "text/html")')
+      expect(conf).toContain('rewrite ^ /index.html last;')
+    }
+
+    const indexCss = read('src/styles/index.css')
+    expect(indexCss).toContain('[data-theme="dark"] .el-empty {')
+    expect(indexCss).toContain('.mobile-layout .mobile-top-bar .amount-toggle-btn')
+    expect(indexCss).toContain('.mobile-layout .mobile-segmented .segmented-item')
+
+    const dailyExpenses = read('src/views/DailyExpenses.vue')
+    expect(dailyExpenses).toContain("const COMPACT_TABLE_QUERY = '(max-width: 1500px)'")
+    expect(dailyExpenses).toContain('<el-table-column prop="expense_type" label="类型" width="84">')
+
+    const transactions = read('src/views/Transactions.vue')
+    expect(transactions).toContain('isNarrowTable')
+    expect(transactions).toContain('v-if="!isNarrowTable" label="单价 × 数量"')
+
+    const starters = read('src/components/PromptStarters.vue')
+    expect(starters).toContain('@media (max-height: 780px)')
+    expect(starters).toMatch(/@media\s*\(max-width:\s*640px\)\s*\{[\s\S]*?repeat\(2,\s*minmax\(0,\s*1fr\)\)/s)
+
+    for (const chartFile of [
+      'src/components/HoldingsTypePie.vue',
+      'src/components/HoldingsCostBar.vue',
+      'src/components/AssetPriceLine.vue',
+      'src/components/ExpenseCategoryPie.vue',
+      'src/components/MonthlyChart.vue',
+      'src/components/market/FxTrendChart.vue',
+    ]) {
+      expect(read(chartFile)).toContain('<el-empty')
+    }
+
+    const plans = read('src/views/Plans.vue')
+    expect(plans).toContain(':badge="`${totalDcaPnlPct > 0 ? \'+\' : \'\'}${totalDcaPnlPct.toFixed(2)}%`"')
+    expect(plans).toContain('v-if="!isNarrowTable" label="定投周期"')
+
+    const settings = read('src/views/Settings.vue')
+    expect(settings).toContain('.el-tabs__nav-wrap.is-left::after')
+
+    const assetsMobile = read('src/views-mobile/AssetsMobile.vue')
+    expect(assetsMobile.indexOf('class="fab-row"')).toBeLessThan(assetsMobile.indexOf('el-empty'))
+
+    const settingsMobile = read('src/views-mobile/SettingsMobile.vue')
+    expect(settingsMobile).toContain("t('nav.settings')")
+  })
 })

@@ -3,8 +3,9 @@ import { formatCurrency, formatSigned, formatDate, localToday, localThisMonth } 
 import i18n from '@/composables/useI18n'
 
 describe('format currency helpers', () => {
-  it('formats CNY by default', () => {
+  it('formats CNY by default including consistent minus prefix for negatives', () => {
     expect(formatCurrency(120.5)).toBe('¥120.50')
+    expect(formatCurrency(-116)).toBe('-¥116.00')
     expect(formatCurrency(0)).toBe('¥0.00')
     expect(formatCurrency(undefined as unknown as number)).toBe('¥0.00')
   })
