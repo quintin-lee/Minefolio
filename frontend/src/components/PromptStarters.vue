@@ -13,12 +13,12 @@
       <div v-if="summaryData" class="context-summary-capsule">
         <div class="capsule-item">
           <span class="capsule-label">净资产</span>
-          <span class="capsule-value net-worth">{{ formatCurrency(summaryData.net_worth) }}</span>
+          <span class="capsule-value net-worth mf-amount-mask">{{ formatCurrency(summaryData.net_worth) }}</span>
         </div>
         <div class="capsule-divider"></div>
         <div class="capsule-item">
           <span class="capsule-label">总资产</span>
-          <span class="capsule-value">{{ formatCurrency(summaryData.total_assets) }}</span>
+          <span class="capsule-value mf-amount-mask">{{ formatCurrency(summaryData.total_assets) }}</span>
         </div>
         <div class="capsule-divider"></div>
         <div class="capsule-item">
@@ -67,6 +67,7 @@ import { Icon } from '@iconify/vue'
 import { summaryApi } from '@/api/summary'
 import type { Summary } from '@/types'
 import { formatCurrency } from '@/utils/format'
+import { maskAmountText } from '@/stores/display-settings'
 
 defineEmits<{
   (e: 'select', prompt: string): void
@@ -167,7 +168,7 @@ const dynamicStarters = computed<StarterItem[]>(() => {
     list.push({
       icon: 'ph:shield-warning-bold',
       title: '负债健康度与还款建议',
-      desc: `当前负债率 ${debtRatio.value.toFixed(1)}% (总负债 ${formatCurrency(s.total_liabilities)})，诊断利息负担与提前还款`,
+      desc: `当前负债率 ${debtRatio.value.toFixed(1)}% (总负债 ${maskAmountText(formatCurrency(s.total_liabilities))})，诊断利息负担与提前还款`,
       tag: 'debt',
       tagLabel: '负债诊断',
       bg: 'rgba(239, 68, 68, 0.12)',
@@ -181,7 +182,7 @@ const dynamicStarters = computed<StarterItem[]>(() => {
     list.push({
       icon: 'ph:chart-pie-slice-bold',
       title: '全景资产配置与抗风险诊断',
-      desc: `基于当前净资产 ${formatCurrency(s.net_worth)}，测算资产分布韧性与流动性应急金`,
+      desc: `基于当前净资产 ${maskAmountText(formatCurrency(s.net_worth))}，测算资产分布韧性与流动性应急金`,
       tag: 'health',
       tagLabel: '资产诊断',
       bg: 'rgba(99, 102, 241, 0.12)',

@@ -90,10 +90,10 @@
 
         <div v-if="activeDetail.quantity || activeDetail.costBasis" class="meta-chips-row">
           <span v-if="activeDetail.quantity" class="meta-chip">
-            份额: {{ Number(activeDetail.quantity).toLocaleString() }}
+            份额: <span class="mf-amount-mask">{{ Number(activeDetail.quantity).toLocaleString() }}</span>
           </span>
           <span v-if="activeDetail.costBasis" class="meta-chip">
-            成本: {{ formatCurrency(activeDetail.costBasis) }}
+            成本: <span class="mf-amount-mask">{{ formatCurrency(activeDetail.costBasis) }}</span>
           </span>
         </div>
       </template>

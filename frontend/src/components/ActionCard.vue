@@ -72,7 +72,7 @@
               <el-option
                 v-for="asset in availableAssets"
                 :key="asset.id"
-                :label="`${assetLabel(asset)} (¥${Number(asset.current_value).toFixed(2)})`"
+                :label="`${assetLabel(asset)} (${maskAmountText('¥' + Number(asset.current_value).toFixed(2))})`"
                 :value="asset.id"
               />
             </el-select>
@@ -129,7 +129,7 @@
               <el-option
                 v-for="asset in availableAssets"
                 :key="asset.id"
-                :label="`${assetLabel(asset)} (¥${Number(asset.current_value).toFixed(2)})`"
+                :label="`${assetLabel(asset)} (${maskAmountText('¥' + Number(asset.current_value).toFixed(2))})`"
                 :value="asset.id"
               />
             </el-select>
@@ -147,7 +147,7 @@
               <el-option
                 v-for="asset in availableAssets"
                 :key="asset.id"
-                :label="`${assetLabel(asset)} (¥${Number(asset.current_value).toFixed(2)})`"
+                :label="`${assetLabel(asset)} (${maskAmountText('¥' + Number(asset.current_value).toFixed(2))})`"
                 :value="asset.id"
               />
             </el-select>
@@ -224,11 +224,11 @@
           </div>
           <div class="form-item">
             <label>目标金额</label>
-            <div class="readonly-field">¥{{ Number(actionData.data.target_amount || 0).toFixed(2) }}</div>
+            <div class="readonly-field mf-amount-mask">¥{{ Number(actionData.data.target_amount || 0).toFixed(2) }}</div>
           </div>
           <div class="form-item">
             <label>当前已攒</label>
-            <div class="readonly-field">¥{{ Number(actionData.data.current_amount || 0).toFixed(2) }}</div>
+            <div class="readonly-field mf-amount-mask">¥{{ Number(actionData.data.current_amount || 0).toFixed(2) }}</div>
           </div>
           <div class="form-item">
             <label>截止日期</label>
@@ -250,7 +250,7 @@
           </div>
           <div class="form-item">
             <label>交易金额</label>
-            <div class="readonly-field">¥{{ Number(actionData.data.amount || 0).toFixed(2) }}</div>
+            <div class="readonly-field mf-amount-mask">¥{{ Number(actionData.data.amount || 0).toFixed(2) }}</div>
           </div>
           <div class="form-item">
             <label>标的资产</label>
@@ -262,7 +262,7 @@
           </div>
           <div class="form-item" v-if="Number(actionData.data.quantity || 0) > 0">
             <label>成交份额 / 单价</label>
-            <div class="readonly-field">{{ actionData.data.quantity }} × ¥{{ Number(actionData.data.price || 0).toFixed(4) }}</div>
+            <div class="readonly-field mf-amount-mask">{{ actionData.data.quantity }} × ¥{{ Number(actionData.data.price || 0).toFixed(4) }}</div>
           </div>
           <div class="form-item">
             <label>交易日期</label>
@@ -318,6 +318,7 @@ import { confirmAction as confirmAiAction } from '@/api/ai'
 import { useCategoryStore } from '@/stores/category'
 import { useChatStore } from '@/stores/chat'
 import { localToday, assetLabel } from '@/utils/format'
+import { maskAmountText } from '@/stores/display-settings'
 import type { ActionType } from '@/utils/normalize-action'
 import type { Asset, Category } from '@/types'
 

@@ -18,7 +18,7 @@
         </div>
         <div class="item-info">
           <div class="item-title">{{ item.name }}</div>
-          <div v-if="item.subText" class="item-desc">{{ item.subText }}</div>
+          <div v-if="formatItemSubText(item)" class="item-desc">{{ formatItemSubText(item) }}</div>
         </div>
         <span class="item-tag" :class="item.type">{{ item.tag }}</span>
       </div>
@@ -35,11 +35,14 @@ import { Icon } from '@iconify/vue'
 import { accountsApi } from '@/api/accounts'
 import { assetsApi } from '@/api/assets'
 import { fetchAllPages } from '@/utils/pagination'
+import { maskAmountText } from '@/stores/display-settings'
 
 export interface MentionItem {
   id: string | number
   name: string
   subText?: string
+  currentValue?: number
+  accountName?: string
   type: 'account' | 'asset'
   icon: string
   tag: string
@@ -95,6 +98,8 @@ async function loadData() {
           id: a.id,
           name: a.name,
           subText: `估值 ¥${Number(a.current_value || 0).toLocaleString()} · ${a.account_name || '默认账户'}`,
+          currentValue: Number(a.current_value || 0),
+          accountName: a.account_name || '默认账户',
           type: 'asset',
           icon: getAssetIcon(a.asset_type),
           tag: a.category_name || '资产',
@@ -111,6 +116,14 @@ async function loadData() {
 onMounted(() => {
   loadData()
 })
+
+function formatItemSubText(item: MentionItem): string | undefined {
+  if (item.type === 'asset') {
+    const valText = maskAmountText(`¥${Number(item.currentValue || 0).toLocaleString()}`)
+    return `估值 ${valText} · ${item.accountName || '默认账户'}`
+  }
+  return item.subText
+}
 
 const filteredItems = computed(() => {
   const q = props.query.trim().toLowerCase()

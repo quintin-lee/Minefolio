@@ -36,7 +36,7 @@
             <span class="action-desc">{{ getActionDesc(action) }}</span>
           </div>
           <div
-            class="action-amount"
+            class="action-amount mf-amount-mask"
             :class="action.action_type === 'transfer' ? 'amount-transfer' : (action.data.type === 'income' ? 'amount-income' : 'amount-expense')"
           >
             {{ action.action_type === 'transfer' ? '' : (action.data.type === 'income' ? '+' : '-') }}¥{{ Number(action.data.amount).toFixed(2) }}
@@ -47,7 +47,7 @@
       <!-- Total Summary -->
       <div class="total-row">
         <span class="total-label">合计（净支出）</span>
-        <span class="total-amount">¥{{ netTotal.toFixed(2) }}</span>
+        <span class="total-amount mf-amount-mask">¥{{ netTotal.toFixed(2) }}</span>
       </div>
 
       <div v-if="actions[0]?.data.date" class="date-hint">

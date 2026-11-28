@@ -269,6 +269,7 @@ import { renderSafeMarkdown } from '@/utils/markdown'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import { Icon } from '@iconify/vue'
 import { useFinancialEntities } from '@/composables/useFinancialEntities'
+import { maskAmountText } from '@/stores/display-settings'
 import ActionCard from '@/components/ActionCard.vue'
 import { isSupportedActionType, normalizeActionCard } from '@/utils/normalize-action'
 import type { ActionType } from '@/utils/normalize-action'
@@ -554,12 +555,12 @@ function getToolSemanticSummary(name: string, argsStr?: string): string {
       return `查询资产: ${parsed.asset_name || `ID #${parsed.asset_id}`}`
     }
     if (name === 'propose_daily_expense') {
-      const amt = parsed.amount ? `¥${parsed.amount}` : ''
+      const amt = parsed.amount ? maskAmountText(`¥${parsed.amount}`) : ''
       const note = parsed.note || parsed.category_name || ''
       return `拟记账: ${amt} ${note}`.trim()
     }
     if (name === 'propose_transfer') {
-      const amt = parsed.amount ? `¥${parsed.amount}` : ''
+      const amt = parsed.amount ? maskAmountText(`¥${parsed.amount}`) : ''
       return `拟调拨资金: ${amt}`.trim()
     }
     if (name === 'propose_create_category' && parsed.name) {
@@ -572,7 +573,7 @@ function getToolSemanticSummary(name: string, argsStr?: string): string {
       return `拟设目标: ${parsed.name}`
     }
     if (name === 'propose_transaction' && parsed.transaction_type) {
-      const amt = parsed.amount ? `¥${parsed.amount}` : ''
+      const amt = parsed.amount ? maskAmountText(`¥${parsed.amount}`) : ''
       return `拟录交易(${parsed.transaction_type}): ${amt}`.trim()
     }
     if (name === 'get_budget_status' && parsed.month) {
@@ -582,10 +583,10 @@ function getToolSemanticSummary(name: string, argsStr?: string): string {
       return `汇率换算: ${parsed.from_currency || ''} ➔ ${parsed.to_currency || 'CNY'}`
     }
     if (name === 'calculate_compound_interest' && parsed.principal) {
-      return `复利测算: 本金 ¥${parsed.principal}`
+      return `复利测算: 本金 ${maskAmountText(`¥${parsed.principal}`)}`
     }
     if (name === 'calculate_loan_repayment' && parsed.principal) {
-      return `还款测算: 贷款 ¥${parsed.principal}`
+      return `还款测算: 贷款 ${maskAmountText(`¥${parsed.principal}`)}`
     }
     if (name === 'execute_workflow_step' && parsed.step_title) {
       return `步骤: ${parsed.step_title}`
