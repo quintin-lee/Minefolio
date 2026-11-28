@@ -1,5 +1,5 @@
 #include "services/ai/tools/web_search_tool.h"
-#include "services/ai/tools/schema.h"
+#include "services/ai/tools/tool_spec.h"
 #include "services/ai/runtime/loop.h"
 #include "domain/ai/rules.h"
 #include "common/db.h"
@@ -1042,55 +1042,44 @@ exec_fetch_webpage(const ai_tool_t* tool, const ai_tool_context_t* ctx, const cs
 /* 工具注册                                                                   */
 /* -------------------------------------------------------------------------- */
 
+static const ai_tool_spec_t s_web_search_tool_specs[] = {
+    {
+        .name = "web_search",
+        .description = "搜索互联网获取最新的财经市场资讯、宏观经济数据及通用知识。返回相关网页"
+                       "的标题、链接和摘要。",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_web_search,
+        .param_count = 2,
+        .params = {
+            AI_TOOL_PARAM_REQ("query",
+                              "string",
+                              "搜索关键词或短语，例如：'美联储 利率决议 2026' 或 '英伟达 财报 营收'"),
+            AI_TOOL_PARAM("num_results", "integer", "期望返回的结果条数，默认 5，范围 1-10"),
+        },
+    },
+    {
+        .name = "fetch_webpage",
+        .description = "抓取并深入阅读指定网页的正文详情，提取清洗后的纯文本/"
+                       "Markdown内容。当搜索结果摘要不足以回答用户问题时使用。",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_fetch_webpage,
+        .param_count = 2,
+        .params = {
+            AI_TOOL_PARAM_REQ("url",
+                              "string",
+                              "要深入阅读的目标网页完整 URL（必须以 http:// 或 https:// 开头）"),
+            AI_TOOL_PARAM("max_chars",
+                          "integer",
+                          "提取的最大正文字符数，默认 4000，上限 10000，防止上下文溢出"),
+        },
+    },
+};
+
 void
 ai_tool_web_search_register_all(void)
 {
-    /* 1. web_search */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s,
-                           "query",
-                           "string",
-                           "搜索关键词或短语，例如：'美联储 利率决议 2026' 或 '英伟达 财报 营收'");
-        ai_schema_add_prop(s, "num_results", "integer", "期望返回的结果条数，默认 5，范围 1-10");
-        ai_schema_add_required(s, "query");
-
-        ai_tool_t t = {
-            .name = "web_search",
-            .description = "搜索互联网获取最新的财经市场资讯、宏观经济数据及通用知识。返回相关网页"
-                           "的标题、链接和摘要。",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_web_search,
-        };
-        ai_tool_register(&t);
-    }
-
-    /* 2. fetch_webpage */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(
-            s, "url", "string", "要深入阅读的目标网页完整 URL（必须以 http:// 或 https:// 开头）");
-        ai_schema_add_prop(s,
-                           "max_chars",
-                           "integer",
-                           "提取的最大正文字符数，默认 4000，上限 10000，防止上下文溢出");
-        ai_schema_add_required(s, "url");
-
-        ai_tool_t t = {
-            .name = "fetch_webpage",
-            .description = "抓取并深入阅读指定网页的正文详情，提取清洗后的纯文本/"
-                           "Markdown内容。当搜索结果摘要不足以回答用户问题时使用。",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_fetch_webpage,
-        };
-        ai_tool_register(&t);
-    }
+    ai_tool_register_specs(s_web_search_tool_specs,
+                           sizeof(s_web_search_tool_specs) / sizeof(s_web_search_tool_specs[0]));
 }

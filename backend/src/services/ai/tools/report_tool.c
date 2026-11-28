@@ -1,5 +1,5 @@
 #include "services/ai/tools/report_tool.h"
-#include "services/ai/tools/schema.h"
+#include "services/ai/tools/tool_spec.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,45 +144,32 @@ ai_tool_parse_file_to_string(
     return out;
 }
 
+static const ai_tool_spec_t s_report_tool_specs[] = {
+    {
+        .name = "get_current_time",
+        .description = "获取当前系统服务器的标准时间、日期与时区信息",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_get_current_time,
+    },
+    {
+        .name = "calculate_date_range",
+        .description = "根据自然语义计算起止日期区间 (YYYY-MM-DD)",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_calculate_date_range,
+        .param_count = 1,
+        .params = {
+            AI_TOOL_PARAM_REQ("range_type",
+                              "string",
+                              "时间跨度：today, this_month, last_month, this_year, last_year"),
+        },
+    },
+};
+
 void
 ai_tool_report_register_all(void)
 {
-    /* 1. get_current_time */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-
-        ai_tool_t t = {
-            .name = "get_current_time",
-            .description = "获取当前系统服务器的标准时间、日期与时区信息",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_get_current_time,
-        };
-        ai_tool_register(&t);
-    }
-
-    /* 2. calculate_date_range */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s,
-                           "range_type",
-                           "string",
-                           "时间跨度：today, this_month, last_month, this_year, last_year");
-        ai_schema_add_required(s, "range_type");
-
-        ai_tool_t t = {
-            .name = "calculate_date_range",
-            .description = "根据自然语义计算起止日期区间 (YYYY-MM-DD)",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_calculate_date_range,
-        };
-        ai_tool_register(&t);
-    }
+    ai_tool_register_specs(s_report_tool_specs,
+                           sizeof(s_report_tool_specs) / sizeof(s_report_tool_specs[0]));
 }

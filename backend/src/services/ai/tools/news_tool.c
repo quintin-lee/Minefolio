@@ -8,7 +8,7 @@
  *   - 返回该用户对应日期的报告（市场概要 + 持仓影响 + 操作建议 + 风险提示）
  */
 #include "services/ai/tools/news_tool.h"
-#include "services/ai/tools/schema.h"
+#include "services/ai/tools/tool_spec.h"
 #include "services/ai/tools/registry.h"
 #include "common/db.h"
 #include <stdio.h>
@@ -106,27 +106,26 @@ exec_get_market_pulse(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
     return serialized; /* caller frees */
 }
 
+static const ai_tool_spec_t s_news_tool_specs[] = {
+    {
+        .name = "get_market_pulse",
+        .description = "读取用户最近若干天由 AI 自动生成的「每日市场脉搏」分析"
+                       "（市场概要、对持仓的影响、操作建议、风险提示）。当用户询问"
+                       "「今天的市场/新闻对我的持仓有什么影响」「最近市场怎么样」时调用。",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_get_market_pulse,
+        .param_count = 2,
+        .params = {
+            AI_TOOL_PARAM("date", "string", "指定报告日期 YYYY-MM-DD（可选；不填则按 days 取最近）"),
+            AI_TOOL_PARAM("days", "number", "读取最近 N 天的报告，默认 1，最大 14"),
+        },
+    },
+};
+
 void
 ai_tool_news_register_all(void)
 {
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(
-            s, "date", "string", "指定报告日期 YYYY-MM-DD（可选；不填则按 days 取最近）");
-        ai_schema_add_prop(s, "days", "number", "读取最近 N 天的报告，默认 1，最大 14");
-
-        ai_tool_t t = {
-            .name = "get_market_pulse",
-            .description = "读取用户最近若干天由 AI 自动生成的「每日市场脉搏」分析"
-                           "（市场概要、对持仓的影响、操作建议、风险提示）。当用户询问"
-                           "「今天的市场/新闻对我的持仓有什么影响」「最近市场怎么样」时调用。",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_get_market_pulse,
-        };
-        ai_tool_register(&t);
-    }
+    ai_tool_register_specs(s_news_tool_specs,
+                           sizeof(s_news_tool_specs) / sizeof(s_news_tool_specs[0]));
 }

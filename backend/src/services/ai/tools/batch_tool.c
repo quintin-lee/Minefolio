@@ -1,6 +1,7 @@
 #include "services/ai/tools/batch_tool.h"
 #include "services/ai/tools/registry.h"
-#include "services/ai/tools/schema.h"
+#include "services/ai/tools/tool_spec.h"
+#include "services/ai/tools/tool_helpers.h"
 #include "services/ai/policy/confirmation.h"
 #include "application/account/usecases.h"
 #include "application/transfer/usecases.h"
@@ -15,44 +16,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <ctype.h>
-
-static int
-str_icontains(const char* haystack, const char* needle)
-{
-    if (!haystack || !needle) {
-        return 0;
-    }
-    if (!needle[0]) {
-        return 1;
-    }
-    size_t hlen = strlen(haystack);
-    size_t nlen = strlen(needle);
-    if (nlen > hlen) {
-        return 0;
-    }
-    char h_small[256], n_small[256];
-    if (hlen < sizeof(h_small) && nlen < sizeof(n_small)) {
-        for (size_t i = 0; i < hlen; i++) {
-            h_small[i] = (char)tolower((unsigned char)haystack[i]);
-        }
-        h_small[hlen] = '\0';
-        for (size_t i = 0; i < nlen; i++) {
-            n_small[i] = (char)tolower((unsigned char)needle[i]);
-        }
-        n_small[nlen] = '\0';
-        return strstr(h_small, n_small) != NULL;
-    }
-    return strstr(haystack, needle) != NULL;
-}
 
 static void
 get_today_date(char* buf, size_t sz)
 {
-    time_t    now = time(NULL);
-    struct tm tm_now;
-    localtime_r(&now, &tm_now);
-    snprintf(buf, sz, "%04d-%02d-%02d", tm_now.tm_year + 1900, tm_now.tm_mon + 1, tm_now.tm_mday);
+    ai_tool_today_str(buf, sz);
 }
 
 static bool
@@ -101,7 +69,7 @@ resolve_asset(const csilk_json_t* assets,
         for (size_t i = 0; i < asz; i++) {
             const csilk_json_t* it = csilk_json_array_get(assets, i);
             const char*         n = csilk_json_get_string(it, "name");
-            if (n && str_icontains(n, provided_name)) {
+            if (n && ai_tool_str_icontains(n, provided_name)) {
                 if (out_id) {
                     *out_id = (int64_t)db_get_num(it, "id");
                 }
@@ -174,7 +142,7 @@ resolve_category(const csilk_json_t* cats,
         for (size_t i = 0; i < csz; i++) {
             const csilk_json_t* it = csilk_json_array_get(cats, i);
             const char*         n = csilk_json_get_string(it, "name");
-            if (n && str_icontains(n, provided_name)) {
+            if (n && ai_tool_str_icontains(n, provided_name)) {
                 if (out_id) {
                     *out_id = (int64_t)db_get_num(it, "id");
                 }
@@ -530,56 +498,57 @@ exec_propose_batch_actions(const ai_tool_t*         tool,
     return out_str;
 }
 
-void
-ai_tool_batch_register_all(void)
-{
-    static const char* s_batch_schema_json =
-        "{\n"
-        "  \"type\": \"object\",\n"
-        "  \"properties\": {\n"
-        "    \"actions\": {\n"
-        "      \"type\": \"array\",\n"
-        "      \"description\": \"拟执行的操作列表 (1~20 条)\",\n"
-        "      \"items\": {\n"
-        "        \"type\": \"object\",\n"
-        "        \"properties\": {\n"
-        "          \"action_type\": {\"type\": \"string\", \"enum\": [\"daily_expense\", "
-        "\"transfer\"]},\n"
-        "          \"amount\": {\"type\": \"number\"},\n"
-        "          \"type\": {\"type\": \"string\", \"enum\": [\"expense\", \"income\"]},\n"
-        "          \"category_id\": {\"type\": \"integer\"},\n"
-        "          \"category_name\": {\"type\": \"string\"},\n"
-        "          \"asset_id\": {\"type\": \"integer\"},\n"
-        "          \"asset_name\": {\"type\": \"string\"},\n"
-        "          \"from_asset_id\": {\"type\": \"integer\"},\n"
-        "          \"from_asset_name\": {\"type\": \"string\"},\n"
-        "          \"to_asset_id\": {\"type\": \"integer\"},\n"
-        "          \"to_asset_name\": {\"type\": \"string\"},\n"
-        "          \"date\": {\"type\": \"string\"},\n"
-        "          \"note\": {\"type\": \"string\"}\n"
-        "        },\n"
-        "        \"required\": [\"action_type\", \"amount\"]\n"
-        "      }\n"
-        "    }\n"
-        "  },\n"
-        "  \"required\": [\"actions\"]\n"
-        "}";
+static const char s_batch_schema_json[] =
+    "{\n"
+    "  \"type\": \"object\",\n"
+    "  \"properties\": {\n"
+    "    \"actions\": {\n"
+    "      \"type\": \"array\",\n"
+    "      \"description\": \"拟执行的操作列表 (1~20 条)\",\n"
+    "      \"items\": {\n"
+    "        \"type\": \"object\",\n"
+    "        \"properties\": {\n"
+    "          \"action_type\": {\"type\": \"string\", \"enum\": [\"daily_expense\", "
+    "\"transfer\"]},\n"
+    "          \"amount\": {\"type\": \"number\"},\n"
+    "          \"type\": {\"type\": \"string\", \"enum\": [\"expense\", \"income\"]},\n"
+    "          \"category_id\": {\"type\": \"integer\"},\n"
+    "          \"category_name\": {\"type\": \"string\"},\n"
+    "          \"asset_id\": {\"type\": \"integer\"},\n"
+    "          \"asset_name\": {\"type\": \"string\"},\n"
+    "          \"from_asset_id\": {\"type\": \"integer\"},\n"
+    "          \"from_asset_name\": {\"type\": \"string\"},\n"
+    "          \"to_asset_id\": {\"type\": \"integer\"},\n"
+    "          \"to_asset_name\": {\"type\": \"string\"},\n"
+    "          \"date\": {\"type\": \"string\"},\n"
+    "          \"note\": {\"type\": \"string\"}\n"
+    "        },\n"
+    "        \"required\": [\"action_type\", \"amount\"]\n"
+    "      }\n"
+    "    }\n"
+    "  },\n"
+    "  \"required\": [\"actions\"]\n"
+    "}";
 
-    csilk_json_t* s = csilk_json_parse(s_batch_schema_json);
-
-    ai_tool_t t = {
+static const ai_tool_spec_t s_batch_tool_specs[] = {
+    {
         .name = "propose_batch_actions",
         .description = "批量财务操作拟录入（支持支出、收入及调拨转账），"
                        "验证账户有效性并生成复合防篡改确认草案，返回待确认卡片数据。",
-        .parameters_schema = s,
         .permission = AI_PERM_WRITE,
         .risk = AI_RISK_MEDIUM,
         .is_mutation = true,
         .requires_id = true,
-        .validate = NULL,
+        .raw_schema_json = s_batch_schema_json,
         .execute = exec_propose_batch_actions,
-    };
-    ai_tool_register(&t);
+    },
+};
+
+void
+ai_tool_batch_register_all(void)
+{
+    ai_tool_register_specs(s_batch_tool_specs,
+                           sizeof(s_batch_tool_specs) / sizeof(s_batch_tool_specs[0]));
 }
 
 int

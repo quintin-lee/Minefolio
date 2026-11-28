@@ -1,6 +1,6 @@
 #include "services/ai/tools/skill_tool.h"
 #include "services/ai/tools/registry.h"
-#include "services/ai/tools/schema.h"
+#include "services/ai/tools/tool_spec.h"
 #include "infrastructure/repositories/skill_repo_impl.h"
 #include "application/skill/usecases.h"
 #include "common/db.h"
@@ -87,47 +87,34 @@ exec_list_skills(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csil
     return s;
 }
 
+static const ai_tool_spec_t s_skill_tool_specs[] = {
+    {
+        .name = "use_skill",
+        .description =
+            "加载并调用已启用的领域专属技能（Agent Skill），获取技能的规则指令或运算结果",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_use_skill,
+        .param_count = 2,
+        .params = {
+            AI_TOOL_PARAM_REQ("skill_name",
+                              "string",
+                              "要调用的技能名称（kebab-case，如 financial-health-auditor）"),
+            AI_TOOL_PARAM("arguments", "string", "传递给技能的可选参数或上下文 JSON 字符串"),
+        },
+    },
+    {
+        .name = "list_skills",
+        .description = "列出当前用户已启用的所有 AI 专属技能及其描述和分类",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_list_skills,
+    },
+};
+
 void
 ai_tool_skill_register_all(void)
 {
-    /* 1. use_skill */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s,
-                           "skill_name",
-                           "string",
-                           "要调用的技能名称（kebab-case，如 financial-health-auditor）");
-        ai_schema_add_prop(s, "arguments", "string", "传递给技能的可选参数或上下文 JSON 字符串");
-        ai_schema_add_required(s, "skill_name");
-
-        ai_tool_t t = {
-            .name = "use_skill",
-            .description =
-                "加载并调用已启用的领域专属技能（Agent Skill），获取技能的规则指令或运算结果",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_use_skill,
-        };
-        ai_tool_register(&t);
-    }
-
-    /* 2. list_skills */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-
-        ai_tool_t t = {
-            .name = "list_skills",
-            .description = "列出当前用户已启用的所有 AI 专属技能及其描述和分类",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_list_skills,
-        };
-        ai_tool_register(&t);
-    }
+    ai_tool_register_specs(s_skill_tool_specs,
+                           sizeof(s_skill_tool_specs) / sizeof(s_skill_tool_specs[0]));
 }

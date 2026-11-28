@@ -1,5 +1,6 @@
 #include "services/ai/tools/expense_tool.h"
-#include "services/ai/tools/schema.h"
+#include "services/ai/tools/tool_spec.h"
+#include "services/ai/tools/tool_helpers.h"
 #include "services/ai/policy/confirmation.h"
 #include "application/account/usecases.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
@@ -12,36 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <ctype.h>
-
-static int
-str_icontains(const char* haystack, const char* needle)
-{
-    if (!haystack || !needle) {
-        return 0;
-    }
-    if (!needle[0]) {
-        return 1;
-    }
-    size_t hlen = strlen(haystack);
-    size_t nlen = strlen(needle);
-    if (nlen > hlen) {
-        return 0;
-    }
-    char h_small[256], n_small[256];
-    if (hlen < sizeof(h_small) && nlen < sizeof(n_small)) {
-        for (size_t i = 0; i < hlen; i++) {
-            h_small[i] = (char)tolower((unsigned char)haystack[i]);
-        }
-        h_small[hlen] = '\0';
-        for (size_t i = 0; i < nlen; i++) {
-            n_small[i] = (char)tolower((unsigned char)needle[i]);
-        }
-        n_small[nlen] = '\0';
-        return strstr(h_small, n_small) != NULL;
-    }
-    return strstr(haystack, needle) != NULL;
-}
 
 static char*
 exec_get_daily_expenses(const ai_tool_t*         tool,
@@ -154,15 +125,7 @@ exec_propose_daily_expense(const ai_tool_t*         tool,
 
     char date_buf[32];
     if (!date || !date[0]) {
-        time_t    now = time(NULL);
-        struct tm tm_now;
-        localtime_r(&now, &tm_now);
-        snprintf(date_buf,
-                 sizeof(date_buf),
-                 "%04d-%02d-%02d",
-                 tm_now.tm_year + 1900,
-                 tm_now.tm_mon + 1,
-                 tm_now.tm_mday);
+        ai_tool_today_str(date_buf, sizeof(date_buf));
         date = date_buf;
     }
 
@@ -178,10 +141,10 @@ exec_propose_daily_expense(const ai_tool_t*         tool,
             const char*   name =
                 csilk_json_get_string(it, "name") ? csilk_json_get_string(it, "name") : "";
             int64_t id = (int64_t)db_get_num(it, "id");
-            if (i == 0 || (asset_name && asset_name[0] && str_icontains(name, asset_name))) {
+            if (i == 0 || (asset_name && asset_name[0] && ai_tool_str_icontains(name, asset_name))) {
                 matched_asset_id = id;
                 strncpy(matched_asset_name, name, sizeof(matched_asset_name) - 1);
-                if (asset_name && asset_name[0] && str_icontains(name, asset_name)) {
+                if (asset_name && asset_name[0] && ai_tool_str_icontains(name, asset_name)) {
                     break;
                 }
             }
@@ -199,10 +162,10 @@ exec_propose_daily_expense(const ai_tool_t*         tool,
             const char*   name =
                 csilk_json_get_string(it, "name") ? csilk_json_get_string(it, "name") : "";
             int64_t id = (int64_t)db_get_num(it, "id");
-            if (i == 0 || (cat_name && cat_name[0] && str_icontains(name, cat_name))) {
+            if (i == 0 || (cat_name && cat_name[0] && ai_tool_str_icontains(name, cat_name))) {
                 matched_cat_id = id;
                 strncpy(matched_cat_name, name, sizeof(matched_cat_name) - 1);
-                if (cat_name && cat_name[0] && str_icontains(name, cat_name)) {
+                if (cat_name && cat_name[0] && ai_tool_str_icontains(name, cat_name)) {
                     break;
                 }
             }
@@ -218,41 +181,19 @@ exec_propose_daily_expense(const ai_tool_t*         tool,
     csilk_json_add_number(proposed_args, "asset_id", (double)matched_asset_id);
     csilk_json_add_string(proposed_args, "note", note ? note : "");
 
-    char* draft_token = ai_confirmation_create_bound_token(ctx->user_id,
-                                                           ctx->session_id,
-                                                           "confirm_proposed_expense",
-                                                           proposed_args,
-                                                           AI_RISK_HIGH,
-                                                           300);
-    /* 供 iLink 短码通道原样复现 HMAC 参数哈希（避免结果脱敏/量化引起漂移）。 */
-    char* draft_args_json = csilk_json_serialize(proposed_args, NULL);
+    csilk_json_t* extra = csilk_json_object();
+    csilk_json_add_string(extra, "category_name", matched_cat_name);
+    csilk_json_add_string(extra, "asset_name", matched_asset_name);
+
+    char* out = ai_tool_propose_finalize(ctx,
+                                         "daily_expense",
+                                         "confirm_proposed_expense",
+                                         AI_RISK_HIGH,
+                                         proposed_args,
+                                         extra);
     csilk_json_free(proposed_args);
-
-    csilk_json_t* res = csilk_json_object();
-    csilk_json_add_string(res, "action_type", "daily_expense");
-    csilk_json_add_bool(res, "propose_success", true);
-    csilk_json_add_string(res, "type", type);
-    csilk_json_add_number(res, "amount", amount);
-    csilk_json_add_string(res, "date", date);
-    csilk_json_add_number(res, "category_id", (double)matched_cat_id);
-    csilk_json_add_string(res, "category_name", matched_cat_name);
-    csilk_json_add_number(res, "asset_id", (double)matched_asset_id);
-    csilk_json_add_string(res, "asset_name", matched_asset_name);
-    csilk_json_add_string(res, "note", note ? note : "");
-    csilk_json_add_string(res, "draft_token", draft_token ? draft_token : "");
-    if (draft_args_json) {
-        csilk_json_add_string(res, "draft_args_json", draft_args_json);
-        free(draft_args_json);
-    }
-
-    if (draft_token) {
-        free(draft_token);
-    }
-
-    size_t len = 0;
-    char*  s = csilk_json_serialize(res, &len);
-    csilk_json_free(res);
-    return s;
+    csilk_json_free(extra);
+    return out;
 }
 
 static char*
@@ -274,18 +215,14 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
     int64_t     category_id = (int64_t)db_get_num(args, "category_id");
     int64_t     asset_id = (int64_t)db_get_num(args, "asset_id");
     const char* note = args ? csilk_json_get_string(args, "note") : "";
-    const char* draft_token = args ? csilk_json_get_string(args, "draft_token") : "";
 
     if (amount <= 0.0) {
         return strdup("{\"error\":\"amount must be positive\"}");
     }
 
-    ai_confirmation_status_t st = ai_confirmation_verify_and_consume(
-        ctx->user_id, ctx->session_id, "confirm_proposed_expense", args, draft_token);
-    if (st != AI_CONFIRM_OK) {
-        char err_buf[256];
-        snprintf(err_buf, sizeof(err_buf), "{\"error\":\"%s\"}", ai_confirmation_strerror(st));
-        return strdup(err_buf);
+    char* verr = ai_tool_confirm_verify(ctx, "confirm_proposed_expense", args);
+    if (verr) {
+        return verr;
     }
 
     int64_t arg_lid = args ? db_get_int(args, "ledger_id") : 0;
@@ -389,101 +326,79 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
     return s;
 }
 
+static const ai_tool_spec_t s_expense_tool_specs[] = {
+    {
+        .name = "get_daily_expenses",
+        .description = "查询当前用户的日常消费与收入流水列表",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_get_daily_expenses,
+        .param_count = 5,
+        .params = {
+            AI_TOOL_PARAM("expense_type", "string", "筛选类型：expense 或 income"),
+            AI_TOOL_PARAM("start_date", "string", "起始日期 YYYY-MM-DD"),
+            AI_TOOL_PARAM("end_date", "string", "截止日期 YYYY-MM-DD"),
+            AI_TOOL_PARAM("page", "integer", "当前页码，默认 1"),
+            AI_TOOL_PARAM("page_size", "integer", "每页条数，默认 20"),
+        },
+    },
+    {
+        .name = "get_expense_by_category",
+        .description = "按分类汇总统计指定月份的日常消费支出分布",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_get_expense_by_category,
+        .param_count = 1,
+        .params = {
+            AI_TOOL_PARAM("month", "string", "月份前缀，如 2026-09"),
+        },
+    },
+    {
+        .name = "propose_daily_expense",
+        .description = "日常记账拟录入，匹配账户与分类生成防篡改确认草案，返回待确认卡片数据。"
+                       "成功后必须将返回的 draft_token/category_id/asset_id/amount/type/"
+                       "date/note 填入 ```action 卡片（action_type: daily_expense）展示给用户",
+        .permission = AI_PERM_WRITE,
+        .risk = AI_RISK_MEDIUM,
+        .is_mutation = true,
+        .requires_id = true,
+        .execute = exec_propose_daily_expense,
+        .param_count = 6,
+        .params = {
+            AI_TOOL_PARAM_REQ("amount", "number", "记账金额"),
+            AI_TOOL_PARAM("type", "string", "类型：expense 或 income，默认 expense"),
+            AI_TOOL_PARAM("category_name", "string", "消费分类名称（如 餐饮、购物、交通）"),
+            AI_TOOL_PARAM("asset_name", "string", "支付账户名称（如 微信零钱、招行储蓄卡）"),
+            AI_TOOL_PARAM("date", "string", "日期 YYYY-MM-DD，默认为今天"),
+            AI_TOOL_PARAM("note", "string", "备注说明"),
+        },
+    },
+    {
+        .name = "confirm_proposed_expense",
+        .description = "用户确认执行日常记账，验证确认令牌并原子入库与扣减账户余额",
+        .action_type = "daily_expense",
+        .permission = AI_PERM_WRITE,
+        .risk = AI_RISK_HIGH,
+        .is_mutation = true,
+        .requires_id = true,
+        .internal_only = true,
+        .execute = exec_confirm_proposed_expense,
+        .param_count = 7,
+        .params = {
+            AI_TOOL_PARAM_REQ("amount", "number", "记账金额"),
+            AI_TOOL_PARAM("type", "string", "类型：expense 或 income"),
+            AI_TOOL_PARAM("date", "string", "记账日期 YYYY-MM-DD"),
+            AI_TOOL_PARAM("category_id", "integer", "分类 ID"),
+            AI_TOOL_PARAM("asset_id", "integer", "支付账户 ID"),
+            AI_TOOL_PARAM("note", "string", "备注说明"),
+            AI_TOOL_PARAM_REQ("draft_token", "string", "防伪确认令牌"),
+        },
+    },
+};
+
 void
 ai_tool_expense_register_all(void)
 {
-    /* 1. get_daily_expenses */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s, "expense_type", "string", "筛选类型：expense 或 income");
-        ai_schema_add_prop(s, "start_date", "string", "起始日期 YYYY-MM-DD");
-        ai_schema_add_prop(s, "end_date", "string", "截止日期 YYYY-MM-DD");
-        ai_schema_add_prop(s, "page", "integer", "当前页码，默认 1");
-        ai_schema_add_prop(s, "page_size", "integer", "每页条数，默认 20");
-
-        ai_tool_t t = {
-            .name = "get_daily_expenses",
-            .description = "查询当前用户的日常消费与收入流水列表",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_get_daily_expenses,
-        };
-        ai_tool_register(&t);
-    }
-
-    /* 2. get_expense_by_category */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s, "month", "string", "月份前缀，如 2026-09");
-
-        ai_tool_t t = {
-            .name = "get_expense_by_category",
-            .description = "按分类汇总统计指定月份的日常消费支出分布",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_get_expense_by_category,
-        };
-        ai_tool_register(&t);
-    }
-
-    /* 3. propose_daily_expense */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s, "amount", "number", "记账金额");
-        ai_schema_add_prop(s, "type", "string", "类型：expense 或 income，默认 expense");
-        ai_schema_add_prop(s, "category_name", "string", "消费分类名称（如 餐饮、购物、交通）");
-        ai_schema_add_prop(s, "asset_name", "string", "支付账户名称（如 微信零钱、招行储蓄卡）");
-        ai_schema_add_prop(s, "date", "string", "日期 YYYY-MM-DD，默认为今天");
-        ai_schema_add_prop(s, "note", "string", "备注说明");
-        ai_schema_add_required(s, "amount");
-
-        ai_tool_t t = {
-            .name = "propose_daily_expense",
-            .description = "日常记账拟录入，匹配账户与分类生成防篡改确认草案，返回待确认卡片数据。"
-                           "成功后必须将返回的 draft_token/category_id/asset_id/amount/type/"
-                           "date/note 填入 ```action 卡片（action_type: daily_expense）展示给用户",
-            .parameters_schema = s,
-            .permission = AI_PERM_WRITE,
-            .risk = AI_RISK_MEDIUM,
-            .is_mutation = true,
-            .requires_id = true,
-            .validate = NULL,
-            .execute = exec_propose_daily_expense,
-        };
-        ai_tool_register(&t);
-    }
-
-    /* 4. confirm_proposed_expense */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s, "amount", "number", "记账金额");
-        ai_schema_add_prop(s, "type", "string", "类型：expense 或 income");
-        ai_schema_add_prop(s, "date", "string", "记账日期 YYYY-MM-DD");
-        ai_schema_add_prop(s, "category_id", "integer", "分类 ID");
-        ai_schema_add_prop(s, "asset_id", "integer", "支付账户 ID");
-        ai_schema_add_prop(s, "note", "string", "备注说明");
-        ai_schema_add_prop(s, "draft_token", "string", "防伪确认令牌");
-        ai_schema_add_required(s, "amount");
-        ai_schema_add_required(s, "draft_token");
-
-        ai_tool_t t = {
-            .name = "confirm_proposed_expense",
-            .description = "用户确认执行日常记账，验证确认令牌并原子入库与扣减账户余额",
-            .parameters_schema = s,
-            .permission = AI_PERM_WRITE,
-            .risk = AI_RISK_HIGH,
-            .is_mutation = true,
-            .requires_id = true,
-            .internal_only = true,
-            .validate = NULL,
-            .execute = exec_confirm_proposed_expense,
-        };
-        ai_tool_register(&t);
-    }
+    ai_tool_register_specs(s_expense_tool_specs,
+                           sizeof(s_expense_tool_specs) / sizeof(s_expense_tool_specs[0]));
 }

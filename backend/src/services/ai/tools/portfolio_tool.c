@@ -1,5 +1,6 @@
 #include "services/ai/tools/portfolio_tool.h"
-#include "services/ai/tools/schema.h"
+#include "services/ai/tools/tool_spec.h"
+#include "services/ai/tools/tool_helpers.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
 #include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
@@ -203,70 +204,47 @@ exec_calculate_loan_repayment(const ai_tool_t*         tool,
     return s;
 }
 
+static const ai_tool_spec_t s_portfolio_tool_specs[] = {
+    {
+        .name = "analyze_financial_health",
+        .description =
+            "全套核心财务健康体检诊断，计算备用金保障月数、净储蓄率、负债率与生息资产占比",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_analyze_financial_health,
+    },
+    {
+        .name = "calculate_compound_interest",
+        .description = "计算长期复利增值模型与定期定投终值预测明细",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_calculate_compound_interest,
+        .param_count = 4,
+        .params = {
+            AI_TOOL_PARAM_REQ("principal", "number", "初始本金"),
+            AI_TOOL_PARAM_REQ("annual_rate_pct", "number", "预期年化收益率百分比，如 8.0"),
+            AI_TOOL_PARAM("monthly_contribution", "number", "每月定投追加金额"),
+            AI_TOOL_PARAM("years", "integer", "投资年限"),
+        },
+    },
+    {
+        .name = "calculate_loan_repayment",
+        .description = "等额本息贷款月供测算器，计算月供金额、利息总支出与还款总成本",
+        .permission = AI_PERM_READ,
+        .risk = AI_RISK_LOW,
+        .execute = exec_calculate_loan_repayment,
+        .param_count = 3,
+        .params = {
+            AI_TOOL_PARAM_REQ("loan_amount", "number", "贷款本金总额"),
+            AI_TOOL_PARAM_REQ("annual_rate_pct", "number", "贷款年化利率，如 4.2"),
+            AI_TOOL_PARAM_REQ("months", "integer", "还款总期数（月）"),
+        },
+    },
+};
+
 void
 ai_tool_portfolio_register_all(void)
 {
-    /* 1. analyze_financial_health */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-
-        ai_tool_t t = {
-            .name = "analyze_financial_health",
-            .description =
-                "全套核心财务健康体检诊断，计算备用金保障月数、净储蓄率、负债率与生息资产占比",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_analyze_financial_health,
-        };
-        ai_tool_register(&t);
-    }
-
-    /* 2. calculate_compound_interest */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s, "principal", "number", "初始本金");
-        ai_schema_add_prop(s, "annual_rate_pct", "number", "预期年化收益率百分比，如 8.0");
-        ai_schema_add_prop(s, "monthly_contribution", "number", "每月定投追加金额");
-        ai_schema_add_prop(s, "years", "integer", "投资年限");
-        ai_schema_add_required(s, "principal");
-        ai_schema_add_required(s, "annual_rate_pct");
-
-        ai_tool_t t = {
-            .name = "calculate_compound_interest",
-            .description = "计算长期复利增值模型与定期定投终值预测明细",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_calculate_compound_interest,
-        };
-        ai_tool_register(&t);
-    }
-
-    /* 3. calculate_loan_repayment */
-    {
-        csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s, "loan_amount", "number", "贷款本金总额");
-        ai_schema_add_prop(s, "annual_rate_pct", "number", "贷款年化利率，如 4.2");
-        ai_schema_add_prop(s, "months", "integer", "还款总期数（月）");
-        ai_schema_add_required(s, "loan_amount");
-        ai_schema_add_required(s, "annual_rate_pct");
-        ai_schema_add_required(s, "months");
-
-        ai_tool_t t = {
-            .name = "calculate_loan_repayment",
-            .description = "等额本息贷款月供测算器，计算月供金额、利息总支出与还款总成本",
-            .parameters_schema = s,
-            .permission = AI_PERM_READ,
-            .risk = AI_RISK_LOW,
-            .is_mutation = false,
-            .validate = NULL,
-            .execute = exec_calculate_loan_repayment,
-        };
-        ai_tool_register(&t);
-    }
+    ai_tool_register_specs(s_portfolio_tool_specs,
+                           sizeof(s_portfolio_tool_specs) / sizeof(s_portfolio_tool_specs[0]));
 }
