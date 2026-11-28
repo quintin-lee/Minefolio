@@ -53,6 +53,7 @@ key_is_opaque(const char* k)
         "updated_at",
         "last_sync_at",
         "date",
+        "deadline",
         "expense_date",
         "transaction_date",
         "report_date",

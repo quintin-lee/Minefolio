@@ -57,10 +57,51 @@ ai_tool_validate_args(const csilk_json_t* schema,
     /* 2. Check property types & enums */
     const csilk_json_t* props = csilk_json_get(schema, "properties");
     if (props && csilk_json_is_object(props)) {
-        /* We can inspect provided arguments against property definitions */
-        const csilk_json_t* req_list = csilk_json_get(schema, "required");
-        size_t              req_count = req_list ? csilk_json_array_size(req_list) : 0;
-        (void)req_count;
+        size_t arg_cnt = csilk_json_object_size(args);
+        for (size_t i = 0; i < arg_cnt; i++) {
+            const char*         key = csilk_json_object_key(args, i);
+            const csilk_json_t* val = csilk_json_object_val(args, i);
+            if (!key || !val || csilk_json_is_null(val)) {
+                continue;
+            }
+            const csilk_json_t* pdef = csilk_json_get(props, key);
+            if (!pdef || !csilk_json_is_object(pdef)) {
+                continue;
+            }
+            const csilk_json_t* enum_arr = csilk_json_get(pdef, "enum");
+            if (enum_arr && csilk_json_is_array(enum_arr) && csilk_json_array_size(enum_arr) > 0) {
+                if (!csilk_json_is_string(val)) {
+                    if (err_buf && err_sz > 0) {
+                        snprintf(err_buf, err_sz, "Field '%s' must be one of enum strings", key);
+                    }
+                    return -1;
+                }
+                const char* sv = csilk_json_string_value(val);
+                if (!sv || !sv[0]) {
+                    continue;
+                }
+                bool   matched = false;
+                size_t en = csilk_json_array_size(enum_arr);
+                for (size_t j = 0; j < en; j++) {
+                    const csilk_json_t* ev = csilk_json_array_get(enum_arr, j);
+                    const char*         es = csilk_json_string_value(ev);
+                    if (es && strcmp(sv, es) == 0) {
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched) {
+                    if (err_buf && err_sz > 0) {
+                        snprintf(err_buf,
+                                 err_sz,
+                                 "Invalid enum value '%s' for field '%s'",
+                                 sv,
+                                 key);
+                    }
+                    return -1;
+                }
+            }
+        }
     }
 
     return 0;

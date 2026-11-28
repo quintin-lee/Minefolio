@@ -32,9 +32,12 @@ typedef char* (*ai_tool_execute_fn)(const ai_tool_t*         tool,
  * @struct ai_tool_s
  * @brief 统一 AI 工具模型定义
  */
+#define AI_TOOL_MAX_TOOLS 128
+
 struct ai_tool_s {
     const char*           name;              /**< 工具唯一标识名（如 "get_assets"） */
     const char*           description;       /**< 工具功能描述 */
+    const char*           action_type;       /**< 可选：confirm_* 工具绑定的 action_type */
     csilk_json_t*         parameters_schema; /**< 参数 JSON Schema */
     ai_permission_level_t permission;        /**< 权限要求等级 */
     ai_risk_level_t       risk;              /**< 风险等级 */
@@ -77,6 +80,11 @@ int ai_tool_unregister(const char* name);
  * @brief 根据名称查找工具
  */
 const ai_tool_t* ai_tool_find(const char* name);
+
+/**
+ * @brief 根据 action_type 查找对应的 internal_only 确认工具名称
+ */
+const char* ai_tool_find_confirm_tool_by_action(const char* action_type);
 
 /**
  * @brief 获取所有已注册工具列表

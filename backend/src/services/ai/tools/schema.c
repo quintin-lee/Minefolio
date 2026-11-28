@@ -42,11 +42,11 @@ ai_schema_add_prop(csilk_json_t* schema,
 }
 
 void
-ai_schema_add_prop_enum(csilk_json_t* schema,
-                        const char*   name,
-                        const char*   description,
-                        const char**  enum_values,
-                        size_t        enum_count)
+ai_schema_add_prop_enum(csilk_json_t*      schema,
+                        const char*        name,
+                        const char*        description,
+                        const char* const* enum_values,
+                        size_t             enum_count)
 {
     if (!schema || !name || !enum_values) {
         return;

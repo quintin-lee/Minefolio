@@ -26,11 +26,11 @@ void ai_schema_add_prop(csilk_json_t* schema,
 /**
  * @brief 向 Schema 添加枚举值字段描述
  */
-void ai_schema_add_prop_enum(csilk_json_t* schema,
-                             const char*   name,
-                             const char*   description,
-                             const char**  enum_values,
-                             size_t        enum_count);
+void ai_schema_add_prop_enum(csilk_json_t*      schema,
+                             const char*        name,
+                             const char*        description,
+                             const char* const* enum_values,
+                             size_t             enum_count);
 
 /**
  * @brief 向 Schema 添加必填字段列表

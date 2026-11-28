@@ -193,16 +193,17 @@ im_chat_task_fn(void*   pool,
 
     /* 工具白名单：只读集恒定可用；query+confirm 仅额外放行 propose_daily_expense。
        confirm_* 为 internal_only，这里永远不会暴露给模型。 */
-    csilk_ai_tool_t        tools[64];
+    csilk_ai_tool_t        tools[AI_TOOL_MAX_TOOLS];
     size_t                 ntools = 0;
     size_t                 ro_count = 0;
     const csilk_ai_tool_t* ro_tools = ai_tool_get_readonly_csilk_definitions(&ro_count);
-    for (size_t i = 0; i < ro_count && ntools < 64; i++) {
+    for (size_t i = 0; i < ro_count && ntools < AI_TOOL_MAX_TOOLS; i++) {
         tools[ntools++] = ro_tools[i];
     }
     if (can_book) {
         static const char* const write_names[] = {"propose_daily_expense"};
-        ntools += ai_tool_get_csilk_definitions_subset(write_names, 1, tools + ntools, 64 - ntools);
+        ntools += ai_tool_get_csilk_definitions_subset(
+            write_names, 1, tools + ntools, AI_TOOL_MAX_TOOLS - ntools);
     }
     rctx.tools = tools;
     rctx.tool_count = ntools;
