@@ -486,17 +486,17 @@ export async function fetchAiModels(data: {
 }
 
 /**
- * 用户确认执行 AI 拟录入的记账/转账动作
+ * 用户确认执行 AI 拟录入动作（记账/转账/创建分类/创建标签/储蓄目标/投资交易）
  * @route POST /api/ai/actions/confirm
- * @param payload.action_type daily_expense | transfer
+ * @param payload.action_type 动作类型
  * @param payload.draft_token 服务端 propose 工具签发的 HMAC 令牌
  * @returns 工具执行结果（{success:true,id,message} 或 {error}）
  */
 export async function confirmAction(payload: {
-  action_type: 'daily_expense' | 'transfer'
+  action_type: 'daily_expense' | 'transfer' | 'create_category' | 'create_tag' | 'savings_goal' | 'transaction'
   draft_token: string
   session_id?: number
-  amount: number
+  amount?: number
   type?: string
   date?: string
   category_id?: number
@@ -504,6 +504,7 @@ export async function confirmAction(payload: {
   from_asset_id?: number
   to_asset_id?: number
   note?: string
+  [key: string]: unknown
 }) {
   return http.post<{ success?: boolean; id?: number; message?: string; error?: string }>('/ai/actions/confirm', payload)
 }

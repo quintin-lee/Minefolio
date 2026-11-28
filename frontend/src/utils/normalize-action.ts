@@ -1,5 +1,26 @@
 import type { ProposedAction } from '@/components/ActionCard.vue'
 
+export type ActionType =
+  | 'daily_expense'
+  | 'transfer'
+  | 'create_category'
+  | 'create_tag'
+  | 'savings_goal'
+  | 'transaction'
+
+export const SUPPORTED_ACTION_TYPES: readonly ActionType[] = [
+  'daily_expense',
+  'transfer',
+  'create_category',
+  'create_tag',
+  'savings_goal',
+  'transaction',
+] as const
+
+export function isSupportedActionType(val: unknown): val is ActionType {
+  return typeof val === 'string' && (SUPPORTED_ACTION_TYPES as readonly string[]).includes(val)
+}
+
 /**
  * 将 LLM 输出的扁平 action 卡片 JSON 归一化为 ActionCard 期望的嵌套结构。
  *
@@ -8,9 +29,7 @@ import type { ProposedAction } from '@/components/ActionCard.vue'
  * 若已是嵌套格式则原样返回。
  */
 export function normalizeActionCard(raw: Record<string, unknown>): ProposedAction {
-  const actionType = (raw.action_type === 'daily_expense' || raw.action_type === 'transfer')
-    ? raw.action_type as 'daily_expense' | 'transfer'
-    : null
+  const actionType = isSupportedActionType(raw.action_type) ? raw.action_type : null
 
   if (!actionType) {
     return raw as unknown as ProposedAction

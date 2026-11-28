@@ -175,6 +175,105 @@
           </div>
         </div>
       </template>
+
+      <!-- Create Category Summary -->
+      <template v-else-if="actionData.action_type === 'create_category'">
+        <div class="form-grid">
+          <div class="form-item">
+            <label>分类名称</label>
+            <div class="readonly-field">{{ actionData.data.name || '—' }}</div>
+          </div>
+          <div class="form-item">
+            <label>分类类型</label>
+            <div class="readonly-field">{{ categoryTypeLabel }}</div>
+          </div>
+          <div class="form-item" v-if="actionData.data.currency">
+            <label>默认币种</label>
+            <div class="readonly-field">{{ actionData.data.currency }}</div>
+          </div>
+          <div class="form-item" v-if="actionData.data.parent_id">
+            <label>父分类 ID</label>
+            <div class="readonly-field">#{{ actionData.data.parent_id }}</div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Create Tag Summary -->
+      <template v-else-if="actionData.action_type === 'create_tag'">
+        <div class="form-grid">
+          <div class="form-item">
+            <label>标签名称</label>
+            <div class="readonly-field">{{ actionData.data.name || '—' }}</div>
+          </div>
+          <div class="form-item">
+            <label>标签颜色</label>
+            <div class="readonly-field tag-color-row">
+              <span class="color-dot" :style="{ backgroundColor: actionData.data.color || '#3b82f6' }" />
+              <span>{{ actionData.data.color || '#3b82f6' }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Savings Goal Summary -->
+      <template v-else-if="actionData.action_type === 'savings_goal'">
+        <div class="form-grid">
+          <div class="form-item">
+            <label>目标名称</label>
+            <div class="readonly-field">{{ actionData.data.name || '—' }}</div>
+          </div>
+          <div class="form-item">
+            <label>目标金额</label>
+            <div class="readonly-field">¥{{ Number(actionData.data.target_amount || 0).toFixed(2) }}</div>
+          </div>
+          <div class="form-item">
+            <label>当前已攒</label>
+            <div class="readonly-field">¥{{ Number(actionData.data.current_amount || 0).toFixed(2) }}</div>
+          </div>
+          <div class="form-item">
+            <label>截止日期</label>
+            <div class="readonly-field">{{ actionData.data.deadline || '未指定' }}</div>
+          </div>
+          <div class="form-item full-row" v-if="actionData.data.note">
+            <label>备注</label>
+            <div class="readonly-field">{{ actionData.data.note }}</div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Investment Transaction Summary -->
+      <template v-else-if="actionData.action_type === 'transaction'">
+        <div class="form-grid">
+          <div class="form-item">
+            <label>交易类型</label>
+            <div class="readonly-field">{{ actionData.data.transaction_type || '—' }}</div>
+          </div>
+          <div class="form-item">
+            <label>交易金额</label>
+            <div class="readonly-field">¥{{ Number(actionData.data.amount || 0).toFixed(2) }}</div>
+          </div>
+          <div class="form-item">
+            <label>标的资产</label>
+            <div class="readonly-field">{{ actionData.data.asset_name || `#${actionData.data.asset_id || 0}` }}</div>
+          </div>
+          <div class="form-item" v-if="actionData.data.linked_asset_id">
+            <label>关联资金账户</label>
+            <div class="readonly-field">{{ actionData.data.linked_asset_name || `#${actionData.data.linked_asset_id}` }}</div>
+          </div>
+          <div class="form-item" v-if="Number(actionData.data.quantity || 0) > 0">
+            <label>成交份额 / 单价</label>
+            <div class="readonly-field">{{ actionData.data.quantity }} × ¥{{ Number(actionData.data.price || 0).toFixed(4) }}</div>
+          </div>
+          <div class="form-item">
+            <label>交易日期</label>
+            <div class="readonly-field">{{ actionData.data.date || '—' }}</div>
+          </div>
+          <div class="form-item full-row" v-if="actionData.data.note">
+            <label>备注</label>
+            <div class="readonly-field">{{ actionData.data.note }}</div>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- Footer Actions -->
@@ -198,14 +297,14 @@
         class="confirm-btn"
       >
         <Icon icon="ph:lightning-fill" class="btn-icon" />
-        <span>确认记账入库</span>
+        <span>{{ confirmBtnLabel }}</span>
       </el-button>
     </div>
 
     <!-- Success Message -->
     <div class="card-success-banner" v-if="cardStatus === 'executed'">
       <Icon icon="ph:check-circle" class="success-icon" />
-      <span>已成功写入账单，关联资产账户余额已实时联动更新！</span>
+      <span>{{ successBannerText }}</span>
     </div>
   </div>
 </template>
@@ -219,14 +318,15 @@ import { confirmAction as confirmAiAction } from '@/api/ai'
 import { useCategoryStore } from '@/stores/category'
 import { useChatStore } from '@/stores/chat'
 import { localToday, assetLabel } from '@/utils/format'
+import type { ActionType } from '@/utils/normalize-action'
 import type { Asset, Category } from '@/types'
 
 export interface ProposedAction {
-  action_type: 'daily_expense' | 'transfer'
+  action_type: ActionType
   status?: 'proposed' | 'pending' | 'executed' | 'cancelled'
   data: {
-    type?: 'expense' | 'income'
-    amount: number
+    type?: 'expense' | 'income' | 'asset' | 'transaction'
+    amount?: number
     category_id?: number
     category_name?: string
     asset_id?: number
@@ -238,6 +338,23 @@ export interface ProposedAction {
     to_asset_id?: number
     to_asset_name?: string
     fee?: number
+    name?: string
+    color?: string
+    parent_id?: number
+    asset_type?: string
+    currency?: string
+    icon?: string
+    ledger_id?: number
+    goal_id?: number
+    target_amount?: number
+    current_amount?: number
+    deadline?: string
+    transaction_type?: string
+    linked_asset_id?: number
+    linked_asset_name?: string
+    quantity?: number
+    price?: number
+    draft_args_json?: string
     /** 服务端 propose 工具签发的 HMAC 令牌（300s TTL）。缺失 = 模型凭空捏造的卡片，不可落账 */
     draft_token?: string
   }
@@ -291,17 +408,83 @@ const draftToken = computed(() => props.actionData.data.draft_token || '')
 const isReadonly = computed(() => cardStatus.value !== 'pending')
 
 const headerTitle = computed(() => {
-  if (props.actionData.action_type === 'daily_expense') {
-    return form.type === 'income' ? '拟记日常收入' : '拟记日常支出'
+  switch (props.actionData.action_type) {
+    case 'daily_expense':
+      return form.type === 'income' ? '拟记日常收入' : '拟记日常支出'
+    case 'transfer':
+      return '拟记账户转账'
+    case 'create_category':
+      return '拟新建分类'
+    case 'create_tag':
+      return '拟新建标签'
+    case 'savings_goal':
+      return Number(props.actionData.data.goal_id || 0) > 0 ? '拟更新储蓄目标' : '拟新建储蓄目标'
+    case 'transaction':
+      return '拟录入资产交易'
+    default:
+      return '待确认操作'
   }
-  return '拟记账户转账'
 })
 
 const headerIcon = computed(() => {
-  if (props.actionData.action_type === 'daily_expense') {
-    return form.type === 'income' ? 'ph:arrow-fat-down-bold' : 'ph:shopping-bag-bold'
+  switch (props.actionData.action_type) {
+    case 'daily_expense':
+      return form.type === 'income' ? 'ph:arrow-fat-down-bold' : 'ph:shopping-bag-bold'
+    case 'transfer':
+      return 'ph:arrows-left-right-bold'
+    case 'create_category':
+      return 'ph:folder-plus-bold'
+    case 'create_tag':
+      return 'ph:tag-bold'
+    case 'savings_goal':
+      return 'ph:target-bold'
+    case 'transaction':
+      return 'ph:chart-line-up-bold'
+    default:
+      return 'ph:check-circle-bold'
   }
-  return 'ph:arrows-left-right-bold'
+})
+
+const categoryTypeLabel = computed(() => {
+  const t = String(props.actionData.data.type || 'expense')
+  if (t === 'expense') return '支出'
+  if (t === 'income') return '收入'
+  if (t === 'asset') return '资产'
+  if (t === 'transaction') return '交易'
+  return t
+})
+
+const confirmBtnLabel = computed(() => {
+  switch (props.actionData.action_type) {
+    case 'daily_expense':
+    case 'transfer':
+      return '确认记账入库'
+    case 'create_category':
+      return '确认创建分类'
+    case 'create_tag':
+      return '确认创建标签'
+    case 'savings_goal':
+      return '确认保存目标'
+    case 'transaction':
+      return '确认提交交易'
+    default:
+      return '确认执行'
+  }
+})
+
+const successBannerText = computed(() => {
+  switch (props.actionData.action_type) {
+    case 'create_category':
+      return '分类已创建并生效！'
+    case 'create_tag':
+      return '标签已创建并生效！'
+    case 'savings_goal':
+      return '储蓄目标已保存！'
+    case 'transaction':
+      return '交易已入库，资产持仓与余额已同步更新！'
+    default:
+      return '已成功写入账单，关联资产账户余额已实时联动更新！'
+  }
 })
 
 const availableCategories = computed<Category[]>(() => {
@@ -348,7 +531,12 @@ onMounted(async () => {
 
 async function handleConfirm() {
   if (loading.value) return
-  if (form.amount <= 0) {
+  if (
+    (props.actionData.action_type === 'daily_expense' ||
+      props.actionData.action_type === 'transfer' ||
+      props.actionData.action_type === 'transaction') &&
+    form.amount <= 0
+  ) {
     ElMessage.warning('请输入有效的金额')
     return
   }
@@ -431,11 +619,78 @@ async function handleConfirm() {
         }
         throw new Error(res.message || res.error)
       }
+    } else {
+      // 通用提案确认（create_category / create_tag / savings_goal / transaction）：
+      // 优先从 draft_args_json 还原规范化参数以保证 HMAC 哈希严格一致
+      let canonicalArgs: Record<string, unknown> = {}
+      if (props.actionData.data.draft_args_json) {
+        try {
+          canonicalArgs = JSON.parse(props.actionData.data.draft_args_json)
+        } catch {
+          canonicalArgs = {}
+        }
+      }
+      if (Object.keys(canonicalArgs).length === 0) {
+        const d = props.actionData.data
+        if (props.actionData.action_type === 'create_category') {
+          canonicalArgs = {
+            name: d.name || '',
+            type: d.type || 'expense',
+            parent_id: Number(d.parent_id || 0),
+            asset_type: d.asset_type || 'cash',
+            currency: d.currency || 'CNY',
+            icon: d.icon || '',
+            ledger_id: Number(d.ledger_id || 0),
+          }
+        } else if (props.actionData.action_type === 'create_tag') {
+          canonicalArgs = {
+            name: d.name || '',
+            color: d.color || '#3b82f6',
+          }
+        } else if (props.actionData.action_type === 'savings_goal') {
+          canonicalArgs = {
+            goal_id: Number(d.goal_id || 0),
+            name: d.name || '',
+            target_amount: Number(d.target_amount || 0),
+            current_amount: Number(d.current_amount || 0),
+            deadline: d.deadline || '',
+            note: d.note || '',
+          }
+        } else if (props.actionData.action_type === 'transaction') {
+          canonicalArgs = {
+            transaction_type: d.transaction_type || '',
+            amount: Number(d.amount || 0),
+            asset_id: Number(d.asset_id || 0),
+            linked_asset_id: Number(d.linked_asset_id || 0),
+            quantity: Number(d.quantity || 0),
+            price: Number(d.price || 0),
+            fee: Number(d.fee || 0),
+            date: d.date || '',
+            note: d.note || '',
+          }
+        }
+      }
+
+      const res = (await confirmAiAction({
+        ...canonicalArgs,
+        action_type: props.actionData.action_type,
+        draft_token: draftToken.value,
+        session_id: chatStore.currentSessionId ?? undefined,
+      })) as unknown as { success?: boolean; error?: string; message?: string }
+      if (res?.error) {
+        if (res.error.includes('已被使用') || res.error.toLowerCase().includes('replay') || res.error.includes('consumed')) {
+          cardStatus.value = 'executed'
+          ElMessage.info('该操作此前已执行入库')
+          emit('executed', { ...props.actionData, status: 'executed' })
+          return
+        }
+        throw new Error(res.message || res.error)
+      }
     }
 
     categoryStore.invalidate()
     cardStatus.value = 'executed'
-    ElMessage.success('记账成功！')
+    ElMessage.success(successBannerText.value)
     emit('executed', { ...props.actionData, status: 'executed' })
   } catch (err: any) {
     const errMsg = err?.message || err?.response?.data?.message || '操作失败，请重试'
@@ -616,6 +871,29 @@ function handleCancel() {
 .success-icon {
   font-size: 18px;
   color: #10b981;
+}
+
+.readonly-field {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border);
+  font-size: 13px;
+  color: var(--mf-text-main);
+}
+
+.tag-color-row {
+  gap: 8px;
+}
+
+.color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 @media (max-width: 640px) {

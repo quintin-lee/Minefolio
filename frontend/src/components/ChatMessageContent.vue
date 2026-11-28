@@ -270,7 +270,8 @@ import { copyTextToClipboard } from '@/utils/clipboard'
 import { Icon } from '@iconify/vue'
 import { useFinancialEntities } from '@/composables/useFinancialEntities'
 import ActionCard from '@/components/ActionCard.vue'
-import { normalizeActionCard } from '@/utils/normalize-action'
+import { isSupportedActionType, normalizeActionCard } from '@/utils/normalize-action'
+import type { ActionType } from '@/utils/normalize-action'
 import WorkflowProgressCard from '@/components/WorkflowProgressCard.vue'
 import WorkflowConfigCard from '@/components/WorkflowConfigCard.vue'
 import type { ProposedAction } from '@/components/ActionCard.vue'
@@ -320,7 +321,22 @@ function getPanelItemId(segId: string): string {
 
 function getSegmentLabel(seg: Segment): string {
   if (seg.type === 'action') {
-    return seg.actionData?.action_type === 'daily_expense' ? '日常记账确认' : '账户转账操作'
+    switch (seg.actionData?.action_type) {
+      case 'daily_expense':
+        return '日常记账确认'
+      case 'transfer':
+        return '账户转账操作'
+      case 'create_category':
+        return '新建分类确认'
+      case 'create_tag':
+        return '新建标签确认'
+      case 'savings_goal':
+        return '储蓄目标确认'
+      case 'transaction':
+        return '资产交易确认'
+      default:
+        return '操作确认'
+    }
   }
   if (seg.type === 'batch-action') {
     return '批量交易确认'
@@ -339,7 +355,22 @@ function getSegmentLabel(seg: Segment): string {
 
 function getSegmentIcon(seg: Segment): string {
   if (seg.type === 'action') {
-    return seg.actionData?.action_type === 'daily_expense' ? 'ph:receipt-bold' : 'ph:arrows-left-right-bold'
+    switch (seg.actionData?.action_type) {
+      case 'daily_expense':
+        return 'ph:receipt-bold'
+      case 'transfer':
+        return 'ph:arrows-left-right-bold'
+      case 'create_category':
+        return 'ph:folder-plus-bold'
+      case 'create_tag':
+        return 'ph:tag-bold'
+      case 'savings_goal':
+        return 'ph:target-bold'
+      case 'transaction':
+        return 'ph:chart-line-up-bold'
+      default:
+        return 'ph:check-circle-bold'
+    }
   }
   if (seg.type === 'batch-action') {
     return 'ph:stack-bold'
@@ -436,8 +467,28 @@ const TOOL_META_MAP: Record<string, { label: string; icon: string }> = {
   get_asset_breakdown: { label: '分析资产结构', icon: 'ph:chart-polar-bold' },
   propose_batch_actions: { label: '批量拟录入交易', icon: 'ph:stack-bold' },
   get_summary: { label: '读取财务全景概况', icon: 'ph:presentation-chart-bold' },
-  get_categories: { label: '读取分类字典', icon: 'ph:tag-bold' },
+  get_categories: { label: '读取分类字典', icon: 'ph:folder-bold' },
+  get_tags: { label: '读取消费标签', icon: 'ph:tag-bold' },
+  get_expense_by_tag: { label: '标签支出统计', icon: 'ph:tags-bold' },
+  get_ledgers: { label: '读取账本列表', icon: 'ph:books-bold' },
+  get_ledger_detail: { label: '查询账本详情', icon: 'ph:book-open-bold' },
+  get_accounts: { label: '读取资金账户', icon: 'ph:bank-bold' },
+  get_budget_status: { label: '核算预算执行', icon: 'ph:gauge-bold' },
+  get_savings_goals: { label: '查询储蓄目标', icon: 'ph:target-bold' },
+  get_dca_plans: { label: '查询定投计划', icon: 'ph:calendar-dots-bold' },
+  get_cashflow_schedules: { label: '查询现金流计划', icon: 'ph:arrows-clockwise-bold' },
+  propose_create_category: { label: '拟创建分类', icon: 'ph:folder-plus-bold' },
+  confirm_proposed_category: { label: '确认创建分类', icon: 'ph:check-circle-bold' },
+  propose_create_tag: { label: '拟创建标签', icon: 'ph:tag-bold' },
+  confirm_proposed_tag: { label: '确认创建标签', icon: 'ph:check-circle-bold' },
+  propose_savings_goal: { label: '拟保存储蓄目标', icon: 'ph:target-bold' },
+  confirm_proposed_savings_goal: { label: '确认保存目标', icon: 'ph:check-circle-bold' },
+  propose_transaction: { label: '拟录入资产交易', icon: 'ph:chart-line-up-bold' },
+  confirm_proposed_transaction: { label: '确认交易入库', icon: 'ph:check-circle-bold' },
   get_exchange_rate: { label: '查询外汇汇率', icon: 'ph:currency-circle-dollar-bold' },
+  get_market_pulse: { label: '读取市场脉搏', icon: 'ph:newspaper-bold' },
+  list_skills: { label: '列出可用技能', icon: 'ph:sparkle-bold' },
+  use_skill: { label: '调用领域技能', icon: 'ph:magic-wand-bold' },
   web_search: { label: '全网实时检索', icon: 'ph:globe-bold' },
   fetch_webpage: { label: '读取网页正文', icon: 'ph:article-bold' },
   analyze_financial_health: { label: '财务健康度体检', icon: 'ph:heartbeat-bold' },
@@ -450,6 +501,15 @@ const TOOL_META_MAP: Record<string, { label: string; icon: string }> = {
   list_assets: { label: '获取资产列表', icon: 'ph:vault-bold' },
   sync_quotes: { label: '同步市场行情', icon: 'ph:trend-up-bold' },
   fetch_market_index: { label: '查询大盘指数', icon: 'ph:chart-line-bold' },
+}
+
+const PROPOSE_TOOL_ACTION_MAP: Record<string, ActionType> = {
+  propose_daily_expense: 'daily_expense',
+  propose_transfer: 'transfer',
+  propose_create_category: 'create_category',
+  propose_create_tag: 'create_tag',
+  propose_savings_goal: 'savings_goal',
+  propose_transaction: 'transaction',
 }
 
 function formatFallbackToolName(name: string): string {
@@ -501,6 +561,22 @@ function getToolSemanticSummary(name: string, argsStr?: string): string {
     if (name === 'propose_transfer') {
       const amt = parsed.amount ? `¥${parsed.amount}` : ''
       return `拟调拨资金: ${amt}`.trim()
+    }
+    if (name === 'propose_create_category' && parsed.name) {
+      return `拟建分类: ${parsed.name}`
+    }
+    if (name === 'propose_create_tag' && parsed.name) {
+      return `拟建标签: ${parsed.name}`
+    }
+    if (name === 'propose_savings_goal' && parsed.name) {
+      return `拟设目标: ${parsed.name}`
+    }
+    if (name === 'propose_transaction' && parsed.transaction_type) {
+      const amt = parsed.amount ? `¥${parsed.amount}` : ''
+      return `拟录交易(${parsed.transaction_type}): ${amt}`.trim()
+    }
+    if (name === 'get_budget_status' && parsed.month) {
+      return `预算执行: ${parsed.month}`
     }
     if (name === 'get_exchange_rate' && (parsed.from_currency || parsed.to_currency)) {
       return `汇率换算: ${parsed.from_currency || ''} ➔ ${parsed.to_currency || 'CNY'}`
@@ -817,14 +893,14 @@ const segments = computed<Segment[]>(() => {
       if (lang === 'action') {
         try {
           actionObj = normalizeActionCard(JSON.parse(code))
-          if (actionObj && (actionObj.action_type === 'daily_expense' || actionObj.action_type === 'transfer')) {
+          if (actionObj && isSupportedActionType(actionObj.action_type)) {
             isAction = true
           }
         } catch { /* ignore */ }
-      } else if (lang === 'json' && (code.includes('"action_type"') || code.includes('"daily_expense"') || code.includes('"transfer"'))) {
+      } else if (lang === 'json' && code.includes('"action_type"')) {
         try {
           const parsed = normalizeActionCard(JSON.parse(code))
-          if (parsed && (parsed.action_type === 'daily_expense' || parsed.action_type === 'transfer')) {
+          if (parsed && isSupportedActionType(parsed.action_type)) {
             actionObj = parsed
             isAction = true
           }
@@ -905,16 +981,16 @@ const segments = computed<Segment[]>(() => {
     if (lang === 'action') {
       try {
         actionObj = normalizeActionCard(JSON.parse(code))
-        if (actionObj && (actionObj.action_type === 'daily_expense' || actionObj.action_type === 'transfer')) {
+        if (actionObj && isSupportedActionType(actionObj.action_type)) {
           isAction = true
         }
       } catch {
         // ignore
       }
-    } else if (lang === 'json' && (code.includes('"action_type"') || code.includes('"daily_expense"') || code.includes('"transfer"'))) {
+    } else if (lang === 'json' && code.includes('"action_type"')) {
       try {
         const parsed = normalizeActionCard(JSON.parse(code))
-        if (parsed && (parsed.action_type === 'daily_expense' || parsed.action_type === 'transfer')) {
+        if (parsed && isSupportedActionType(parsed.action_type)) {
           actionObj = parsed
           isAction = true
         }
@@ -1014,14 +1090,14 @@ const segments = computed<Segment[]>(() => {
   const hasActionInResult = result.some(s => s.type === 'action' || s.type === 'batch-action')
   if (!hasActionInResult && props.toolCalls && props.toolCalls.length > 0) {
     for (const tc of props.toolCalls) {
-      if ((tc.name === 'propose_daily_expense' || tc.name === 'propose_transfer') && tc.result) {
+      const defaultActionType = PROPOSE_TOOL_ACTION_MAP[tc.name]
+      if (defaultActionType && tc.result) {
         try {
           const resObj = typeof tc.result === 'string' ? JSON.parse(tc.result) : tc.result
           if (resObj && typeof resObj === 'object') {
             const hasDraft = !!(resObj as Record<string, unknown>).draft_token
             const isSuccess = !!(resObj as Record<string, unknown>).propose_success
             if (hasDraft || isSuccess) {
-              const defaultActionType = tc.name === 'propose_daily_expense' ? 'daily_expense' : 'transfer'
               const rawObj = {
                 action_type: (resObj as Record<string, unknown>).action_type || defaultActionType,
                 ...(resObj as Record<string, unknown>),
