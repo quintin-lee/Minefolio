@@ -1,6 +1,6 @@
 <template>
   <div class="settings-mobile">
-    <div class="page-header"><h2>我的</h2></div>
+    <div class="page-header"><h2>{{ t('nav.settings') }}</h2></div>
 
     <div class="theme-card">
       <div class="card-title">外观主题</div>
@@ -141,6 +141,7 @@ import { getLocalDbStatus } from '@/db/local'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import ConflictList from '@/components/mobile/ConflictList.vue'
 import { useServerUrl, type ServerConnectionTestResult } from '@/composables/useServerUrl'
+import { t } from '@/utils/locale'
 
 const router = useRouter()
 const sync = useSyncStore()

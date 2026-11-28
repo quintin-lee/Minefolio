@@ -22,7 +22,7 @@
       @change="load"
     />
     <div class="chart-block"><h4>分类占比</h4><div class="pie-wrap"><ExpenseCategoryPie :data="monthly?.by_category ?? []" /></div></div>
-    <div class="chart-block"><h4>月度收支</h4><MonthlyChart :data="monthly" /></div>
+    <div class="chart-block"><h4>月度收支</h4><div class="monthly-wrap"><MonthlyChart :data="monthly" min-height="240px" /></div></div>
   </div>
 </template>
 
@@ -87,5 +87,6 @@ onMounted(() => {
 .cache-pill { font-size: 11px; color: var(--mf-warning); border: 1px solid var(--mf-warning); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
 .chart-block { background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 16px; margin: 12px 0; }
 .chart-block h4 { margin: 0 0 12px; color: var(--mf-text-muted); }
-.pie-wrap { height: 300px; } /* 🟡 ExpenseCategoryPie 图表是 height:100%，父容器必须有确定高度 */
+.pie-wrap { height: 280px; } /* ExpenseCategoryPie 图表是 height:100%，父容器必须有确定高度 */
+.monthly-wrap { height: 250px; }
 </style>

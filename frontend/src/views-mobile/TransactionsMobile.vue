@@ -9,7 +9,9 @@
     <div class="fab-row">
       <el-button type="primary" @click="openTransaction()">新增交易</el-button>
     </div>
-    <div v-if="list.length === 0 && !loading" class="empty-state">暂无交易记录</div>
+    <el-empty v-if="list.length === 0 && !loading" description="暂无交易记录" :image-size="72">
+      <el-button type="primary" @click="openTransaction()">记一笔交易</el-button>
+    </el-empty>
     <div v-for="t in list" :key="t.id" class="tx-card">
       <div class="top"><span>{{ t.category_name || t.transaction_type }}</span><span :class="isIncome(t) ? 'income' : 'expense'">{{ isIncome(t) ? '+' : '-' }}{{ formatCurrency(t.amount, t.currency) }}</span></div>
       <div class="bottom">

@@ -6,10 +6,23 @@
         <button class="segmented-item" @click="$router.push('/m/transactions')">{{ t('nav.transactions') }}</button>
       </div>
     </div>
-    <div class="summary-row">
-      <span>收入 {{ formatCurrency(month?.total_income ?? 0) }}</span>
-      <span>支出 {{ formatCurrency(month?.total_expense ?? 0) }}</span>
+    <div class="summary-strip-card">
+      <div class="strip-col">
+        <span class="strip-lbl">收入</span>
+        <span class="strip-val income">{{ formatCurrency(month?.total_income ?? 0) }}</span>
+      </div>
+      <div class="strip-col">
+        <span class="strip-lbl">支出</span>
+        <span class="strip-val expense">{{ formatCurrency(month?.total_expense ?? 0) }}</span>
+      </div>
+      <div class="strip-col">
+        <span class="strip-lbl">结余</span>
+        <span class="strip-val">{{ formatCurrency(month?.balance ?? ((month?.total_income ?? 0) - (month?.total_expense ?? 0))) }}</span>
+      </div>
     </div>
+    <el-empty v-if="!loading && list.length === 0" description="暂无收支记录" :image-size="72">
+      <el-button type="primary" @click="create">记一笔</el-button>
+    </el-empty>
     <div v-for="e in list" :key="e.id" class="expense-card" @click="edit(e)">
       <div class="top"><span class="cat">{{ e.category_name }}</span><span :class="e.expense_type === 'income' ? 'income' : 'expense'">{{ e.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(e.amount, e.currency) }}</span></div>
       <div class="bottom"><span>{{ e.expense_date }}</span><span>{{ e.asset_name }}</span></div>
@@ -173,7 +186,19 @@ onMounted(() => loadData(true))
 <style scoped>
 .expenses-mobile { padding-bottom: 72px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.summary-row { display: flex; gap: 16px; margin: 12px 0; color: var(--mf-text-muted); font-size: 13px; flex-wrap: wrap; }
+.summary-strip-card {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+  padding: 12px;
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: 12px;
+}
+.strip-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.strip-lbl { font-size: 11px; color: var(--mf-text-muted); }
+.strip-val { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; color: var(--mf-text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .expense-card { background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 14px; margin-bottom: 10px; cursor: pointer; }
 .expense-card .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 16px; }
 .expense-card .top .cat { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

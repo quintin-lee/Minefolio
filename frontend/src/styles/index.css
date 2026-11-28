@@ -1391,6 +1391,15 @@ html.light .loss-text {
 }
 
 /* Mobile touch-target floor (36–40px+) */
+.mobile-layout .mobile-segmented .segmented-item {
+  min-height: 36px;
+}
+
+.mobile-layout .mobile-top-bar .amount-toggle-btn {
+  width: 38px;
+  height: 38px;
+}
+
 .mobile-layout .el-button:not(.is-circle) {
   min-height: 36px;
   padding: 8px 12px;

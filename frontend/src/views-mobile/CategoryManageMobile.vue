@@ -1,6 +1,11 @@
 <template>
   <div class="category-manage-mobile">
-    <div class="page-header"><h2>分类与标签</h2></div>
+    <div class="page-header">
+      <button type="button" class="back-btn" aria-label="返回" @click="router.back()">
+        <Icon icon="ph:arrow-left-bold" />
+      </button>
+      <h2>分类与标签</h2>
+    </div>
 
     <div class="segmented">
       <button :class="{ active: tab === 'categories' }" @click="tab = 'categories'">分类</button>
@@ -9,6 +14,7 @@
 
     <template v-if="tab === 'categories'">
       <el-button type="primary" plain class="add-btn" @click="openCategory()">新增分类</el-button>
+      <el-empty v-if="categories.length === 0" description="暂无分类数据" :image-size="64" />
       <div v-for="c in categories" :key="c.id" class="manage-row" :style="{ paddingLeft: `${c.parent_id ? 24 : 12}px` }">
         <span class="row-main">{{ c.name }}<small v-if="c.parent_id"> · 子分类</small></span>
         <span class="row-actions">
@@ -25,6 +31,7 @@
 
     <template v-else>
       <el-button type="primary" plain class="add-btn" @click="openTag()">新增标签</el-button>
+      <el-empty v-if="tags.length === 0" description="暂无标签数据" :image-size="64" />
       <div v-for="tag in tags" :key="tag.id" class="manage-row">
         <span class="row-main"><i class="dot" :style="{ background: tag.color || '#888' }" />{{ tag.name }}</span>
         <span class="row-actions">
@@ -46,6 +53,8 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { Icon } from '@iconify/vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { query, rowsFrom, run, persist } from '@/db/local'
 import { categoriesApi } from '@/api/categories'
@@ -57,6 +66,7 @@ import TagSheet from '@/components/mobile/TagSheet.vue'
 import { fetchAllPages } from '@/utils/pagination'
 import type { Category, Tag } from '@/types'
 
+const router = useRouter()
 const categoryStore = useCategoryStore()
 const tab = ref<'categories' | 'tags'>('categories')
 const categories = ref<Category[]>([])
@@ -198,7 +208,21 @@ onMounted(load)
 
 <style scoped>
 .category-manage-mobile { padding: 12px; }
-.page-header h2 { font-size: 18px; margin: 0 0 12px; }
+.page-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.page-header h2 { font-size: 18px; margin: 0; }
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--mf-border);
+  background: var(--mf-surface);
+  color: var(--mf-text-main);
+  cursor: pointer;
+  flex-shrink: 0;
+}
 .segmented { display: flex; gap: 8px; margin-bottom: 12px; }
 .segmented button { flex: 1; padding: 8px; border: 1px solid var(--mf-border); border-radius: 8px; background: transparent; color: var(--mf-text-regular); }
 .segmented button.active { color: var(--mf-primary); border-color: var(--mf-primary); }

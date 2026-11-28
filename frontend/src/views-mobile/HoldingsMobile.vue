@@ -36,7 +36,7 @@
       show-icon
       style="margin-bottom: 12px"
     />
-    <div v-if="holdings.length === 0 && !loading && !loadError" class="empty-state">暂无持仓数据</div>
+    <el-empty v-if="holdings.length === 0 && !loading && !loadError" description="暂无持仓数据" :image-size="72" />
     <div v-for="h in holdings" :key="h.asset_id" class="holding-card">
       <div class="card-top">
         <div class="asset-title-group">

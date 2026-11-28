@@ -6,7 +6,6 @@
         <button class="segmented-item" @click="$router.push('/m/holdings')">{{ t('nav.holdings') }}</button>
       </div>
     </div>
-    <div v-if="list.length === 0 && !loading" class="empty-state">暂无资产数据</div>
     <div class="fab-row">
       <el-button plain @click="openAccount()">新增账户</el-button>
       <el-button type="primary" @click="openAsset()">新增资产</el-button>
@@ -46,9 +45,10 @@
             </span>
           </div>
         </div>
-        <div v-if="group.assets.length === 0" class="group-empty">暂无资产</div>
+        <el-empty v-if="group.assets.length === 0" description="暂无资产，点击上方“新增资产”添加" :image-size="56" />
       </div>
     </div>
+    <el-empty v-if="groups.length === 0 && !loading" description="暂无账户与资产数据" :image-size="72" />
     <div v-if="accountTotal > accountPageSize" class="mobile-pager">
       <el-button :disabled="accountPage <= 1" @click="changeAccountPage(accountPage - 1)">上一页</el-button>
       <span class="pager-info">{{ accountPage }} / {{ Math.max(1, Math.ceil(accountTotal / accountPageSize)) }}（共 {{ accountTotal }} 户）</span>
@@ -269,8 +269,8 @@ onMounted(load)
 }
 .fab-row { display: flex; gap: 8px; margin-bottom: 12px; }
 .fab-row .el-button { flex: 1; }
-.asset-actions { display: flex; flex-shrink: 0; margin-right: 8px; }
-.group-actions { display: flex; flex-shrink: 0; margin-left: auto; }
+.asset-actions { display: flex; gap: 4px; flex-shrink: 0; margin-right: 4px; }
+.group-actions { display: flex; gap: 4px; flex-shrink: 0; margin-left: auto; }
 .account-group {
   margin-bottom: 12px;
   border: 1px solid var(--mf-border);

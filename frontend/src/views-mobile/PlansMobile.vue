@@ -1,9 +1,14 @@
 <template>
   <div class="plans-mobile">
     <div class="page-header">
-      <div>
-        <h2>计划与日历</h2>
-        <span v-if="cacheAt" class="cache-pill">缓存于 {{ cacheAt }}</span>
+      <div class="header-left">
+        <button type="button" class="back-btn" aria-label="返回" @click="router.back()">
+          <Icon icon="ph:arrow-left-bold" />
+        </button>
+        <div>
+          <h2>计划与日历</h2>
+          <span v-if="cacheAt" class="cache-pill">缓存于 {{ cacheAt }}</span>
+        </div>
       </div>
       <el-button type="primary" :disabled="!isOnline" @click="activeTab === 'dca' ? openDcaModal() : openScheduleModal()">
         + 新增{{ activeTab === 'dca' ? '定投' : '现金流' }}
@@ -13,10 +18,12 @@
     <!-- 顶部 Tab 切换 -->
     <div class="tab-switch">
       <button :class="{ active: activeTab === 'dca' }" @click="activeTab = 'dca'">
-        🎯 定投计划 ({{ dcaPlans.length }})
+        <Icon icon="ph:target-duotone" class="tab-icon" />
+        <span>定投计划 ({{ dcaPlans.length }})</span>
       </button>
       <button :class="{ active: activeTab === 'cashflow' }" @click="activeTab = 'cashflow'">
-        📅 现金流日历 ({{ calendarEvents.length }})
+        <Icon icon="ph:calendar-dots-duotone" class="tab-icon" />
+        <span>现金流日历 ({{ calendarEvents.length }})</span>
       </button>
     </div>
 
@@ -166,6 +173,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
+import { Icon } from '@iconify/vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dcaApi } from '@/api/dca'
 import { cashflowApi } from '@/api/cashflow'
@@ -175,6 +184,7 @@ import { query, rowsFrom } from '@/db/local'
 import { loadViewCache, saveViewCache } from '@/composables/mobile/useViewCache'
 import type { DcaPlan, DcaExecution, CashflowCalendarEvent, MonthlyCashflowSummary, Asset } from '@/types'
 
+const router = useRouter()
 const activeTab = ref<'dca' | 'cashflow'>('dca')
 const loading = ref(false)
 const saving = ref(false)
@@ -453,7 +463,27 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
   margin-bottom: 14px;
+}
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--mf-border);
+  background: var(--mf-surface);
+  color: var(--mf-text-main);
+  cursor: pointer;
+  flex-shrink: 0;
 }
 .cache-pill { font-size: 11px; color: var(--mf-warning); border: 1px solid var(--mf-warning); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
 .page-header h2 {
@@ -472,6 +502,10 @@ onBeforeUnmount(() => {
 }
 .tab-switch button {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: none;
   background: transparent;
   padding: 8px 12px;
@@ -481,6 +515,9 @@ onBeforeUnmount(() => {
   color: var(--mf-text-regular);
   cursor: pointer;
   transition: all 0.2s;
+}
+.tab-icon {
+  font-size: 16px;
 }
 .tab-switch button.active {
   background: var(--mf-primary);
