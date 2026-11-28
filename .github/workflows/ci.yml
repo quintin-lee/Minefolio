@@ -380,6 +380,7 @@ jobs:
             type=sha,format=short,prefix=sha-
             type=ref,event=branch
             type=ref,event=tag
+            type=semver,pattern={{version}}
 
       - name: Build and load Docker image
         uses: docker/build-push-action@v5
@@ -423,6 +424,90 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
 
+  docker-build-gateway:
+    name: Build IM Gateway Docker Image
+    needs: [gateway-test]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-gateway
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+            type=sha,format=short,prefix=sha-
+            type=ref,event=branch
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+
+      - name: Build and load Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.gateway
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=gateway
+          cache-to: type=gha,mode=max,scope=gateway
+
+      - name: Smoke test Docker container
+        run: |
+          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n 1)
+          docker run --rm --entrypoint sh "$IMAGE_TAG" -ec '
+            id
+            test "$(id -u)" = "10001"
+            test "$(id -g)" = "10001"
+            stat -c "%u:%g %a %n" /data /state /app
+            test "$(stat -c "%u:%g %a" /data)" = "10001:10001 700"
+            test "$(stat -c "%u:%g %a" /state)" = "10001:10001 700"
+            test "$(stat -c "%u:%g" /app)" = "0:0"
+            test ! -e /app/im_bindings.json
+            ! touch /app/.ro-check 2>/dev/null
+            node - <<"EOF"
+          const gw = require("/app/index.js");
+          gw.setCachedToken("qq:123", "tok_test");
+          const { createStateStore } = require("/app/ilink/state.js");
+          const s = createStateStore({ rootDir: process.env.ILINK_STATE_DIR, instanceId: 1 });
+          s.writeAccount({ bot_token: "secret" });
+          if (s.readAccount().bot_token !== "secret") process.exit(1);
+          EOF
+            test "$(stat -c "%u:%g %a" /data/im_bindings.json)" = "10001:10001 600"
+            test "$(stat -c "%u:%g %a" /state/1)" = "10001:10001 700"
+            test "$(stat -c "%u:%g %a" /state/1/account.json)" = "10001:10001 600"
+          '
+          docker run --rm "$IMAGE_TAG" npm test
+          echo "✅ IM Gateway Docker image smoke test passed!"
+
+      - name: Push Docker image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.gateway
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=gateway
+
   docker-build:
     name: Build & Package Docker Image
     needs: [backend, backend-postgres, backend-asan, frontend, gateway-test]
@@ -455,6 +540,7 @@ jobs:
             type=sha,format=short,prefix=sha-
             type=ref,event=branch
             type=ref,event=tag
+            type=semver,pattern={{version}}
 
       - name: Build and load Docker image
         uses: docker/build-push-action@v5
@@ -627,7 +713,7 @@ jobs:
   release:
     name: Publish GitHub Release & Assets
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [backend, frontend, docker-build, docker-build-frontend, android-build, ios-build]
+    needs: [backend, frontend, docker-build, docker-build-frontend, docker-build-gateway, android-build, ios-build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -662,9 +748,13 @@ jobs:
             ```bash
             # 拉取当前版本镜像
             docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            docker pull ghcr.io/${{ github.repository }}-frontend:${{ github.ref_name }}
+            docker pull ghcr.io/${{ github.repository }}-gateway:${{ github.ref_name }}
 
             # 或拉取最新镜像
             docker pull ghcr.io/${{ github.repository }}:latest
+            docker pull ghcr.io/${{ github.repository }}-frontend:latest
+            docker pull ghcr.io/${{ github.repository }}-gateway:latest
             ```
 
             ### 📦 本次发布资产清单 (Release Assets)
