@@ -34,7 +34,6 @@
           >
             {{ item.direction === 'up' ? '↑' : '↓' }}
           </div>
-          <div v-else class="rate-badge is-flat">—</div>
         </div>
 
         <div class="card-rate">

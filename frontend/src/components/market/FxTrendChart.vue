@@ -47,33 +47,36 @@
     </template>
 
     <div class="trend-body">
-      <!-- Period Statistics Ribbon -->
-      <div class="stats-ribbon">
-        <div class="stat-pill">
-          <span class="pill-label">{{ t('market.chart.stats.high') }}</span>
-          <span class="pill-value">{{ formatRate(stats.max) }}</span>
+      <template v-if="normalizedPoints.length > 0">
+        <!-- Period Statistics Ribbon -->
+        <div class="stats-ribbon">
+          <div class="stat-pill">
+            <span class="pill-label">{{ t('market.chart.stats.high') }}</span>
+            <span class="pill-value">{{ formatRate(stats.max) }}</span>
+          </div>
+          <div class="stat-pill">
+            <span class="pill-label">{{ t('market.chart.stats.low') }}</span>
+            <span class="pill-value">{{ formatRate(stats.min) }}</span>
+          </div>
+          <div class="stat-pill">
+            <span class="pill-label">{{ t('market.chart.stats.avg') }}</span>
+            <span class="pill-value">{{ formatRate(stats.avg) }}</span>
+          </div>
+          <div class="stat-pill">
+            <span class="pill-label">{{ t('market.chart.stats.change') }}</span>
+            <span
+              class="pill-value"
+              :class="stats.changeRate >= 0 ? 'text-success' : 'text-danger'"
+            >
+              {{ stats.changeRate >= 0 ? '+' : '' }}{{ stats.changeRate.toFixed(2) }}%
+            </span>
+          </div>
         </div>
-        <div class="stat-pill">
-          <span class="pill-label">{{ t('market.chart.stats.low') }}</span>
-          <span class="pill-value">{{ formatRate(stats.min) }}</span>
-        </div>
-        <div class="stat-pill">
-          <span class="pill-label">{{ t('market.chart.stats.avg') }}</span>
-          <span class="pill-value">{{ formatRate(stats.avg) }}</span>
-        </div>
-        <div class="stat-pill">
-          <span class="pill-label">{{ t('market.chart.stats.change') }}</span>
-          <span
-            class="pill-value"
-            :class="stats.changeRate >= 0 ? 'text-success' : 'text-danger'"
-          >
-            {{ stats.changeRate >= 0 ? '+' : '' }}{{ stats.changeRate.toFixed(2) }}%
-          </span>
-        </div>
-      </div>
 
-      <!-- Chart Container -->
-      <div ref="chartRef" class="chart-canvas" />
+        <!-- Chart Container -->
+        <div ref="chartRef" class="chart-canvas" />
+      </template>
+      <el-empty v-else-if="!marketStore.isLoadingHistory" description="暂无汇率历史走势数据" :image-size="64" />
     </div>
   </el-card>
 </template>
@@ -84,7 +87,7 @@ import { useI18n } from 'vue-i18n'
 import { Icon } from '@iconify/vue'
 import echarts, { type ECharts, type EChartsOption } from '@/utils/echarts'
 import { useMarketStore } from '@/stores/market'
-import { calculatePeriodStats, formatRate, calcCrossRate } from '@/utils/fx'
+import { calculatePeriodStats, computeFxYAxisBounds, formatRate, calcCrossRate } from '@/utils/fx'
 import { localToday } from '@/utils/format'
 import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
 import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
@@ -125,6 +128,8 @@ function updateChart() {
 
   const palette = resolveChartPalette()
 
+  const bounds = computeFxYAxisBounds(values)
+
   const option: EChartsOption = {
     tooltip: {
       trigger: 'axis',
@@ -150,8 +155,15 @@ function updateChart() {
     yAxis: {
       type: 'value',
       scale: true,
+      min: bounds?.min,
+      max: bounds?.max,
+      splitNumber: 4,
       splitLine: { lineStyle: { color: palette.isLight ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.05)' } },
-      axisLabel: { color: palette.textMuted, fontSize: 11 },
+      axisLabel: {
+        color: palette.textMuted,
+        fontSize: 11,
+        formatter: (v: number) => formatRate(v),
+      },
     },
     dataZoom: [
       {

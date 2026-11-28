@@ -95,3 +95,31 @@ export function calculatePeriodStats(points: FxHistoryPoint[]): PeriodStats {
 
   return { min, max, avg, changeRate }
 }
+
+export interface FxYAxisBounds {
+  min: number
+  max: number
+}
+
+/**
+ * 计算外汇走势图紧凑 Y 轴上下界，避免常量或窄幅波动汇率被 ECharts 拉成 3–10 宽区间
+ */
+export function computeFxYAxisBounds(values: number[]): FxYAxisBounds | null {
+  const valid = values.filter((v) => typeof v === 'number' && Number.isFinite(v) && v > 0)
+  if (valid.length === 0) return null
+
+  const minVal = Math.min(...valid)
+  const maxVal = Math.max(...valid)
+  const span = maxVal - minVal
+  const decimals = maxVal >= 100 ? 2 : 4
+
+  const pad =
+    span <= Math.max(Math.abs(minVal) * 0.0005, 1e-6)
+      ? Math.max(Math.abs(minVal) * 0.005, decimals === 2 ? 0.1 : 0.002)
+      : Math.max(span * 0.15, Math.abs(minVal) * 0.0005)
+
+  return {
+    min: Number(Math.max(0, minVal - pad).toFixed(decimals)),
+    max: Number((maxVal + pad).toFixed(decimals)),
+  }
+}
