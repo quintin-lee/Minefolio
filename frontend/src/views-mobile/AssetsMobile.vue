@@ -4,6 +4,7 @@
       <div class="mobile-segmented">
         <button class="segmented-item active">{{ t('nav.assets') }}</button>
         <button class="segmented-item" @click="$router.push('/m/holdings')">{{ t('nav.holdings') }}</button>
+        <button class="segmented-item" @click="$router.push('/m/market')">{{ t('nav.market') }}</button>
       </div>
     </div>
     <div class="fab-row">
@@ -29,7 +30,7 @@
         </el-icon>
       </div>
       <div v-if="!isCollapsed(group.key)" class="account-body">
-        <div v-for="a in group.assets" :key="a.id" class="asset-card">
+        <div v-for="a in group.assets" :key="a.id" class="asset-card" @click="$router.push(`/m/assets/${a.id}`)">
           <div class="asset-info">
             <span class="name">{{ a.name }}</span>
             <span v-if="a.currency && a.currency !== 'CNY'" class="currency-tag">{{ a.currency }}</span>
@@ -44,6 +45,7 @@
               ≈ ¥{{ (Number(a.current_value) * (exchangeRates[a.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
             </span>
           </div>
+          <el-icon class="card-chevron"><ArrowRight /></el-icon>
         </div>
         <el-empty v-if="group.assets.length === 0" description="暂无资产，点击上方“新增资产”添加" :image-size="56" />
       </div>
@@ -68,7 +70,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowUp } from '@element-plus/icons-vue'
+import { ArrowUp, ArrowRight } from '@element-plus/icons-vue'
 import { Icon } from '@iconify/vue'
 import { assetsApi } from '@/api/assets'
 import { accountsApi } from '@/api/accounts'
@@ -346,6 +348,12 @@ onMounted(load)
   border: 1px solid var(--mf-border);
   border-radius: 10px;
   padding: 12px;
+  cursor: pointer;
+}
+.card-chevron {
+  color: var(--mf-text-muted);
+  font-size: 13px;
+  flex-shrink: 0;
 }
 .asset-info {
   display: flex;
