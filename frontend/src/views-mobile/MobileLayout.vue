@@ -93,8 +93,8 @@ function isTabActive(prefix: string): boolean {
   const path = route.path
   if (path.startsWith(prefix)) return true
   if (prefix === '/m/expenses' && path.startsWith('/m/transactions')) return true
-  if (prefix === '/m/assets' && path.startsWith('/m/holdings')) return true
-  if (prefix === '/m/settings' && path.startsWith('/m/plans')) return true
+  if (prefix === '/m/assets' && (path.startsWith('/m/holdings') || path.startsWith('/m/market'))) return true
+  if (prefix === '/m/settings' && (path.startsWith('/m/plans') || path.startsWith('/m/categories') || path.startsWith('/m/news'))) return true
   return false
 }
 

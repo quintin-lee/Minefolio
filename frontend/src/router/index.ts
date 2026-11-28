@@ -31,6 +31,11 @@ const router = createRouter({
     { path: '/m/plans', redirect: '/plans' },
     { path: '/m/reports', redirect: '/reports' },
     { path: '/m/settings', redirect: '/settings' },
+    { path: '/m/assets/:id', redirect: (to) => `/assets/${to.params.id}` },
+    { path: '/m/market', redirect: '/market' },
+    { path: '/m/news', redirect: '/news' },
+    { path: '/m/chat', redirect: '/chat' },
+    { path: '/m/categories', redirect: '/categories' },
     { path: '/m', redirect: '/dashboard' },
     {
       path: '/',

@@ -120,6 +120,8 @@
       @discard="handleDiscardConflict"
     />
     <div class="action-buttons-group">
+      <el-button class="full-width-btn" @click="goMarket">市场行情与汇率</el-button>
+      <el-button class="full-width-btn" @click="goNews">财经早报</el-button>
       <el-button class="full-width-btn" @click="goPlans">定投计划与现金流日历</el-button>
       <el-button class="full-width-btn" @click="exportCsv">导出 CSV</el-button>
       <el-button class="full-width-btn" @click="goCategories">分类管理</el-button>
@@ -198,6 +200,12 @@ async function handleRetryConflict(id: number) {
 function handleDiscardConflict(id: number) {
   sync.resolveConflictDiscard(id)
   ElMessage.info('已移除冲突任务')
+}
+function goMarket() {
+  router.push('/m/market')
+}
+function goNews() {
+  router.push('/m/news')
 }
 function goPlans() {
   router.push('/m/plans')

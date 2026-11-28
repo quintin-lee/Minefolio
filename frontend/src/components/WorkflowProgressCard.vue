@@ -307,11 +307,7 @@ function navigateToTransactions() {
 }
 
 function navigateToCategories() {
-  if (isMobileMode()) {
-    ElMessage.info('请在移动端设置页面中管理分类')
-    return
-  }
-  router.push({ path: '/categories' })
+  router.push({ path: isMobileMode() ? '/m/categories' : '/categories' })
 }
 
 function navigateToDailyExpenses() {

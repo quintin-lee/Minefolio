@@ -17,7 +17,7 @@
           </el-option-group>
         </el-select>
       </div>
-      <router-link to="/settings" class="settings-link" @click="visible = false">
+      <router-link :to="isMobileMode() ? '/m/settings' : '/settings'" class="settings-link" @click="visible = false">
         配置 AI 模型
       </router-link>
     </div>
@@ -176,6 +176,7 @@ import { assetsApi } from '@/api/assets'
 import { getSettings } from '@/api/ai'
 import { useCategoryStore } from '@/stores/category'
 import { localToday, assetLabel } from '@/utils/format'
+import { isMobileMode } from '@/utils/http'
 import type { Category, Asset } from '@/types'
 import type { FormInstance, FormRules } from 'element-plus'
 
@@ -666,9 +667,20 @@ onMounted(() => {
   flex: 1;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  .receipt-scanner-dialog :deep(.el-dialog__body) {
+    padding: 12px 14px;
+  }
+  .model-info-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
   .result-layout {
     grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .result-preview-pane {
+    width: 100%;
   }
   .result-thumbnail {
     max-height: 180px;

@@ -37,6 +37,9 @@ const router = createRouter({
         { path: 'reports', name: 'MobileReports', component: () => import('@/views-mobile/ReportsMobile.vue') },
         { path: 'settings', name: 'MobileSettings', component: () => import('@/views-mobile/SettingsMobile.vue') },
         { path: 'categories', name: 'MobileCategories', component: () => import('@/views-mobile/CategoryManageMobile.vue') },
+        { path: 'assets/:id', name: 'MobileAssetDetail', component: () => import('@/views/AssetDetail.vue') },
+        { path: 'market', name: 'MobileMarket', component: () => import('@/views/Market.vue') },
+        { path: 'news', name: 'MobileNews', component: () => import('@/views/NewsPulse.vue') },
       ],
     },
     {
