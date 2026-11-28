@@ -208,7 +208,7 @@ onMounted(load)
 
 <style scoped>
 .category-manage-mobile { padding: 12px; }
-.page-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.category-manage-mobile .page-header { display: flex; align-items: center; justify-content: flex-start; gap: 10px; margin-bottom: 12px; }
 .page-header h2 { font-size: 18px; margin: 0; }
 .back-btn {
   display: inline-flex;

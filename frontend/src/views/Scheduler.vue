@@ -1135,6 +1135,11 @@ onBeforeUnmount(() => {
 
 /* Responsive Media Queries */
 @media (max-width: 1360px) {
+  .toolbar-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
   .type-filter {
     display: flex;
     flex-wrap: wrap;

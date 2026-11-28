@@ -474,38 +474,59 @@ const dynamicStarters = computed<StarterItem[]>(() => {
 
 @media (max-height: 780px) {
   .prompt-starters {
-    padding: 8px 0 10px;
+    padding: 4px 0 6px;
   }
   .starters-header {
-    margin-bottom: 10px;
+    margin-bottom: 8px;
   }
   .sparkle-icon-wrap {
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
-    margin-bottom: 6px;
-  }
-  .sparkle-icon {
-    font-size: 18px;
-  }
-  .starters-title {
-    font-size: 18px;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
     margin-bottom: 4px;
   }
+  .sparkle-icon {
+    font-size: 15px;
+  }
+  .starters-title {
+    font-size: 17px;
+    margin-bottom: 2px;
+  }
   .starters-subtitle {
-    font-size: 12.5px;
-    line-height: 1.4;
+    display: none;
   }
   .context-summary-capsule {
-    margin-top: 8px;
+    margin-top: 6px;
     padding: 4px 12px;
-    font-size: 12px;
+    font-size: 11.5px;
+  }
+  .starters-grid {
+    gap: 8px;
   }
   .starter-card {
-    padding: 10px 12px;
+    padding: 8px 12px;
+  }
+  .card-top {
+    margin-bottom: 4px;
+  }
+  .card-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    font-size: 14px;
+  }
+  .card-title {
+    font-size: 13px;
+    margin-bottom: 2px;
   }
   .card-desc {
     margin-bottom: 0;
+    font-size: 11.5px;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .card-footer {
     display: none;

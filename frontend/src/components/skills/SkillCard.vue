@@ -299,7 +299,8 @@ function getCategoryLabel(cat: string): string {
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
-  min-height: 24px;
+  min-height: 46px;
+  align-content: flex-start;
 }
 
 .mini-tag-icon {

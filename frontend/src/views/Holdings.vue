@@ -162,7 +162,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import { formatCurrency, formatSigned } from '@/utils/format'
 import { t } from '@/utils/locale'
 
-const COMPACT_TABLE_QUERY = '(max-width: 1024px)'
+const COMPACT_TABLE_QUERY = '(max-width: 1320px)'
 const isCompactTable = ref(
   typeof window !== 'undefined' && typeof window.matchMedia === 'function'
     ? window.matchMedia(COMPACT_TABLE_QUERY).matches
@@ -340,8 +340,9 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow-x: auto;
 }
-.table-card :deep(.el-table__empty-block) {
-  min-height: 220px;
+.table-card :deep(.el-table__empty-block),
+.table-card :deep(.el-table__body-wrapper) {
+  min-height: 180px;
 }
 .premium-table {
   --el-table-border-color: transparent;
