@@ -170,7 +170,12 @@ export const useMarketStore = defineStore('market', () => {
       ])
       if (syncSeq !== syncReqSeq) return false
 
-      await Promise.allSettled([fetchRates(), fetchHoldingsSummary(), fetchHistory()])
+      await Promise.allSettled([
+        fetchRates(),
+        fetchHoldingsSummary(),
+        fetchHistory(),
+        fetchIndices(activeCategory.value, true),
+      ])
       if (syncSeq !== syncReqSeq) return false
       lastSyncAt.value = new Date().toLocaleTimeString()
 

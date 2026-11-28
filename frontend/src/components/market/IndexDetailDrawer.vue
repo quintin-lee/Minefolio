@@ -90,10 +90,7 @@ function renderChart() {
 
   const palette = resolveChartPalette()
   const pts = item.value.sparkline || []
-  const times = pts.map((_, i) => {
-    const totalMins = 9 * 60 + 30 + i * 30
-    return `${Math.floor(totalMins / 60)}:${String(totalMins % 60).padStart(2, '0')}`
-  })
+  const times = pts.map((_, i) => (i === pts.length - 1 ? '最新' : `#${i + 1}`))
   const color = isPositive.value ? palette.success : palette.danger
 
   const option: EChartsOption = {
