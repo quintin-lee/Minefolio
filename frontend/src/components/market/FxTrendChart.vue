@@ -270,22 +270,26 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
 }
 
 .header-left {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .header-title {
   font-size: 15px;
   font-weight: 600;
   color: var(--el-text-color-primary);
+  white-space: nowrap;
 }
 
 .currency-pair-select {
   width: 140px;
+  flex-shrink: 0;
 }
 .currency-pair-select :deep(.el-select__wrapper) {
   background: var(--mf-surface-muted);
@@ -296,7 +300,14 @@ onUnmounted(() => {
 .header-periods {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+.header-periods :deep(.el-radio-group) {
+  display: inline-flex;
+  flex-wrap: nowrap;
 }
 
 .chart-action-btn {
@@ -385,6 +396,12 @@ onUnmounted(() => {
 .chart-canvas {
   width: 100%;
   height: 250px;
+}
+
+@media (max-width: 1320px) {
+  .card-header {
+    flex-wrap: wrap;
+  }
 }
 
 @media (max-width: 768px) {

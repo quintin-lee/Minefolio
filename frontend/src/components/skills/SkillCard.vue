@@ -224,7 +224,7 @@ function getCategoryLabel(cat: string): string {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 14px;
   margin-bottom: 12px;
 }
 
@@ -234,6 +234,10 @@ function getCategoryLabel(cat: string): string {
   gap: 12px;
   min-width: 0;
   flex: 1;
+}
+
+.header-right {
+  flex-shrink: 0;
 }
 
 .category-icon-box {
@@ -294,7 +298,8 @@ function getCategoryLabel(cat: string): string {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
+  min-height: 24px;
 }
 
 .mini-tag-icon {

@@ -673,6 +673,10 @@ onActivated(() => {
   .tree-panel-container {
     margin-bottom: 20px;
   }
+  .tree-panel-container .panel-body-scroll {
+    max-height: 280px;
+    overflow-y: auto;
+  }
   .panel-body-scroll.is-table-body {
     overflow: visible;
   }
@@ -835,6 +839,7 @@ onActivated(() => {
 .panel-body-scroll {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
 }
 
@@ -881,6 +886,7 @@ onActivated(() => {
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  min-width: 0;
   padding-right: 8px;
 }
 
@@ -888,6 +894,9 @@ onActivated(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
 }
 
 .node-icon {
@@ -907,6 +916,10 @@ onActivated(() => {
 .node-label {
   font-weight: 500;
   color: var(--mf-text-main);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cat-name-cell {

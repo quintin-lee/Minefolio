@@ -59,8 +59,11 @@ function formatPlainCurrency(val: number, currency: string): string {
  * formatCurrency(120.5, 'USD') // "$120.50"
  */
 export function formatCurrency(val: number, currency = DEFAULT_CURRENCY): string {
-  const value = val ?? 0
+  const value = Number(val ?? 0)
   const code = (currency || DEFAULT_CURRENCY).toUpperCase()
+  if (value < 0) {
+    return `-${formatCurrency(Math.abs(value), code)}`
+  }
   try {
     return currencyFormatter(code).format(value)
   } catch {

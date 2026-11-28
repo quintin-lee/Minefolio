@@ -48,8 +48,8 @@
             class="amount-input converted-result"
           >
             <template #append>
-              <el-button @click="handleCopy">
-                📋
+              <el-button @click="handleCopy" title="复制" aria-label="复制">
+                <Icon icon="ph:copy" />
               </el-button>
             </template>
           </el-input>
@@ -87,6 +87,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { Icon } from '@iconify/vue'
 import { useMarketStore } from '@/stores/market'
 import { convertCurrency, calcCrossRate, formatRate } from '@/utils/fx'
 import { copyTextToClipboard } from '@/utils/clipboard'
@@ -205,6 +206,10 @@ async function handleCopy() {
 }
 .amount-input :deep(.el-input__wrapper.is-focus) {
   box-shadow: 0 0 0 1px var(--mf-primary) inset;
+}
+
+.amount-input :deep(.el-input-number .el-input__inner) {
+  text-align: left;
 }
 
 .converted-result :deep(input) {

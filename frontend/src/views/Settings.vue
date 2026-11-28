@@ -198,12 +198,20 @@ onErrorCaptured((err, instance, info) => {
   overflow-y: auto;
 }
 
+.settings-tabs.el-tabs--left :deep(.el-tabs__nav-wrap.is-left::after) {
+  display: none;
+}
+
 .settings-tabs.el-tabs--left :deep(.el-tabs__item.is-left) {
   justify-content: flex-start;
   text-align: left;
   padding: 10px 14px;
   border-radius: var(--mf-radius-md);
   height: auto;
+}
+
+.settings-tabs.el-tabs--top :deep(.el-tabs__item) {
+  padding: 10px 8px;
 }
 
 .settings-tabs :deep(.el-tabs__nav) {

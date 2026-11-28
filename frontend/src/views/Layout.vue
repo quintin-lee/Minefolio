@@ -432,6 +432,20 @@ async function handleCommand(cmd: string) {
   width: 3px;
 }
 
+@media (max-height: 780px) {
+  .sidebar-menu {
+    padding: 4px 8px;
+  }
+  .nav-group-label {
+    padding: 6px 12px 2px;
+  }
+  .sidebar-menu :deep(.el-menu-item) {
+    height: 31px;
+    line-height: 31px;
+    font-size: 13px;
+  }
+}
+
 .main-container {
   display: flex;
   flex-direction: column;

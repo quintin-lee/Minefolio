@@ -55,7 +55,9 @@
           <el-col :xs="12" :sm="12" :lg="6">
             <SummaryCard
               label="定投整体浮动盈亏"
-              :value="`${totalDcaPnl > 0 ? '+' : ''}¥${formatNumber(totalDcaPnl)} (${totalDcaPnlPct.toFixed(2)}%)`"
+              :value="`${totalDcaPnl > 0 ? '+' : totalDcaPnl < 0 ? '-' : ''}¥${formatNumber(Math.abs(totalDcaPnl))}`"
+              :badge="`${totalDcaPnlPct > 0 ? '+' : ''}${totalDcaPnlPct.toFixed(2)}%`"
+              :badgeType="totalDcaPnl > 0 ? 'gain' : totalDcaPnl < 0 ? 'loss' : 'neutral'"
               :type="totalDcaPnl > 0 ? 'gain' : totalDcaPnl < 0 ? 'loss' : 'neutral'"
             />
           </el-col>
@@ -97,7 +99,7 @@
               </template>
             </el-table-column>
 
-            <el-table-column label="定投周期" width="120">
+            <el-table-column v-if="!isNarrowTable" label="定投周期" width="120">
               <template #default="{ row }">
                 <span>{{ formatFrequency(row.frequency, row.day_of_period) }}</span>
               </template>
@@ -109,7 +111,7 @@
               </template>
             </el-table-column>
 
-            <el-table-column label="累计投入 / 期数" min-width="140" align="right">
+            <el-table-column v-if="!isNarrowTable" label="累计投入 / 期数" min-width="140" align="right">
               <template #default="{ row }">
                 <div class="mono-amount">¥{{ formatNumber(row.total_invested_amount || 0) }}</div>
                 <div class="sub-count">{{ row.executed_periods || 0 }} 期</div>
@@ -277,7 +279,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, VideoPause, VideoPlay, Document, BellFilled } from '@element-plus/icons-vue'
 import { t } from '@/utils/locale'
@@ -290,6 +292,17 @@ import { dcaApi } from '@/api/dca'
 import { cashflowApi } from '@/api/cashflow'
 import { assetsApi } from '@/api/assets'
 import type { Asset, DcaPlan, DcaExecution, CashflowSchedule, DcaPlanSummary } from '@/types'
+
+const NARROW_TABLE_QUERY = '(max-width: 960px)'
+const isNarrowTable = ref(
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(NARROW_TABLE_QUERY).matches
+    : false,
+)
+let narrowMediaQuery: MediaQueryList | null = null
+const handleNarrowTableChange = (e: MediaQueryListEvent) => {
+  isNarrowTable.value = e.matches
+}
 
 const activeTab = ref<'dca' | 'calendar'>('dca')
 const allAssets = ref<Asset[]>([])
@@ -573,7 +586,17 @@ async function handleDeleteSchedule(sch: CashflowSchedule) {
 }
 
 onMounted(() => {
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    narrowMediaQuery = window.matchMedia(NARROW_TABLE_QUERY)
+    isNarrowTable.value = narrowMediaQuery.matches
+    narrowMediaQuery.addEventListener?.('change', handleNarrowTableChange)
+  }
   loadData()
+})
+
+onBeforeUnmount(() => {
+  narrowMediaQuery?.removeEventListener?.('change', handleNarrowTableChange)
+  narrowMediaQuery = null
 })
 </script>
 
@@ -685,6 +708,15 @@ onMounted(() => {
   margin-bottom: 16px;
   row-gap: 12px;
   flex-shrink: 0;
+}
+
+.summary-cards > .el-col {
+  display: flex;
+}
+
+.summary-cards :deep(.summary-card) {
+  width: 100%;
+  height: 100%;
 }
 
 .table-container {

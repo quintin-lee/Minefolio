@@ -384,11 +384,12 @@ function splitCurrency(val: number) {
     USDT: { symbol: '₮', digits: 2 },
   }
   const meta = map[curUpper] || { symbol: `${curUpper} `, digits: 2 }
-  const numStr = Number(val || 0).toLocaleString('zh-CN', {
+  const n = Number(val || 0)
+  const numStr = Math.abs(n).toLocaleString('zh-CN', {
     minimumFractionDigits: meta.digits,
     maximumFractionDigits: meta.digits,
   })
-  return { symbol: meta.symbol, value: numStr }
+  return { symbol: n < 0 ? `-${meta.symbol}` : meta.symbol, value: numStr }
 }
 
 function formatCurrencyValue(val: number, cur = 'CNY') {
@@ -403,10 +404,12 @@ function formatCurrencyValue(val: number, cur = 'CNY') {
     USDT: { symbol: '₮', digits: 2 },
   }
   const meta = map[curUpper] || { symbol: `${curUpper} `, digits: 2 }
-  return `${meta.symbol}${Number(val || 0).toLocaleString('zh-CN', {
+  const n = Number(val || 0)
+  const absStr = Math.abs(n).toLocaleString('zh-CN', {
     minimumFractionDigits: meta.digits,
     maximumFractionDigits: meta.digits,
-  })}`
+  })
+  return `${n < 0 ? '-' : ''}${meta.symbol}${absStr}`
 }
 
 function selectCurrency(curr: string) {
@@ -827,6 +830,11 @@ onMounted(loadDashboard)
   color: var(--mf-warning);
 }
 
+.sub-icon-wrap.daily {
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
+}
+
 .sub-val {
   font-size: 20px;
   font-weight: 700;
@@ -929,6 +937,19 @@ onMounted(loadDashboard)
   color: var(--mf-text-muted);
 }
 
+@media (max-width: 992px) {
+  .hero-networth-card {
+    min-height: 184px;
+    padding: 20px;
+  }
+  .bento-secondary-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    height: auto;
+  }
+}
+
 @media (max-width: 768px) {
   .page-header {
     flex-direction: column;
@@ -943,6 +964,12 @@ onMounted(loadDashboard)
     width: 100%;
     overflow-x: auto;
     padding-bottom: 4px;
+  }
+}
+
+@media (max-width: 480px) {
+  .bento-secondary-group {
+    grid-template-columns: 1fr;
   }
 }
 </style>

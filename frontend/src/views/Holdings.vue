@@ -19,6 +19,7 @@
           :extraClass="floatCardClass"
         />
         <el-progress
+          v-if="Math.abs(report?.summary.floating_pct ?? 0) > 0"
           :percentage="Math.min(100, Math.abs(report?.summary.floating_pct ?? 0))"
           :color="floatPnlColor"
           :show-text="false"
@@ -69,7 +70,7 @@
             <span :class="['type-pill', typePillClass(row.asset_type)]">{{ typeLabel(row.asset_type) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="占比" width="95">
+        <el-table-column v-if="!isCompactTable" label="占比" width="95">
           <template #default="{ row }">
             <div class="weight-cell">
               <span class="weight-pct">
@@ -88,7 +89,7 @@
         <el-table-column label="份额" width="110" align="right">
           <template #default="{ row }"><span class="mf-mono">{{ row.quantity.toFixed(2) }}</span></template>
         </el-table-column>
-        <el-table-column label="净值" width="110" align="right">
+        <el-table-column v-if="!isCompactTable" label="净值" width="110" align="right">
           <template #default="{ row }"><span class="mf-mono">{{ row.net_value.toFixed(4) }}</span></template>
         </el-table-column>
         <el-table-column label="总成本" width="130" align="right">
@@ -124,7 +125,7 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="已实现盈亏" width="120" align="right">
+        <el-table-column v-if="!isCompactTable" label="已实现盈亏" width="120" align="right">
           <template #default="{ row }">
             <span :class="pnlClass(row.realized_pnl)">{{ formatSigned(row.realized_pnl, row.currency) }}</span>
           </template>
@@ -149,7 +150,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { Icon } from '@iconify/vue'
 import { reportsApi, type HoldingsReport } from '@/api/reports'
@@ -160,6 +161,17 @@ import SummaryCard from '@/components/SummaryCard.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { formatCurrency, formatSigned } from '@/utils/format'
 import { t } from '@/utils/locale'
+
+const COMPACT_TABLE_QUERY = '(max-width: 1024px)'
+const isCompactTable = ref(
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(COMPACT_TABLE_QUERY).matches
+    : false,
+)
+let compactMediaQuery: MediaQueryList | null = null
+const handleCompactTableChange = (e: MediaQueryListEvent) => {
+  isCompactTable.value = e.matches
+}
 
 const report = ref<HoldingsReport | null>(null)
 const exchangeRates = ref<Record<string, number>>({})
@@ -253,7 +265,17 @@ async function load() {
 }
 
 onMounted(() => {
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    compactMediaQuery = window.matchMedia(COMPACT_TABLE_QUERY)
+    isCompactTable.value = compactMediaQuery.matches
+    compactMediaQuery.addEventListener?.('change', handleCompactTableChange)
+  }
   load()
+})
+
+onBeforeUnmount(() => {
+  compactMediaQuery?.removeEventListener?.('change', handleCompactTableChange)
+  compactMediaQuery = null
 })
 </script>
 
@@ -317,6 +339,9 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   overflow-x: auto;
+}
+.table-card :deep(.el-table__empty-block) {
+  min-height: 220px;
 }
 .premium-table {
   --el-table-border-color: transparent;
