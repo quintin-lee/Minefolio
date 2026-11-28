@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.7
+
+############################################################
+# IM gateway image (OneBot + iLink)
+#
+# gateway/ has zero external npm dependencies (only Node built-ins),
+# so there is no npm ci stage — just ship the source with a Node runtime.
+# The same image serves both services:
+#   im-gateway    -> node adapters/onebot-server.js  (default CMD)
+#   ilink-gateway -> node ilink-server.js            (overridden in compose)
+############################################################
+
+ARG NODE_VERSION=22.14-alpine
+FROM node:${NODE_VERSION}
+
+LABEL org.opencontainers.image.title="Minefolio IM Gateway"
+
+WORKDIR /app
+
+# package.json is copied first for layer cache readability; no npm install needed.
+COPY gateway/package.json ./
+COPY gateway ./
+
+ENV NODE_ENV=production
+
+# OneBot HTTP/WS API and NapCat WebUI ports inside the container.
+# The iLink gateway does not listen; exposing these is harmless.
+EXPOSE 3000 3001 3002 6099
+
+CMD ["node", "adapters/onebot-server.js"]

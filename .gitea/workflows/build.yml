@@ -14,6 +14,7 @@ jobs:
       registry: ${{ steps.meta.outputs.registry }}
       backend_img: ${{ steps.meta.outputs.backend_img }}
       frontend_img: ${{ steps.meta.outputs.frontend_img }}
+      gateway_img: ${{ steps.meta.outputs.gateway_img }}
       tag: ${{ steps.meta.outputs.tag }}
       is_release: ${{ steps.meta.outputs.is_release }}
     steps:
@@ -28,6 +29,7 @@ jobs:
           echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
           echo "backend_img=${REGISTRY}/${REPO}" >> "$GITHUB_OUTPUT"
           echo "frontend_img=${REGISTRY}/${REPO}-frontend" >> "$GITHUB_OUTPUT"
+          echo "gateway_img=${REGISTRY}/${REPO}-gateway" >> "$GITHUB_OUTPUT"
           BRANCH="${{ github.ref_name }}"
           TAG_SUFFIX="${BRANCH#v}"
           echo "tag=${TAG_SUFFIX}" >> "$GITHUB_OUTPUT"
@@ -110,5 +112,39 @@ jobs:
             HTTP_PROXY=${{ vars.HTTP_PROXY }}
             HTTPS_PROXY=${{ vars.HTTPS_PROXY }}
             NPM_REGISTRY=${{ vars.NPM_REGISTRY }}
+          cache-from: type=inline
+          cache-to: type=inline,mode=max
+
+  build-gateway:
+    name: Build IM Gateway Docker Image
+    needs: [compute-metadata]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: https://gitea.com/actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: https://gitea.com/actions/docker-setup-buildx@v3
+
+      - name: Log in to registry
+        uses: https://gitea.com/actions/docker-login@v3
+        with:
+          registry: ${{ needs.compute-metadata.outputs.registry }}
+          username: ${{ secrets.REGISTRY_USERNAME || gitea.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || gitea.token }}
+
+      # gateway/ has no npm dependencies; no proxy/registry build-args needed.
+      - name: Build & push gateway image
+        uses: https://gitea.com/actions/docker-build-push@v6
+        with:
+          context: .
+          file: ./Dockerfile.gateway
+          push: true
+          tags: |
+            ${{ needs.compute-metadata.outputs.gateway_img }}:${{ needs.compute-metadata.outputs.tag }}
+            ${{ needs.compute-metadata.outputs.gateway_img }}:latest
           cache-from: type=inline
           cache-to: type=inline,mode=max
