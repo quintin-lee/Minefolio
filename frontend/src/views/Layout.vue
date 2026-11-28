@@ -324,7 +324,8 @@ async function handleCommand(cmd: string) {
   display: none;
 }
 .logo {
-  height: 72px;
+  height: 64px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   padding: 0 20px;
@@ -336,7 +337,7 @@ async function handleCommand(cmd: string) {
 .sidebar-menu {
   border-right: none;
   background: transparent;
-  padding: 12px 8px;
+  padding: 8px 8px;
   flex: 1;
 }
 .nav-group-label {
@@ -345,15 +346,19 @@ async function handleCommand(cmd: string) {
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: var(--mf-text-placeholder);
-  padding: 14px 12px 6px;
+  padding: 10px 12px 4px;
+  line-height: 14px;
   user-select: none;
+}
+.nav-group-label:first-child {
+  padding-top: 4px;
 }
 .sidebar-menu :deep(.el-menu-item) {
   color: var(--mf-text-muted);
   border-radius: var(--mf-radius-md);
-  margin-bottom: 3px;
-  height: 42px;
-  line-height: 42px;
+  margin-bottom: 2px;
+  height: 36px;
+  line-height: 36px;
   font-weight: 500;
   transition: var(--mf-transition);
 }
@@ -401,7 +406,7 @@ async function handleCommand(cmd: string) {
 
 .sidebar-menu.el-menu--collapse {
   width: 64px;
-  padding: 16px 6px;
+  padding: 10px 6px;
 }
 .sidebar-menu.el-menu--collapse :deep(.el-menu-item) {
   padding: 0 !important;
@@ -585,6 +590,9 @@ async function handleCommand(cmd: string) {
   flex: 1 1 0%;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
   display: flex;
   flex-direction: column;
 }

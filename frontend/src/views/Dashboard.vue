@@ -507,8 +507,7 @@ onMounted(loadDashboard)
   display: flex;
   flex-direction: column;
   gap: var(--mf-spacing-md);
-  height: 100%;
-  overflow: auto;
+  padding-bottom: 12px;
 }
 
 .dashboard-content-loading {
