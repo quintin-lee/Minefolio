@@ -1,8 +1,8 @@
 <template>
   <div class="chat-page">
     <div class="chat-layout">
-      <!-- Mobile overlay backdrop -->
-      <div class="sidebar-overlay" v-if="showSidebar && isMobile" @click="showSidebar = false"></div>
+      <!-- Sidebar overlay backdrop (mobile & tablet drawer) -->
+      <div class="sidebar-overlay" v-if="showSidebar && isSidebarDrawer" @click="showSidebar = false"></div>
 
       <!-- Sidebar: session list -->
       <aside class="chat-sidebar" :class="{ 'is-collapsed': !showSidebar }">
@@ -781,7 +781,8 @@ const slashQuery = ref('')
 const mentionMenuRef = ref<InstanceType<typeof AssetMentionMenu> | null>(null)
 const showMentionMenu = ref(false)
 const mentionQuery = ref('')
-const showSidebar = ref(typeof window !== 'undefined' ? window.innerWidth >= 768 : true)
+const showSidebar = ref(typeof window !== 'undefined' ? window.innerWidth > 1024 : true)
+const isSidebarDrawer = ref(typeof window !== 'undefined' ? window.innerWidth <= 1024 : false)
 const loadingSessions = ref(false)
 const loadingMessages = ref(false)
 const editingSessionId = ref<number | null>(null)
@@ -817,6 +818,11 @@ const {
 })
 
 function checkMobile() {
+  const wasDrawer = isSidebarDrawer.value
+  isSidebarDrawer.value = window.innerWidth <= 1024
+  if (!wasDrawer && isSidebarDrawer.value) {
+    showSidebar.value = false
+  }
   isMobile.value = window.innerWidth < 768
   updateMessagesBottomPadding()
   checkPanelMode()
@@ -1067,7 +1073,12 @@ let containerResizeObserver: ResizeObserver | null = null
  */
 function scrollToBottom(smooth = false) {
   const el = messagesRef.value
-  if (!el || !autoStickToBottom.value) return
+  if (!el) return
+  if (chat.messages.length === 0) {
+    el.scrollTop = 0
+    return
+  }
+  if (!autoStickToBottom.value) return
   if (scrollRafId !== null) return
 
   scrollRafId = requestAnimationFrame(() => {
@@ -1450,6 +1461,9 @@ function handleNewChat() {
   chat.clearCurrentSession()
   inputText.value = ''
   adjustTextareaHeight()
+  nextTick(() => {
+    if (messagesRef.value) messagesRef.value.scrollTop = 0
+  })
 }
 
 async function handleClearChat() {

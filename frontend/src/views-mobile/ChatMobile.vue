@@ -109,7 +109,8 @@ watch(inputText, () => {
 function scrollToBottom() {
   nextTick(() => {
     const el = listRef.value
-    if (el) el.scrollTop = el.scrollHeight
+    if (!el) return
+    el.scrollTop = chat.messages.length === 0 ? 0 : el.scrollHeight
   })
 }
 

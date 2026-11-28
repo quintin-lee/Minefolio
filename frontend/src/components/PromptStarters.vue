@@ -471,12 +471,67 @@ const dynamicStarters = computed<StarterItem[]>(() => {
 }
 
 @media (max-width: 640px) {
+  .prompt-starters {
+    padding: 10px 0 16px;
+  }
+  .starters-header {
+    margin-bottom: 12px;
+  }
+  .sparkle-icon-wrap {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    margin-bottom: 8px;
+  }
+  .sparkle-icon {
+    font-size: 18px;
+  }
+  .starters-title {
+    font-size: 18px;
+    margin-bottom: 4px;
+  }
+  .starters-subtitle {
+    font-size: 12px;
+    line-height: 1.4;
+  }
   .starters-grid {
     grid-template-columns: 1fr;
+    gap: 8px;
   }
   .context-summary-capsule {
-    gap: 8px;
-    padding: 8px 12px;
+    margin-top: 10px;
+    gap: 6px 10px;
+    padding: 6px 10px;
+    font-size: 11.5px;
+  }
+  .starter-card {
+    padding: 10px 12px;
+    border-radius: 12px;
+  }
+  .card-top {
+    margin-bottom: 6px;
+  }
+  .card-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    font-size: 15px;
+  }
+  .card-title {
+    font-size: 13.5px;
+    margin-bottom: 2px;
+  }
+  .card-desc {
+    font-size: 11.5px;
+    line-height: 1.4;
+    margin-bottom: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card-footer {
+    display: none;
   }
 }
 </style>

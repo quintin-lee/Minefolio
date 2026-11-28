@@ -1390,18 +1390,6 @@
 }
 
 @media (max-width: 1024px) {
-  .session-stat-pill {
-    display: none;
-  }
-  .session-title-wrap {
-    max-width: 200px;
-  }
-  .new-chat-btn .btn-text {
-    display: none;
-  }
-}
-
-@media (max-width: 768px) {
   .sidebar-overlay { display: block; }
   .chat-sidebar {
     position: fixed;
@@ -1417,6 +1405,18 @@
   .chat-sidebar:not(.is-collapsed) { transform: translateX(0); }
   .session-item-actions { opacity: 1; }
   .chat-main { width: 100% !important; }
+  .session-stat-pill {
+    display: none;
+  }
+  .session-title-wrap {
+    max-width: 200px;
+  }
+  .new-chat-btn .btn-text {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
   .chat-toolbar {
     padding: 6px 10px;
     gap: 6px;
