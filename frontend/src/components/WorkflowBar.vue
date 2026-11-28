@@ -182,6 +182,7 @@ onMounted(async () => {
   overflow-x: auto;
   scrollbar-width: none;
   flex: 1;
+  min-width: 0;
 }
 
 .pills-container::-webkit-scrollbar {
@@ -192,6 +193,7 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  flex-shrink: 0;
   padding: 3px 10px;
   background: var(--mf-surface-muted);
   border: 1px solid var(--mf-border);

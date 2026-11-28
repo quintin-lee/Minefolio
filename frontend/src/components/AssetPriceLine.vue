@@ -1,15 +1,19 @@
 <template>
-  <div ref="chartRef" class="asset-price-line" />
+  <div class="asset-price-line-wrap">
+    <div v-if="hasData" ref="chartRef" class="asset-price-line" />
+    <el-empty v-else description="暂无净值走势数据" :image-size="64" />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, nextTick, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
 import type { PriceHistoryItem } from '@/types'
 
 const props = defineProps<{ data: PriceHistoryItem[] }>()
+const hasData = computed(() => (props.data?.length ?? 0) > 0)
 
 const chartRef = ref<HTMLElement | null>(null)
 const displaySettings = useDisplaySettingsStore()
@@ -17,7 +21,7 @@ let chart: ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
 
 function ensureChart() {
-  if (chart || !chartRef.value) return
+  if (!hasData.value || chart || !chartRef.value) return
   const el = chartRef.value
   if (!el.clientWidth || !el.clientHeight) return
   chart = echarts.init(el)
@@ -77,16 +81,23 @@ function render() {
   })
 }
 
+function attachResizeObserver() {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  if (!chartRef.value) return
+  resizeObserver = new ResizeObserver(() => {
+    ensureChart()
+    onResize()
+  })
+  resizeObserver.observe(chartRef.value)
+}
+
 onMounted(() => {
-  ensureChart()
-  window.addEventListener('resize', onResize)
-  if (chartRef.value) {
-    resizeObserver = new ResizeObserver(() => {
-      ensureChart()
-      onResize()
-    })
-    resizeObserver.observe(chartRef.value)
+  if (hasData.value) {
+    ensureChart()
+    attachResizeObserver()
   }
+  window.addEventListener('resize', onResize)
 })
 
 onBeforeUnmount(() => {
@@ -99,6 +110,22 @@ onBeforeUnmount(() => {
   }
 })
 
+watch(
+  hasData,
+  async (active) => {
+    if (!active) {
+      resizeObserver?.disconnect()
+      resizeObserver = null
+      chart?.dispose()
+      chart = null
+      return
+    }
+    await nextTick()
+    ensureChart()
+    attachResizeObserver()
+    render()
+  },
+)
 watch(() => props.data, render, { deep: true })
 watch(() => displaySettings.showAmount, render)
 useChartThemeSync(render)
@@ -109,6 +136,14 @@ function onResize() {
 </script>
 
 <style scoped>
+.asset-price-line-wrap {
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .asset-price-line {
   width: 100%;
   height: 100%;

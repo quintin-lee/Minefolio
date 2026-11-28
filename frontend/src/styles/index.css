@@ -607,6 +607,19 @@ body {
   font-size: 13px;
 }
 
+[data-theme="dark"] .el-empty {
+  --el-empty-fill-color-0: #111827;
+  --el-empty-fill-color-1: #1e293b;
+  --el-empty-fill-color-2: #243247;
+  --el-empty-fill-color-3: #1a2436;
+  --el-empty-fill-color-4: #29384e;
+  --el-empty-fill-color-5: #1f2b3d;
+  --el-empty-fill-color-6: #2e3e56;
+  --el-empty-fill-color-7: #192334;
+  --el-empty-fill-color-8: #334155;
+  --el-empty-fill-color-9: #0f172a;
+}
+
 [data-theme="dark"] .el-empty__image svg {
   opacity: 0.78;
 }

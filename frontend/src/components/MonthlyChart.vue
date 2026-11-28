@@ -1,9 +1,12 @@
 <template>
-  <div ref="chartRef" class="chart-canvas" :style="{ minHeight: props.minHeight }"></div>
+  <div class="chart-canvas-wrap" :style="{ minHeight: props.minHeight }">
+    <div v-if="hasData" ref="chartRef" class="chart-canvas" :style="{ minHeight: props.minHeight }"></div>
+    <el-empty v-else description="本月暂无收支数据" :image-size="64" />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, ref, onMounted, onUnmounted, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, shade, useChartThemeSync } from '@/utils/echarts-theme'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
@@ -15,29 +18,42 @@ const props = withDefaults(defineProps<{
   minHeight: '280px',
 })
 const displaySettings = useDisplaySettingsStore()
+const hasData = computed(() =>
+  Boolean(props.data && ((props.data.total_income ?? 0) > 0 || (props.data.total_expense ?? 0) > 0)),
+)
 const chartRef = ref<HTMLElement>()
 let chart: ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
 
 function ensureChart() {
-  if (chart || !chartRef.value) return
+  if (!hasData.value || chart || !chartRef.value) return
   const el = chartRef.value
   if (!el.clientWidth || !el.clientHeight) return
   chart = echarts.init(el)
   updateChart()
 }
+function attachResizeObserver() {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  if (!chartRef.value) return
+  resizeObserver = new ResizeObserver(() => {
+    ensureChart()
+    handleResize()
+  })
+  resizeObserver.observe(chartRef.value)
+}
 onMounted(() => {
-  ensureChart()
-  window.addEventListener('resize', handleResize)
-  if (chartRef.value) {
-    resizeObserver = new ResizeObserver(() => { ensureChart(); handleResize() })
-    resizeObserver.observe(chartRef.value)
+  if (hasData.value) {
+    ensureChart()
+    attachResizeObserver()
   }
+  window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   if (resizeObserver) resizeObserver.disconnect()
+  resizeObserver = null
   if (chart) {
     chart.dispose()
     chart = null
@@ -48,6 +64,22 @@ function handleResize() {
   if (chart) chart.resize()
 }
 
+watch(
+  hasData,
+  async (active) => {
+    if (!active) {
+      resizeObserver?.disconnect()
+      resizeObserver = null
+      chart?.dispose()
+      chart = null
+      return
+    }
+    await nextTick()
+    ensureChart()
+    attachResizeObserver()
+    updateChart()
+  },
+)
 watch(() => props.data, updateChart, { deep: true })
 watch(() => displaySettings.showAmount, updateChart)
 useChartThemeSync(updateChart)
@@ -128,6 +160,13 @@ function updateChart() {
 </script>
 
 <style scoped>
+.chart-canvas-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .chart-canvas {
   width: 100%;
   height: 100%;

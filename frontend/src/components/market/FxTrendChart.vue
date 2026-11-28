@@ -212,9 +212,23 @@ function handleExport(cmd: string) {
 watch(
   () => [normalizedPoints.value, marketStore.baseCurrency],
   () => {
+    if (normalizedPoints.value.length === 0) {
+      resizeObserver?.disconnect()
+      resizeObserver = null
+      chartInstance?.dispose()
+      chartInstance = null
+      return
+    }
     updateChart()
+    if (chartRef.value && !resizeObserver) {
+      resizeObserver = new ResizeObserver(() => {
+        if (!chartInstance) updateChart()
+        handleResize()
+      })
+      resizeObserver.observe(chartRef.value)
+    }
   },
-  { deep: true }
+  { deep: true, flush: 'post' }
 )
 
 useChartThemeSync(() => {

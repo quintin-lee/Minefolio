@@ -1,8 +1,11 @@
 <template>
-  <div ref="chartRef" style="height: 100%; min-height: 280px; width: 100%;"></div>
+  <div class="expense-pie-wrap">
+    <div v-if="hasData" ref="chartRef" style="height: 100%; min-height: 280px; width: 100%;"></div>
+    <el-empty v-else description="暂无分类支出数据" :image-size="64" />
+  </div>
 </template>
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, ref, onMounted, onUnmounted, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
@@ -13,25 +16,57 @@ const chartRef = ref<HTMLElement>()
 let chart: ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
 
+const mergedCategories = computed(() => {
+  const filtered = (props.data || []).filter((d) => {
+    const t = d.expense_type ?? d.type
+    return !t || t === 'expense'
+  })
+  const mergedMap = new Map<string, { name: string; amount: number; pct?: number }>()
+  for (const item of filtered) {
+    const amt = Number(item.amount || 0)
+    if (amt <= 0) continue
+    const prev = mergedMap.get(item.name)
+    if (prev) {
+      prev.amount += amt
+      prev.pct = undefined
+    } else {
+      mergedMap.set(item.name, { name: item.name, amount: amt, pct: item.pct })
+    }
+  }
+  return Array.from(mergedMap.values())
+})
+
+const hasData = computed(() => mergedCategories.value.length > 0)
+
 const colors = ['#3b82f6', '#10b981', '#f59e0b', '#f43f5e', '#6366f1', '#fb923c', '#0ea5e9', '#94a3b8']
 function ensureChart() {
-  if (chart || !chartRef.value) return
+  if (!hasData.value || chart || !chartRef.value) return
   const el = chartRef.value
   if (!el.clientWidth || !el.clientHeight) return
   chart = echarts.init(el)
   update()
 }
+function attachResizeObserver() {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  if (!chartRef.value) return
+  resizeObserver = new ResizeObserver(() => {
+    ensureChart()
+    handleResize()
+  })
+  resizeObserver.observe(chartRef.value)
+}
 onMounted(() => {
-  ensureChart()
-  window.addEventListener('resize', handleResize)
-  if (chartRef.value) {
-    resizeObserver = new ResizeObserver(() => { ensureChart(); handleResize() })
-    resizeObserver.observe(chartRef.value)
+  if (hasData.value) {
+    ensureChart()
+    attachResizeObserver()
   }
+  window.addEventListener('resize', handleResize)
 })
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   if (resizeObserver) resizeObserver.disconnect()
+  resizeObserver = null
   if (chart) {
     chart.dispose()
     chart = null
@@ -47,27 +82,28 @@ function handleResize() {
     }
   }
 }
+watch(
+  hasData,
+  async (active) => {
+    if (!active) {
+      resizeObserver?.disconnect()
+      resizeObserver = null
+      chart?.dispose()
+      chart = null
+      return
+    }
+    await nextTick()
+    ensureChart()
+    attachResizeObserver()
+    update()
+  },
+)
 watch(() => props.data, update, { deep: true })
 watch(() => displaySettings.showAmount, update)
 useChartThemeSync(update)
 function update() { 
   if (!chart) return
-  const filtered = (props.data || []).filter((d) => {
-    const t = d.expense_type ?? d.type
-    return !t || t === 'expense'
-  })
-  const mergedMap = new Map<string, { name: string; amount: number; pct?: number }>()
-  for (const item of filtered) {
-    const prev = mergedMap.get(item.name)
-    const amt = Number(item.amount || 0)
-    if (prev) {
-      prev.amount += amt
-      prev.pct = undefined
-    } else {
-      mergedMap.set(item.name, { name: item.name, amount: amt, pct: item.pct })
-    }
-  }
-  const merged = Array.from(mergedMap.values())
+  const merged = mergedCategories.value
   if (!merged.length) {
     chart.clear()
     return
@@ -120,8 +156,8 @@ function update() {
         },
     series: [{
       type: 'pie',
-      radius: isNarrow ? ['38%', '60%'] : ['45%', '70%'],
-      center: isNarrow ? ['50%', '38%'] : ['35%', '50%'],
+      radius: isNarrow ? ['38%', '60%'] : ['40%', '64%'],
+      center: isNarrow ? ['50%', '38%'] : ['35%', '48%'],
       data: merged.map(d => ({
         name: d.name,
         value: d.amount,
@@ -150,3 +186,14 @@ function update() {
   })
 }
 </script>
+
+<style scoped>
+.expense-pie-wrap {
+  width: 100%;
+  height: 100%;
+  min-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+</style>

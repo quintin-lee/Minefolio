@@ -1,9 +1,12 @@
 <template>
-  <div ref="chartRef" class="holdings-pie-chart" />
+  <div class="holdings-pie-wrap">
+    <div v-if="hasData" ref="chartRef" class="holdings-pie-chart" />
+    <el-empty v-else description="暂无资产配置数据" :image-size="64" />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
@@ -15,6 +18,7 @@ export interface HoldingsPieDatum {
 
 const props = defineProps<{ data: HoldingsPieDatum[] }>()
 const displaySettings = useDisplaySettingsStore()
+const hasData = computed(() => (props.data || []).some((d) => Number(d.value) > 0))
 
 const chartRef = ref<HTMLDivElement | null>(null)
 let chart: ECharts | null = null
@@ -69,17 +73,30 @@ function handleResize() {
 }
 
 function ensureChart() {
-  if (chart || !chartRef.value) return
+  if (!hasData.value || chart || !chartRef.value) return
   const el = chartRef.value
   if (!el.clientWidth || !el.clientHeight) return
   chart = echarts.init(el)
   updateChart()
 }
+
+function attachResizeObserver() {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  if (!chartRef.value) return
+  resizeObserver = new ResizeObserver(() => {
+    ensureChart()
+    handleResize()
+  })
+  resizeObserver.observe(chartRef.value)
+}
+
 onMounted(() => {
-  ensureChart()
+  if (hasData.value) {
+    ensureChart()
+    attachResizeObserver()
+  }
   window.addEventListener('resize', handleResize)
-  resizeObserver = new ResizeObserver(() => { ensureChart(); handleResize() })
-  resizeObserver.observe(chartRef.value!)
 })
 
 onUnmounted(() => {
@@ -90,14 +107,37 @@ onUnmounted(() => {
   chart = null
 })
 
+watch(
+  hasData,
+  async (active) => {
+    if (!active) {
+      resizeObserver?.disconnect()
+      resizeObserver = null
+      chart?.dispose()
+      chart = null
+      return
+    }
+    await nextTick()
+    ensureChart()
+    attachResizeObserver()
+    updateChart()
+  },
+)
 watch(() => props.data, updateChart, { deep: true })
 watch(() => displaySettings.showAmount, updateChart)
 useChartThemeSync(updateChart)
 </script>
 
 <style scoped>
-.holdings-pie-chart {
+.holdings-pie-wrap {
   width: 100%;
   height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.holdings-pie-chart {
+  width: 100%;
+  height: 100%;
 }
 </style>

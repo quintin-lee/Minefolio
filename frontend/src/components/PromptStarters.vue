@@ -251,44 +251,45 @@ const dynamicStarters = computed<StarterItem[]>(() => {
   max-width: 100%;
   box-sizing: border-box;
   margin: 0 auto;
-  padding: 24px 0 32px;
+  padding: 14px 0 18px;
 }
 
 .starters-header {
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 .sparkle-icon-wrap {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
   background: linear-gradient(135deg, var(--mf-primary), #6366f1);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 16px;
+  margin: 0 auto 10px;
   box-shadow: 0 4px 16px rgba(99, 102, 241, 0.25), var(--mf-shadow-glow);
 }
 
 .sparkle-icon {
-  font-size: 26px;
+  font-size: 22px;
   color: #ffffff;
 }
 
 .starters-title {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--mf-text-main);
   letter-spacing: -0.3px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .starters-subtitle {
   font-size: 13.5px;
   color: var(--mf-text-muted);
-  max-width: 560px;
-  line-height: 1.6;
+  max-width: 600px;
+  text-wrap: balance;
+  line-height: 1.55;
 }
 
 /* 财务上下文全景速览胶囊 */
@@ -296,8 +297,8 @@ const dynamicStarters = computed<StarterItem[]>(() => {
   display: inline-flex;
   align-items: center;
   gap: 14px;
-  margin-top: 16px;
-  padding: 8px 18px;
+  margin-top: 10px;
+  padding: 6px 14px;
   border-radius: 30px;
   background: var(--mf-surface);
   border: 1px solid var(--mf-border);
@@ -360,17 +361,18 @@ const dynamicStarters = computed<StarterItem[]>(() => {
 
 .starters-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(256px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   width: 100%;
+  max-width: 780px;
 }
 
 .starter-card {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 18px;
-  border-radius: 16px;
+  padding: 13px 15px;
+  border-radius: 14px;
   background: var(--mf-surface);
   border: 1px solid var(--mf-border);
   backdrop-filter: blur(16px);
@@ -406,24 +408,24 @@ const dynamicStarters = computed<StarterItem[]>(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
 }
 
 .card-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 16px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 .card-tag {
   font-size: 11px;
   font-weight: 600;
-  padding: 3px 8px;
+  padding: 2px 8px;
   border-radius: 20px;
   background: var(--mf-surface-muted);
   color: var(--mf-text-muted);
@@ -431,25 +433,25 @@ const dynamicStarters = computed<StarterItem[]>(() => {
 }
 
 .card-title {
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--mf-text-main);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   letter-spacing: -0.2px;
 }
 
 .card-desc {
   font-size: 12px;
   color: var(--mf-text-muted);
-  line-height: 1.55;
-  margin-bottom: 16px;
+  line-height: 1.45;
+  margin-bottom: 10px;
 }
 
 .card-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-top: 12px;
+  padding-top: 8px;
   border-top: 1px solid var(--mf-border);
   font-size: 12px;
   color: var(--mf-primary);
@@ -470,18 +472,18 @@ const dynamicStarters = computed<StarterItem[]>(() => {
   transform: translateX(4px);
 }
 
-@media (max-width: 640px) {
+@media (max-height: 780px) {
   .prompt-starters {
-    padding: 10px 0 16px;
+    padding: 8px 0 10px;
   }
   .starters-header {
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
   .sparkle-icon-wrap {
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
     border-radius: 10px;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
   .sparkle-icon {
     font-size: 18px;
@@ -491,39 +493,83 @@ const dynamicStarters = computed<StarterItem[]>(() => {
     margin-bottom: 4px;
   }
   .starters-subtitle {
-    font-size: 12px;
+    font-size: 12.5px;
     line-height: 1.4;
   }
-  .starters-grid {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
   .context-summary-capsule {
-    margin-top: 10px;
-    gap: 6px 10px;
-    padding: 6px 10px;
-    font-size: 11.5px;
+    margin-top: 8px;
+    padding: 4px 12px;
+    font-size: 12px;
   }
   .starter-card {
     padding: 10px 12px;
+  }
+  .card-desc {
+    margin-bottom: 0;
+  }
+  .card-footer {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .prompt-starters {
+    padding: 8px 0 12px;
+  }
+  .starters-header {
+    margin-bottom: 10px;
+  }
+  .sparkle-icon-wrap {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    margin-bottom: 6px;
+  }
+  .sparkle-icon {
+    font-size: 18px;
+  }
+  .starters-title {
+    font-size: 17px;
+    margin-bottom: 4px;
+  }
+  .starters-subtitle {
+    font-size: 11.5px;
+    line-height: 1.35;
+  }
+  .starters-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .context-summary-capsule {
+    margin-top: 8px;
+    gap: 4px 8px;
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+  .starter-card {
+    padding: 10px;
     border-radius: 12px;
   }
   .card-top {
     margin-bottom: 6px;
   }
   .card-icon {
-    width: 28px;
-    height: 28px;
+    width: 26px;
+    height: 26px;
     border-radius: 8px;
-    font-size: 15px;
+    font-size: 14px;
+  }
+  .card-tag {
+    font-size: 10px;
+    padding: 1px 6px;
   }
   .card-title {
-    font-size: 13.5px;
+    font-size: 13px;
     margin-bottom: 2px;
   }
   .card-desc {
-    font-size: 11.5px;
-    line-height: 1.4;
+    font-size: 11px;
+    line-height: 1.35;
     margin-bottom: 0;
     display: -webkit-box;
     -webkit-line-clamp: 2;
